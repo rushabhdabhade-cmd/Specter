@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon } from 'lucide-react';
+import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { createTestRun } from '@/app/(dashboard)/projects/actions';
 
 type Step = 1 | 2 | 3;
 
@@ -20,6 +21,9 @@ export default function NewTestRunPage() {
   const [step, setStep] = useState<Step>(1);
   const [url, setUrl] = useState('https://yourapp.build');
   const [scope, setScope] = useState('');
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [personas, setPersonas] = useState<Persona[]>([
     {
       id: 1,
@@ -56,14 +60,28 @@ export default function NewTestRunPage() {
     }
   };
 
+  const handleLaunch = async () => {
+    setIsLaunching(true);
+    setError(null);
+    try {
+      await createTestRun({
+        url,
+        scope,
+        personas
+      });
+    } catch (err: any) {
+      setError(err.message || 'Failed to launch test run. Please check your Supabase connection.');
+      setIsLaunching(false);
+    }
+  };
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 flex min-h-full flex-col items-center pt-8 pb-20 duration-700">
       {/* Progress Indicator */}
       <div className="relative mb-16 flex items-center gap-4">
         <div
-          className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
-            step >= 1 ? 'bg-white text-black' : 'border border-white/5 bg-[#151515] text-slate-600'
-          }`}
+          className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${step >= 1 ? 'bg-white text-black' : 'border border-white/5 bg-[#151515] text-slate-600'
+            }`}
         >
           1
         </div>
@@ -71,9 +89,8 @@ export default function NewTestRunPage() {
           className={`h-[2px] w-16 rounded-full transition-all duration-300 ${step >= 2 ? 'bg-white/20' : 'bg-white/5'}`}
         />
         <div
-          className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
-            step >= 2 ? 'bg-white text-black' : 'border border-white/5 bg-[#151515] text-slate-600'
-          }`}
+          className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${step >= 2 ? 'bg-white text-black' : 'border border-white/5 bg-[#151515] text-slate-600'
+            }`}
         >
           2
         </div>
@@ -81,9 +98,8 @@ export default function NewTestRunPage() {
           className={`h-[2px] w-16 rounded-full transition-all duration-300 ${step >= 3 ? 'bg-white/20' : 'bg-white/5'}`}
         />
         <div
-          className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
-            step >= 3 ? 'bg-white text-black' : 'border border-white/5 bg-[#151515] text-slate-600'
-          }`}
+          className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${step >= 3 ? 'bg-white text-black' : 'border border-white/5 bg-[#151515] text-slate-600'
+            }`}
         >
           <Check className="h-4 w-4" />
         </div>
@@ -160,18 +176,16 @@ export default function NewTestRunPage() {
                   <button
                     key={p.id}
                     onClick={() => setSelectedPersonaId(p.id)}
-                    className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all ${
-                      selectedPersonaId === p.id
-                        ? 'border-white/10 bg-[#1a1a1a] text-white shadow-lg'
-                        : 'border-white/5 bg-transparent text-slate-500 hover:border-white/10 hover:text-slate-300'
-                    }`}
+                    className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all ${selectedPersonaId === p.id
+                      ? 'border-white/10 bg-[#1a1a1a] text-white shadow-lg'
+                      : 'border-white/5 bg-transparent text-slate-500 hover:border-white/10 hover:text-slate-300'
+                      }`}
                   >
                     <span
-                      className={`flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold ${
-                        selectedPersonaId === p.id
-                          ? 'bg-white text-black'
-                          : 'bg-[#151515] text-slate-600'
-                      }`}
+                      className={`flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold ${selectedPersonaId === p.id
+                        ? 'bg-white text-black'
+                        : 'bg-[#151515] text-slate-600'
+                        }`}
                     >
                       {p.id}
                     </span>
@@ -284,17 +298,38 @@ export default function NewTestRunPage() {
             </div>
           </div>
 
-          <div className="flex w-full gap-4 pt-10">
-            <button
-              onClick={() => setStep(1)}
-              className="flex items-center justify-center gap-2 rounded-2xl border border-white/5 bg-[#0a0a0a] px-10 py-6 font-bold text-white shadow-lg transition-all hover:bg-white/5"
-            >
-              Back
-            </button>
-            <button className="group flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-6 font-bold text-black shadow-[0_0_40px_rgba(255,255,255,0.1)] transition-all hover:bg-slate-200">
-              Confirm Cohort & Launch
-              <Zap className="h-4 w-4 fill-current transition-transform group-hover:scale-110" />
-            </button>
+          <div className="flex w-full flex-col gap-4 pt-10">
+            {error && (
+              <div className="w-full p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium animate-in fade-in slide-in-from-top-2">
+                {error}
+              </div>
+            )}
+            <div className="flex w-full gap-4">
+              <button
+                disabled={isLaunching}
+                onClick={() => setStep(1)}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-white/5 bg-[#0a0a0a] px-10 py-6 font-bold text-white shadow-lg transition-all hover:bg-white/5 disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                disabled={isLaunching}
+                onClick={handleLaunch}
+                className="group flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white py-6 font-bold text-black shadow-[0_0_40px_rgba(255,255,255,0.1)] transition-all hover:bg-slate-200 disabled:bg-slate-300 disabled:cursor-not-allowed"
+              >
+                {isLaunching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Launching Workers...
+                  </>
+                ) : (
+                  <>
+                    Confirm Cohort & Launch
+                    <Zap className="h-4 w-4 fill-current transition-transform group-hover:scale-110" />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
