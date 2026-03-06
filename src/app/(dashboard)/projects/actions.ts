@@ -6,15 +6,18 @@ import { redirect } from 'next/navigation';
 export async function createTestRun(formData: {
     url: string;
     scope: string;
+    requiresAuth: boolean;
+    credentials?: {
+        username?: string;
+        password?: string;
+    };
     personas: any[];
 }) {
     const supabase = await createClient();
 
-    // 1. Get current user (For now, we'll try to find a placeholder user or create one if it doesn't exist)
-    // In a real app, this would be from Auth.
+    // 1. Get current user
     const { data: { user } } = await supabase.auth.getUser();
 
-    // FALLBACK for development without Auth set up yet
     let userId = user?.id;
     if (!userId) {
         const { data: firstUser } = await supabase.from('users').select('id').limit(1).single();
@@ -25,13 +28,15 @@ export async function createTestRun(formData: {
         throw new Error('User not found. Please ensure at least one user exists in the "users" table.');
     }
 
-    // 2. Create or find Project
+    // 2. Create or find Project (including credentials)
     const { data: project, error: pError } = await supabase
         .from('projects')
         .upsert({
             user_id: userId,
             name: `Project for ${new URL(formData.url).hostname}`,
             target_url: formData.url,
+            requires_auth: formData.requiresAuth,
+            auth_credentials: formData.credentials ? JSON.stringify(formData.credentials) : null,
         }, { onConflict: 'target_url' })
         .select()
         .single();
@@ -61,6 +66,7 @@ export async function createTestRun(formData: {
                 age_range: p.ageRange,
                 tech_literacy: p.techLiteracy.toLowerCase().includes('low') ? 'low' :
                     p.techLiteracy.toLowerCase().includes('high') ? 'high' : 'medium',
+                domain_familiarity: p.domainFamiliarity, // Added field
                 goal_prompt: p.prompt,
             })
             .select()

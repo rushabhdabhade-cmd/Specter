@@ -80,6 +80,7 @@ export interface Database {
                     tech_literacy: 'low' | 'medium' | 'high' | null
                     goal_prompt: string
                     ai_system_prompt: string | null
+                    domain_familiarity: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -92,6 +93,7 @@ export interface Database {
                     tech_literacy?: 'low' | 'medium' | 'high' | null
                     goal_prompt: string
                     ai_system_prompt?: string | null
+                    domain_familiarity?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -104,6 +106,7 @@ export interface Database {
                     tech_literacy?: 'low' | 'medium' | 'high' | null
                     goal_prompt?: string
                     ai_system_prompt?: string | null
+                    domain_familiarity?: string | null
                     created_at?: string
                     updated_at?: string
                 }
