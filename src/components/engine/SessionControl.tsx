@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, Pause, AlertCircle, Loader2 } from 'lucide-react';
+import { Play, Pause, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface SessionControlProps {
     sessionId: string;
@@ -30,14 +30,15 @@ export function SessionControl({ sessionId, isPaused, status, onStep }: SessionC
     };
 
     const isRunning = status === 'running';
+    const isFinished = ['completed', 'abandoned', 'error'].includes(status);
 
     return (
         <div className="flex flex-col gap-4 p-6 rounded-3xl border border-white/10 bg-[#0a0a0a] shadow-2xl">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-blue-500 animate-pulse' : 'bg-slate-600'}`} />
+                    <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-blue-500 animate-pulse' : isFinished ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                        {isRunning ? 'Session Active' : 'Session Inactive'}
+                        {isRunning ? 'Session Active' : isFinished ? 'Session Finished' : 'Session Inactive'}
                     </span>
                 </div>
                 {isPaused && (
@@ -68,6 +69,13 @@ export function SessionControl({ sessionId, isPaused, status, onStep }: SessionC
                                 </>
                             )}
                         </button>
+                    </div>
+                ) : isFinished ? (
+                    <div className="flex flex-col items-center justify-center py-6 border border-white/10 rounded-2xl bg-white/[0.02] space-y-3">
+                        <CheckCircle2 className={`h-6 w-6 ${status === 'completed' ? 'text-emerald-500' : 'text-amber-500'}`} />
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-white">
+                            {status === 'completed' ? 'Cohort Execution Success' : `Session ${status.charAt(0).toUpperCase() + status.slice(1)}`}
+                        </p>
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center py-6 border border-dashed border-white/5 rounded-2xl bg-white/[0.02] space-y-3">
