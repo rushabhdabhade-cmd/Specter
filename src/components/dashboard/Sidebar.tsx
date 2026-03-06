@@ -24,12 +24,11 @@ export default function Sidebar() {
         {navItems.map((item) => (
           <Link
             key={item.name}
-            href={item.href}
-            className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-              item.active
+            href="/dashboard" // Pointing everything to dashboard for now to avoid 404s
+            className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${item.active
                 ? 'bg-white/5 text-white shadow-[0_0_20px_rgba(255,255,255,0.03)]'
                 : 'hover:bg-white/[0.02] hover:text-white'
-            }`}
+              }`}
           >
             <div className="flex items-center gap-3">
               <item.icon
@@ -42,16 +41,12 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer / User Profile Placeholder */}
-      <div className="border-t border-white/5 p-4">
-        <div className="group flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-white/5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-indigo-500/30 bg-indigo-500/20 text-[10px] font-bold text-indigo-400">
-            RD
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <p className="truncate text-sm font-medium text-white">Rushabh</p>
-            <p className="truncate text-[10px] text-slate-500">Pro Plan</p>
-          </div>
+      {/* Footer */}
+      <div className="border-t border-white/5 p-4 py-6">
+        <div className="px-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+            Powered by Specter AI
+          </p>
         </div>
       </div>
     </div>

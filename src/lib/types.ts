@@ -11,7 +11,7 @@ export interface Database {
         Tables: {
             users: {
                 Row: {
-                    id: string
+                    id: string // Changed from UUID
                     email: string
                     name: string | null
                     plan_tier: 'free' | 'pro' | 'team' | null
@@ -20,7 +20,7 @@ export interface Database {
                     updated_at: string
                 }
                 Insert: {
-                    id?: string
+                    id: string // Required for Clerk sync
                     email: string
                     name?: string | null
                     plan_tier?: 'free' | 'pro' | 'team' | null
@@ -41,7 +41,7 @@ export interface Database {
             projects: {
                 Row: {
                     id: string
-                    user_id: string
+                    user_id: string // Changed to string
                     name: string
                     target_url: string
                     requires_auth: boolean | null
@@ -51,7 +51,7 @@ export interface Database {
                 }
                 Insert: {
                     id?: string
-                    user_id: string
+                    user_id: string // Changed to string
                     name: string
                     target_url: string
                     requires_auth?: boolean | null
@@ -61,7 +61,7 @@ export interface Database {
                 }
                 Update: {
                     id?: string
-                    user_id?: string
+                    user_id?: string // Changed to string
                     name?: string
                     target_url?: string
                     requires_auth?: boolean | null
@@ -73,7 +73,8 @@ export interface Database {
             persona_configs: {
                 Row: {
                     id: string
-                    project_id: string
+                    project_id: string | null
+                    user_id: string
                     name: string
                     age_range: string | null
                     geolocation: string | null
@@ -81,12 +82,14 @@ export interface Database {
                     goal_prompt: string
                     ai_system_prompt: string | null
                     domain_familiarity: string | null
+                    persona_count: number | null
                     created_at: string
                     updated_at: string
                 }
                 Insert: {
                     id?: string
-                    project_id: string
+                    project_id?: string | null
+                    user_id: string
                     name: string
                     age_range?: string | null
                     geolocation?: string | null
@@ -94,12 +97,14 @@ export interface Database {
                     goal_prompt: string
                     ai_system_prompt?: string | null
                     domain_familiarity?: string | null
+                    persona_count?: number | null
                     created_at?: string
                     updated_at?: string
                 }
                 Update: {
                     id?: string
-                    project_id?: string
+                    project_id?: string | null
+                    user_id?: string
                     name?: string
                     age_range?: string | null
                     geolocation?: string | null
@@ -107,6 +112,7 @@ export interface Database {
                     goal_prompt?: string
                     ai_system_prompt?: string | null
                     domain_familiarity?: string | null
+                    persona_count?: number | null
                     created_at?: string
                     updated_at?: string
                 }

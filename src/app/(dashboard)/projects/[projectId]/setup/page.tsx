@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Loader2 } from 'lucide-react';
+import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Users, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { createTestRun } from '@/app/(dashboard)/projects/actions';
+import { createTestRun } from '../../actions';
 
 type Step = 1 | 2 | 3;
 
@@ -15,6 +15,7 @@ interface Persona {
   techLiteracy: string;
   domainFamiliarity: string;
   prompt: string;
+  personaCount: number;
 }
 
 export default function NewTestRunPage() {
@@ -26,6 +27,9 @@ export default function NewTestRunPage() {
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [executionMode, setExecutionMode] = useState<'autonomous' | 'manual'>('autonomous');
+  const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('ollama');
+  const [geminiKey, setGeminiKey] = useState('');
 
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,13 +43,14 @@ export default function NewTestRunPage() {
       techLiteracy: 'High',
       domainFamiliarity: 'SaaS & DevTools',
       prompt: 'Looking for pricing first, skeptical of marketing claims.',
+      personaCount: 1,
     },
   ]);
   const [selectedPersonaId, setSelectedPersonaId] = useState(1);
 
   const selectedPersona = personas.find((p) => p.id === selectedPersonaId) || personas[0];
 
-  const updatePersona = (id: number, field: keyof Persona, value: string) => {
+  const updatePersona = (id: number, field: keyof Persona, value: string | number) => {
     setPersonas(personas.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   };
 
@@ -60,6 +65,7 @@ export default function NewTestRunPage() {
         techLiteracy: 'Medium',
         domainFamiliarity: '',
         prompt: '',
+        personaCount: 1,
       };
       setPersonas([...personas, newPersona]);
       setSelectedPersonaId(newId);
@@ -74,6 +80,9 @@ export default function NewTestRunPage() {
         url,
         scope,
         requiresAuth,
+        executionMode,
+        llmProvider,
+        geminiKey: llmProvider === 'gemini' ? geminiKey : undefined,
         credentials: requiresAuth ? { username, password } : undefined,
         personas
       });
@@ -241,6 +250,102 @@ export default function NewTestRunPage() {
               )}
             </div>
 
+            {/* Execution Strategy Section */}
+            <div className="space-y-6 text-left pt-6 border-t border-white/5">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Zap className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-widest">Execution Strategy</span>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Choose how Specter explores your application.
+                </p>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setExecutionMode('autonomous')}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${executionMode === 'autonomous'
+                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
+                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
+                    }`}
+                >
+                  <Zap className={`h-5 w-5 ${executionMode === 'autonomous' ? 'fill-current' : ''}`} />
+                  <span className="text-sm font-bold">Autonomous</span>
+                  <span className="text-[10px] uppercase opacity-60">Hands-free testing</span>
+                </button>
+                <button
+                  onClick={() => setExecutionMode('manual')}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${executionMode === 'manual'
+                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
+                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
+                    }`}
+                >
+                  <div className="flex h-5 w-5 items-center justify-center">
+                    <div className="h-4 w-4 border-2 border-current rounded-sm" />
+                  </div>
+                  <span className="text-sm font-bold">Manual Step</span>
+                  <span className="text-[10px] uppercase opacity-60">Approve every action</span>
+                </button>
+              </div>
+            </div>
+
+            {/* LLM Engine Selection */}
+            <div className="space-y-6 text-left pt-6 border-t border-white/5">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Globe className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-widest">LLM Engine</span>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Select the underlying intelligence for this test run.
+                </p>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setLlmProvider('ollama')}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${llmProvider === 'ollama'
+                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
+                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
+                    }`}
+                >
+                  <span className="text-sm font-bold text-center">Open Source (Local)</span>
+                  <span className="text-[10px] uppercase opacity-60 text-center">Ollama / privacy-first</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLlmProvider('gemini')}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${llmProvider === 'gemini'
+                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
+                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
+                    }`}
+                >
+                  <span className="text-sm font-bold text-center">Gemini (Cloud)</span>
+                  <span className="text-[10px] uppercase opacity-60 text-center">Google 1.5 Pro</span>
+                </button>
+              </div>
+
+              {llmProvider === 'gemini' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Gemini API Key</label>
+                    <input
+                      type="password"
+                      value={geminiKey}
+                      onChange={(e) => setGeminiKey(e.target.value)}
+                      className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all shadow-inner"
+                      placeholder="Enter your Gemini API key"
+                    />
+                    <p className="text-[10px] text-slate-600 px-1">
+                      Key is encrypted and stored securely in our vault.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => setStep(2)}
               className="w-full py-6 rounded-[20px] bg-[#000] hover:bg-[#2a2a2a] text-white font-bold flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg group border border-white/5"
@@ -346,6 +451,22 @@ export default function NewTestRunPage() {
                     <option value="Medium">Medium</option>
                     <option value="High">High</option>
                   </select>
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Number of Users</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={selectedPersona.personaCount}
+                      onChange={(e) => updatePersona(selectedPersona.id, 'personaCount', parseInt(e.target.value) || 1)}
+                      className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner"
+                    />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 border border-white/5">
+                      <Users className="h-5 w-5 text-slate-400" />
+                    </div>
+                  </div>
                 </div>
                 <div className="col-span-2 space-y-3">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Domain Familiarity</label>
