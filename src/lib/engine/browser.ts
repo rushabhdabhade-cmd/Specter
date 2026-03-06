@@ -22,14 +22,17 @@ export class BrowserService {
     async observe(): Promise<Observation> {
         if (!this.page) throw new Error('Browser not initialized');
 
-        // Inject labeling script
-        await this.page.evaluate(() => {
+        // Inject labeling script and return elements info
+        const elementsInfo = await this.page.evaluate(() => {
             // Remove old labels
             document.querySelectorAll('.specter-label').forEach(el => el.remove());
 
             const interactables = document.querySelectorAll('button, a, input, select, textarea, [role="button"]');
+            const info: any[] = [];
+
             interactables.forEach((el, index) => {
-                const rect = el.getBoundingClientRect();
+                const htmlEl = el as HTMLElement;
+                const rect = htmlEl.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
                     const label = document.createElement('div');
                     label.className = 'specter-label';
@@ -47,8 +50,16 @@ export class BrowserService {
                     label.style.borderRadius = '2px';
                     label.setAttribute('data-index', index.toString());
                     document.body.appendChild(label);
+
+                    info.push({
+                        index,
+                        type: el.tagName.toLowerCase(),
+                        text: htmlEl.innerText?.trim() || (el as HTMLInputElement).value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '',
+                        role: el.getAttribute('role') || ''
+                    });
                 }
             });
+            return info;
         });
 
         const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 60 });
@@ -59,6 +70,7 @@ export class BrowserService {
             screenshot: screenshot.toString('base64'),
             url,
             title,
+            domContext: JSON.stringify(elementsInfo),
             dimensions: { width: 1280, height: 800 }
         };
     }
