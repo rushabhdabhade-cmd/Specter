@@ -1,22 +1,29 @@
 import Link from 'next/link';
 import { Plus, CheckCircle2, Play, Clock, Zap } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
 
 export default async function DashboardPage() {
+  const { userId } = await auth();
+  if (!userId) return null;
+
   const supabase = await createClient();
 
-  // Fetch Stats
+  // Fetch Stats (Filtered by userId)
   const { count: projectsCount } = await supabase
     .from('projects')
-    .select('*', { count: 'exact', head: true });
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId);
 
   const { count: runsCount } = await supabase
     .from('test_runs')
-    .select('*', { count: 'exact', head: true });
+    .select('*, projects!inner(*)', { count: 'exact', head: true })
+    .eq('projects.user_id', userId);
 
   const { count: personasCount } = await supabase
     .from('persona_sessions')
-    .select('*', { count: 'exact', head: true });
+    .select('*, test_runs!inner(*, projects!inner(*))', { count: 'exact', head: true })
+    .eq('test_runs.projects.user_id', userId);
 
   // Fetch Recent Runs with Project URL
   const { data: recentRunsRaw } = await supabase
@@ -25,10 +32,12 @@ export default async function DashboardPage() {
       id,
       status,
       created_at,
-      projects (
-        target_url
+      projects!inner (
+        target_url,
+        user_id
       )
     `)
+    .eq('projects.user_id', userId)
     .order('created_at', { ascending: false })
     .limit(5);
 

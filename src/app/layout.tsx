@@ -1,3 +1,4 @@
+import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata } from 'next';
 import './globals.css';
 
@@ -12,8 +13,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#050505] antialiased">{children}</body>
-    </html>
+    <ClerkProvider
+      appearance={{
+        baseTheme: undefined, // You can add dark theme here if you want
+        variables: { colorPrimary: '#ffffff' }
+      }}
+    >
+      <html lang="en" className="dark">
+        <body className="min-h-screen bg-[#050505] antialiased">{children}</body>
+      </html>
+    </ClerkProvider>
   );
 }
