@@ -122,8 +122,9 @@ export default async function DashboardPage() {
 
           <div className="space-y-3">
             {recentRuns.map((run) => (
-              <div
+              <Link
                 key={run.id}
+                href={`/test-runs/${run.id}`}
                 className="group flex items-center justify-between rounded-2xl border border-white/5 bg-[#0f0f0f] p-5 px-6 transition-all hover:border-white/10 hover:bg-[#121212]"
               >
                 <div className="flex items-center gap-5">
@@ -150,7 +151,7 @@ export default async function DashboardPage() {
                     {run.status}
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

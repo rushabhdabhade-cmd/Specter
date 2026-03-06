@@ -137,5 +137,5 @@ export async function createTestRun(formData: {
         }
     }
 
-    redirect('/dashboard');
+    redirect(`/test-runs/${(testRun as any).id}`);
 }
