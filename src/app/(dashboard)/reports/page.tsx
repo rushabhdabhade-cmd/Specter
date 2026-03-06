@@ -10,7 +10,7 @@ export default async function ReportsPage() {
 
     const supabase = await createClient();
 
-    // Fetch all completed test runs for the user
+    // Fetch all completed test runs for the user with their reports
     const { data: reportsRaw } = await supabase
         .from('test_runs')
         .select(`
@@ -22,21 +22,28 @@ export default async function ReportsPage() {
         name,
         target_url,
         user_id
+      ),
+      reports (
+        product_opportunity_score,
+        funnel_completion_rate
       )
     `)
         .eq('projects.user_id', userId)
         .eq('status', 'completed')
         .order('completed_at', { ascending: false });
 
-    const reports = (reportsRaw || []).map((r: any) => ({
-        id: r.id,
-        projectName: r.projects?.name || 'Untitled',
-        url: r.projects?.target_url || 'Unknown',
-        completedAt: r.completed_at ? new Date(r.completed_at).toLocaleDateString() : 'N/A',
-        // Placeholder scores for UI polish
-        usabilityScore: Math.floor(Math.random() * 20) + 80,
-        frictionLevel: ['Low', 'Minimal', 'None'][Math.floor(Math.random() * 3)],
-    }));
+    const reports = (reportsRaw || []).map((r: any) => {
+        const reportData = r.reports?.[0];
+        return {
+            id: r.id,
+            projectName: r.projects?.name || 'Untitled',
+            url: r.projects?.target_url || 'Unknown',
+            completedAt: r.completed_at ? new Date(r.completed_at).toLocaleDateString() : 'N/A',
+            usabilityScore: reportData?.product_opportunity_score || 0,
+            frictionLevel: (reportData?.product_opportunity_score || 0) > 80 ? 'Low' : 'Medium',
+            funnelRate: reportData?.funnel_completion_rate || 0,
+        };
+    });
 
     return (
         <div className="animate-in fade-in space-y-10 duration-700">

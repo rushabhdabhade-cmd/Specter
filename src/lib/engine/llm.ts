@@ -30,9 +30,13 @@ export class OpenAIProvider implements LLMProvider {
         
         You will receive a screenshot and a list of your past actions.
         The screenshot has red labels with numbers like [0], [1], etc. on interactive elements.
+        
+        DOM Context (Interactable Elements):
+        ${observation.domContext}
+        
         To click or type on an element, use the label in the selector field, e.g., "[15]".
         
-        Decide your next action based on your persona and the visual state.
+        Decide your next action based on your persona, the visual state, and the DOM context.
         If you have reached your goal, use action "complete".
         If you are stuck or can't find what you need, use action "fail".`;
 
@@ -86,6 +90,9 @@ export class GeminiProvider implements LLMProvider {
         Current URL: ${observation.url}
         Past actions: ${JSON.stringify(history)}
         
+        DOM Context (Interactable Elements):
+        ${observation.domContext}
+        
         The provided image is a screenshot of the website with red labels [ID] on interactive elements.
         To interact, specify the type and the selector (e.g., "[15]").
         
@@ -132,6 +139,9 @@ export class OllamaProvider implements LLMProvider {
         
         Current URL: ${observation.url}
         Past actions: ${JSON.stringify(history)}
+        
+        DOM Context (Interactable Elements):
+        ${observation.domContext}
         
         The provided image is a screenshot of the website with red labels [ID] on interactive elements.
         Return a valid JSON object ONLY:

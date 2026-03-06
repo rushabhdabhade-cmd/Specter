@@ -23,20 +23,31 @@ export default async function TestRunsPage() {
         name,
         target_url,
         user_id
+      ),
+      persona_sessions (
+        id,
+        status
       )
     `)
         .eq('projects.user_id', userId)
         .order('created_at', { ascending: false });
 
-    const testRuns = (testRunsRaw || []).map((run: any) => ({
-        id: run.id,
-        projectName: run.projects?.name || 'Untitled Project',
-        url: run.projects?.target_url || 'Unknown',
-        status: run.status || 'pending',
-        createdAt: new Date(run.created_at).toLocaleDateString(),
-        startedAt: run.started_at ? new Date(run.started_at).toLocaleTimeString() : null,
-        completedAt: run.completed_at ? new Date(run.completed_at).toLocaleTimeString() : null,
-    }));
+    const testRuns = (testRunsRaw || []).map((run: any) => {
+        const totalSessions = run.persona_sessions?.length || 0;
+        const completedSessions = run.persona_sessions?.filter((s: any) => s.status === 'completed').length || 0;
+
+        return {
+            id: run.id,
+            projectName: run.projects?.name || 'Untitled Project',
+            url: run.projects?.target_url || 'Unknown',
+            status: run.status || 'pending',
+            createdAt: new Date(run.created_at).toLocaleDateString(),
+            startedAt: run.started_at ? new Date(run.started_at).toLocaleTimeString() : null,
+            completedAt: run.completed_at ? new Date(run.completed_at).toLocaleTimeString() : null,
+            totalSessions,
+            completedSessions
+        };
+    });
 
     const getStatusStyle = (status: string) => {
         switch (status) {
@@ -109,8 +120,10 @@ export default async function TestRunsPage() {
 
                             <div className="flex items-center gap-6">
                                 <div className="hidden md:flex flex-col items-end gap-1 px-4 border-r border-white/5">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">ID</span>
-                                    <span className="text-[11px] font-mono text-slate-400">{run.id.slice(0, 8)}...</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Cohort</span>
+                                    <span className="text-[11px] font-mono text-slate-400">
+                                        {run.completedSessions}/{run.totalSessions} Ready
+                                    </span>
                                 </div>
                                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity border border-white/5">
                                     <ArrowUpRight className="h-4 w-4" />
@@ -119,9 +132,9 @@ export default async function TestRunsPage() {
 
                             {/* Status Indicator Glow */}
                             <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-12 rounded-r-full transition-all duration-500 ${run.status === 'completed' ? 'bg-emerald-500 shadow-[2px_0_15px_rgba(16,185,129,0.5)]' :
-                                    run.status === 'failed' ? 'bg-red-500 shadow-[2px_0_15px_rgba(239,68,68,0.5)]' :
-                                        run.status === 'running' ? 'bg-blue-500 shadow-[2px_0_15px_rgba(59,130,246,0.5)]' :
-                                            'bg-slate-700 opacity-0'
+                                run.status === 'failed' ? 'bg-red-500 shadow-[2px_0_15px_rgba(239,68,68,0.5)]' :
+                                    run.status === 'running' ? 'bg-blue-500 shadow-[2px_0_15px_rgba(59,130,246,0.5)]' :
+                                        'bg-slate-700 opacity-0'
                                 }`} />
                         </Link>
                     ))

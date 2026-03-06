@@ -14,7 +14,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   TrendingUp,
-  BrainPipe
+  Zap,
+  Brain,
+  FileText
 } from 'lucide-react';
 
 export default async function ReportPage({ params }: { params: Promise<{ testRunId: string }> }) {
@@ -24,7 +26,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
   const supabase = await createClient();
 
-  // Fetch test run with project details
+  // Fetch test run with project details and the synthesized report
   const { data: run, error: runError } = await supabase
     .from('test_runs')
     .select(`
@@ -32,14 +34,17 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
       projects (
         name,
         target_url
-      )
+      ),
+      reports (*)
     `)
     .eq('id', testRunId)
     .single();
 
   if (runError || !run) redirect('/reports');
 
-  // Fetch all session logs for this run to synthesize a basic summary
+  const report = run.reports?.[0];
+
+  // Fetch all session logs for this run to build the breakdown
   const { data: sessions } = await supabase
     .from('persona_sessions')
     .select(`
@@ -110,8 +115,8 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
       {/* Hero Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: 'UX Score', value: '84', unit: '/100', icon: TrendingUp, color: 'text-indigo-400' },
-          { label: 'Friction', value: 'Low', icon: Activity, color: 'text-emerald-400' },
+          { label: 'UX Score', value: report?.product_opportunity_score || '0', unit: '/100', icon: TrendingUp, color: 'text-indigo-400' },
+          { label: 'Friction', value: (report?.product_opportunity_score || 0) > 80 ? 'Low' : 'Medium', icon: Activity, color: 'text-emerald-400' },
           { label: 'Sessions', value: sessions?.length || '0', icon: CheckCircle2, color: 'text-blue-400' },
           { label: 'Total Steps', value: totalLogs, icon: Zap, color: 'text-amber-400' },
         ].map((stat, i) => (
@@ -127,6 +132,26 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
           </div>
         ))}
       </div>
+
+      {/* Executive Summary */}
+      {report?.executive_summary && (
+        <div className="rounded-[40px] border border-white/5 bg-[#0d0d0d] p-10 space-y-6 shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Brain className="h-32 w-32 text-indigo-500" />
+          </div>
+          <div className="relative space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                <FileText className="h-4 w-4 text-indigo-400" />
+              </div>
+              <h2 className="text-xl font-bold text-white tracking-tight">Executive Summary</h2>
+            </div>
+            <p className="text-lg text-slate-300 leading-relaxed font-medium max-w-[800px]">
+              {report.executive_summary}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Main Analysis Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

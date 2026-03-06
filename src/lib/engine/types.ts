@@ -12,6 +12,7 @@ export interface Observation {
     screenshot: string; // Base64
     url: string;
     title: string;
+    domContext?: string;
     dimensions: { width: number; height: number };
 }
 

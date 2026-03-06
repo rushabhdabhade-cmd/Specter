@@ -15,50 +15,113 @@ export interface ReportSummary {
     }[];
 }
 
-export async function generateSessionReport(sessionId: string): Promise<ReportSummary> {
+interface SessionWithDetails {
+    id: string;
+    status: string;
+    persona_configs: { name: string; goal_prompt: string };
+    session_logs: { emotion_tag: string; inner_monologue: string }[];
+}
+
+export async function generateAndStoreReport(testRunId: string) {
     const supabase = createAdminClient();
 
-    // 1. Fetch Session and Persona Info
-    const { data: session, error: sError } = await supabase
+    // 1. Fetch all sessions for this test run
+    const { data, error: sError } = await supabase
         .from('persona_sessions')
         .select(`
-            *,
-            persona_configs!inner (*)
+            id,
+            status,
+            persona_configs (name, goal_prompt),
+            session_logs (emotion_tag, inner_monologue)
         `)
-        .eq('id', sessionId)
-        .single();
+        .eq('test_run_id', testRunId);
 
-    if (sError || !session) throw new Error('Session not found');
+    const sessions = data as unknown as SessionWithDetails[];
 
-    // 2. Fetch Logs
-    const { data: logs, error: lError } = await supabase
-        .from('session_logs')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('step_number', { ascending: true });
+    if (sError || !sessions || sessions.length === 0) {
+        console.error('Failed to fetch sessions for report:', sError);
+        return;
+    }
 
-    if (lError) throw new Error('Logs not found');
+    // 2. Synthesize Metrics
+    let totalScore = 0;
+    let totalLogs = 0;
+    let completedCount = 0;
 
-    const persona = session.persona_configs;
+    sessions.forEach(session => {
+        if (session.status === 'completed') completedCount++;
 
-    // 3. Synthesize
-    // In a real scenario, we might use LLM to summarize. 
-    // For Phase 1, we'll do a basic aggregation.
+        let sessionScore = 100;
+        session.session_logs?.forEach((log) => {
+            totalLogs++;
+            if (log.emotion_tag === 'frustration') {
+                sessionScore -= 10;
+            }
+            if (log.emotion_tag === 'confusion') sessionScore -= 5;
+            if (log.emotion_tag === 'delight') sessionScore += 2;
+        });
 
-    const journey = (logs || []).map(log => ({
-        step: log.step_number,
-        action: (log.action_taken as any)?.type || 'unknown',
-        emotions: log.emotion_tag || 'neutral',
-        monologue: log.inner_monologue || ''
-    }));
+        if (session.status === 'abandoned' || session.status === 'error') {
+            sessionScore -= 30;
+        }
 
-    return {
-        personaName: persona.name,
-        goal: persona.goal_prompt,
-        status: session.status as any,
-        steps: logs?.length || 0,
-        summary: session.exit_reason || 'Autonomous agent exploration completed.',
-        keyFindings: logs?.filter(l => l.emotion_tag === 'frustration').map(l => `Frustration encountered at step ${l.step_number}: "${l.inner_monologue?.slice(0, 50)}..."`) || [],
-        journey
-    };
+        totalScore += Math.max(0, Math.min(100, sessionScore));
+    });
+
+    const averageScore = Math.round(totalScore / sessions.length);
+    const funnelRate = (completedCount / sessions.length) * 100;
+
+    // 3. Generate Summary (Simple for now, LLM later)
+    const executiveSummary = `This test run involved ${sessions.length} synthetic personas. 
+    ${completedCount} sessions reached their objectives successfully. 
+    The overall usability score is ${averageScore}/100 with a funnel completion rate of ${funnelRate.toFixed(1)}%.`;
+
+    // 4. Store in DB
+    const { error: rError } = await (supabase.from('reports') as any).upsert({
+        test_run_id: testRunId,
+        product_opportunity_score: averageScore,
+        executive_summary: executiveSummary,
+        funnel_completion_rate: funnelRate,
+        heatmap_data_url: null // Future phase
+    }, { onConflict: 'test_run_id' });
+
+    if (rError) {
+        console.error('Error storing report:', rError);
+        return;
+    }
+
+    // 5. Finalize Test Run
+    await (supabase.from('test_runs') as any).update({
+        status: 'completed',
+        completed_at: new Date().toISOString()
+    }).eq('id', testRunId);
+
+    console.log(`✅ Report generated and persisted for Test Run ${testRunId}`);
+}
+
+export async function checkAndFinalizeTestRun(testRunId: string) {
+    const supabase = createAdminClient();
+
+    // Fetch all sessions for this test run
+    const { data, error } = await supabase
+        .from('persona_sessions')
+        .select('status')
+        .eq('test_run_id', testRunId);
+
+    if (error || !data) {
+        console.error('Error checking sessions for finalization:', error);
+        return;
+    }
+
+    const sessions = data as { status: string }[];
+
+    // Check if any session is still active
+    const activeSessions = sessions.filter(s => s.status === 'running' || s.status === 'queued');
+
+    if (activeSessions.length === 0) {
+        console.log(`🎯 All sessions finished for Test Run ${testRunId}. Finalizing report...`);
+        await generateAndStoreReport(testRunId);
+    } else {
+        console.log(`⏳ ${activeSessions.length} sessions still active for Test Run ${testRunId}. Waiting...`);
+    }
 }

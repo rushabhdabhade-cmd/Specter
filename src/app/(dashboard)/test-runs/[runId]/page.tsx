@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronRight, Cpu, User, Play, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { SessionLogAccordion } from '@/components/engine/SessionLogAccordion';
 
 export default async function TestRunPage({ params }: { params: Promise<{ runId: string }> }) {
     const { runId } = await params;
@@ -93,40 +94,70 @@ export default async function TestRunPage({ params }: { params: Promise<{ runId:
                     {sessions?.map((session) => (
                         <div
                             key={session.id}
-                            className="group flex items-center justify-between rounded-2xl border border-white/5 bg-[#0f0f0f] p-6 transition-all hover:border-white/10 hover:bg-[#121212]"
+                            className="group flex flex-col rounded-2xl border border-white/5 bg-[#0f0f0f] p-6 transition-all hover:border-white/10 hover:bg-[#121212]"
                         >
-                            <div className="flex items-center gap-6">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-slate-400 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-all">
-                                    <User className="h-6 w-6" />
-                                </div>
-                                <div className="space-y-1">
-                                    <p className="text-base font-bold text-white">{session.persona_configs?.name}</p>
-                                    <p className="text-xs text-slate-500 max-w-[400px] truncate">
-                                        Goal: {session.persona_configs?.goal_prompt}
-                                    </p>
-                                </div>
-                            </div>
+                            <div className="flex items-center justify-between w-full">
+                                <div className="flex flex-col items-start gap-4 flex-1">
+                                    <div className="flex items-center gap-6 w-full">
+                                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-slate-400 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-all">
+                                            <User className="h-6 w-6" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-base font-bold text-white">{session.persona_configs?.name}</p>
+                                            <p className="text-xs text-slate-500 max-w-[400px] truncate leading-tight">
+                                                Goal: {session.persona_configs?.goal_prompt}
+                                            </p>
+                                        </div>
+                                    </div>
 
-                            <div className="flex items-center gap-8">
-                                <div className="flex flex-col items-end space-y-2">
-                                    <span className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest ${statusColors[session.status as keyof typeof statusColors]}`}>
-                                        {session.status}
-                                    </span>
-                                    {session.execution_mode === 'manual' && (
-                                        <span className="text-[9px] text-amber-500/80 font-bold uppercase tracking-tighter">
-                                            Manual Approval Required
-                                        </span>
+                                    {(session.started_at || session.exit_reason) && (
+                                        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[10px] font-medium sm:ml-18">
+                                            {session.started_at && (
+                                                <div className="flex items-center gap-1.5 text-slate-400">
+                                                    <Clock className="h-3 w-3" />
+                                                    <span>Started: {new Date(session.started_at).toLocaleTimeString()}</span>
+                                                </div>
+                                            )}
+                                            {session.completed_at && (
+                                                <div className="flex items-center gap-1.5 text-slate-400 border-l border-white/5 pl-6">
+                                                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                                    <span>Finished: {new Date(session.completed_at).toLocaleTimeString()}</span>
+                                                </div>
+                                            )}
+                                            {session.exit_reason && (
+                                                <div className={`flex items-center gap-1.5 font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 border border-white/5 ${session.status === 'completed' ? 'text-emerald-500' : 'text-amber-500'
+                                                    }`}>
+                                                    {session.exit_reason}
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
 
-                                <Link
-                                    href={`/sessions/${session.id}`}
-                                    className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-white/10 active:scale-95 border border-white/5"
-                                >
-                                    <Play className="h-3 w-3" />
-                                    View Session
-                                </Link>
+                                <div className="flex items-center gap-8">
+                                    <div className="flex flex-col items-end space-y-2">
+                                        <span className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest ${statusColors[session.status as keyof typeof statusColors]}`}>
+                                            {session.status}
+                                        </span>
+                                        {session.execution_mode === 'manual' && (
+                                            <span className="text-[9px] text-amber-500/80 font-bold uppercase tracking-tighter">
+                                                Manual Approval Required
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <Link
+                                        href={`/sessions/${session.id}`}
+                                        className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-white/10 active:scale-95 border border-white/5"
+                                    >
+                                        <Play className="h-3 w-3" />
+                                        View Session
+                                    </Link>
+                                </div>
                             </div>
+
+                            {/* Collapsible Logs Area */}
+                            <SessionLogAccordion sessionId={session.id} />
                         </div>
                     ))}
                 </div>

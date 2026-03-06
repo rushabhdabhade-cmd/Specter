@@ -3,6 +3,7 @@ import { BrowserService } from './browser';
 import { LLMService } from './llm';
 import { Action, PersonaProfile } from './types';
 import { decrypt } from '../utils/vault';
+import { checkAndFinalizeTestRun } from './reporter';
 
 export class Orchestrator {
     private browser: BrowserService;
@@ -15,6 +16,7 @@ export class Orchestrator {
 
     async runSession(sessionId: string, url: string, persona: PersonaProfile) {
         console.log(`🚀 Starting session ${sessionId} for ${persona.name} on ${url}`);
+        let testRunId: string | undefined;
 
         try {
             // 1. Fetch the actual session and project config
@@ -28,6 +30,7 @@ export class Orchestrator {
                 throw new Error(`Failed to fetch session data: ${sessionError?.message}`);
             }
 
+            testRunId = sessionData.test_run_id;
             const project = sessionData.persona_configs?.projects;
             const executionMode = sessionData?.execution_mode || 'autonomous';
 
@@ -45,19 +48,41 @@ export class Orchestrator {
 
             this.llm = new LLMService({ provider, apiKey });
 
-            await this.browser.init();
-            await this.browser.navigate(url);
-
-            const history: Action[] = [];
-            let stepNumber = 1;
-            const maxSteps = 15;
-
             // Update session status to running
             await (this.supabase.from('persona_sessions') as any).update({
                 status: 'running',
                 started_at: new Date().toISOString(),
                 is_paused: executionMode === 'manual'
             }).eq('id', sessionId);
+
+            let stepNumber = 1;
+
+            // Log: Browser Initialization
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: stepNumber++,
+                current_url: url,
+                emotion_tag: 'neutral',
+                inner_monologue: 'Initializing browser engine and preparing clean session container...',
+                action_taken: { type: 'system', info: 'browser_init' } as any
+            });
+
+            await this.browser.init();
+
+            // Log: Navigation
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: stepNumber++,
+                current_url: url,
+                emotion_tag: 'neutral',
+                inner_monologue: `Navigating to target URL: ${url}`,
+                action_taken: { type: 'system', info: 'navigate' } as any
+            });
+
+            await this.browser.navigate(url);
+
+            const history: Action[] = [];
+            const maxSteps = 15;
 
             while (stepNumber <= maxSteps) {
                 // If in manual mode, wait for the user to click "Next Step"
@@ -123,8 +148,22 @@ export class Orchestrator {
                 status: 'error',
                 exit_reason: error.message
             }).eq('id', sessionId);
+
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: 999,
+                current_url: url,
+                emotion_tag: 'frustration',
+                inner_monologue: `Critical engine failure: ${error.message}`,
+                action_taken: { type: 'error', message: error.message } as any
+            });
         } finally {
             await this.browser.close();
+            if (testRunId) {
+                await checkAndFinalizeTestRun(testRunId).catch(err => {
+                    console.error('Finalization check failed:', err);
+                });
+            }
         }
     }
 
