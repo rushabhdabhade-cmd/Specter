@@ -85,31 +85,74 @@ export class Orchestrator {
             const maxSteps = 15;
 
             while (stepNumber <= maxSteps) {
+                // Check if session has been stopped externally
+                const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
+                    .select('status')
+                    .eq('id', sessionId)
+                    .single();
+
+                if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') {
+                    console.log(`🛑 Stop signal detected for session ${sessionId}. Exiting...`);
+                    await (this.supabase.from('session_logs') as any).insert({
+                        session_id: sessionId,
+                        step_number: stepNumber,
+                        current_url: url,
+                        emotion_tag: 'neutral',
+                        inner_monologue: 'Session stop signal received. Gracefully shutting down...',
+                        action_taken: { type: 'system', info: 'manual_stop' } as any
+                    });
+                    break;
+                }
+
                 // If in manual mode, wait for the user to click "Next Step"
                 if (executionMode === 'manual') {
                     console.log(`⏸️ Session ${sessionId} paused. Waiting for step signal...`);
                     await this.waitForStepSignal(sessionId);
                 }
 
-                console.log(`📸 Observering step ${stepNumber}...`);
+                console.log(`📸 Observing step ${stepNumber}...`);
+                console.time('observation');
                 const observation = await this.browser.observe();
+                console.timeEnd('observation');
+                console.log(`Screenshot size: ${(observation.screenshot.length / 1024).toFixed(2)} KB`);
 
                 console.log(`🧠 Deciding next action...`);
+                console.time('llm_decision');
                 const action = await this.llm.decideNextAction(observation, persona, history);
+                console.timeEnd('llm_decision');
 
                 console.log(`🎭 Action: ${action.type} ${action.selector || ''} (${action.emotional_state})`);
 
                 // Log step to Supabase
-                await (this.supabase.from('session_logs') as any).insert({
+                console.log(`📡 Logging step ${stepNumber} to Supabase...`);
+                console.time('supabase_log');
+                const { error: logError } = await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
                     step_number: stepNumber,
                     current_url: observation.url,
-                    screenshot_url: null,
+                    screenshot_url: `data:image/jpeg;base64,${observation.screenshot}`,
                     emotion_tag: this.mapEmotion(action.emotional_state),
                     emotion_score: 5,
                     inner_monologue: action.reasoning,
                     action_taken: action as any
                 });
+                console.timeEnd('supabase_log');
+
+                if (logError) {
+                    console.error(`❌ Failed to log step ${stepNumber}:`, logError);
+                    // Try logging without screenshot if it failed
+                    console.log('🔄 Attempting to log without screenshot...');
+                    await (this.supabase.from('session_logs') as any).insert({
+                        session_id: sessionId,
+                        step_number: stepNumber,
+                        current_url: observation.url,
+                        screenshot_url: null,
+                        emotion_tag: this.mapEmotion(action.emotional_state),
+                        emotion_score: 5,
+                        inner_monologue: action.reasoning + " (Screenshot omitted due to logging failure)",
+                        action_taken: action as any
+                    });
+                }
 
                 if (action.type === 'complete' || action.type === 'fail') {
                     await (this.supabase.from('persona_sessions') as any).update({

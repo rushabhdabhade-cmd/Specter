@@ -105,6 +105,7 @@ export class GeminiProvider implements LLMProvider {
             "emotional_state": "string"
         }`;
 
+        console.time('gemini_generate');
         const result = await this.model.generateContent([
             prompt,
             {
@@ -114,6 +115,7 @@ export class GeminiProvider implements LLMProvider {
                 }
             }
         ]);
+        console.timeEnd('gemini_generate');
 
         const response = await result.response;
         const text = response.text();
@@ -153,21 +155,43 @@ export class OllamaProvider implements LLMProvider {
             "emotional_state": "string"
         }`;
 
-        const response = await fetch(`${this.host}/api/generate`, {
-            method: 'POST',
-            body: JSON.stringify({
-                model: this.model,
-                prompt: prompt,
-                images: [observation.screenshot],
-                stream: false,
-                format: 'json'
-            })
-        });
+        console.log(`🤖 Requesting Ollama assist at ${this.host}... (Model: ${this.model})`);
+        console.time('ollama_generate');
 
-        if (!response.ok) throw new Error(`Ollama error: ${response.statusText}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for local LLM
 
-        const data = await response.json();
-        return JSON.parse(data.response) as Action;
+        try {
+            console.log(`🧠 Starting Ollama inference (this may take a few minutes on local hardware)...`);
+            const response = await fetch(`${this.host}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: this.model,
+                    prompt: prompt,
+                    images: [observation.screenshot],
+                    stream: false,
+                    format: 'json'
+                }),
+                signal: controller.signal
+            });
+
+            console.timeEnd('ollama_generate');
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => 'No error body');
+                throw new Error(`Ollama error (${response.status}): ${errorText || response.statusText}`);
+            }
+
+            const data = await response.json();
+            return JSON.parse(data.response) as Action;
+        } catch (error: any) {
+            console.timeEnd('ollama_generate');
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') throw new Error('Ollama request timed out after 2 minutes');
+            throw error;
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 import Sidebar from '@/components/dashboard/Sidebar';
-import { UserButton } from '@clerk/nextjs';
+import UserMenu from '@/components/auth/UserMenu';
 import SyncUser from '@/components/auth/SyncUser';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -9,7 +9,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="flex-1 overflow-y-auto bg-[#0a0a0a]/30 pt-1 backdrop-blur-3xl relative">
         <SyncUser />
         <header className="absolute top-8 right-10 z-50">
-          <UserButton />
+          <UserMenu />
         </header>
         <div className="mx-auto max-w-[1280px] p-10">{children}</div>
       </main>
