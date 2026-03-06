@@ -14,7 +14,8 @@ import {
     Smile,
     Frown,
     Meh,
-    Activity
+    Activity,
+    AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -126,6 +127,17 @@ export default function SessionPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {session?.exit_reason && (
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${session.status === 'completed'
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                            : 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                            }`}>
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            <span className="text-[11px] font-bold uppercase tracking-widest leading-none pt-0.5">
+                                {session.exit_reason}
+                            </span>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/5">
                         <Target className="h-3.5 w-3.5 text-indigo-400" />
                         <span className="text-[11px] font-bold text-white uppercase tracking-widest leading-none pt-0.5">

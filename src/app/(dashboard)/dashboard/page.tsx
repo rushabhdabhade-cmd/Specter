@@ -35,6 +35,10 @@ export default async function DashboardPage() {
       projects!inner (
         target_url,
         user_id
+      ),
+      persona_sessions (
+        id,
+        status
       )
     `)
     .eq('projects.user_id', userId)
@@ -65,13 +69,20 @@ export default async function DashboardPage() {
     },
   ];
 
-  const recentRuns = (recentRunsRaw || []).map((run: any) => ({
-    id: run.id,
-    url: run.projects?.target_url || 'Unknown',
-    date: new Date(run.created_at).toLocaleDateString(),
-    status: run.status?.toUpperCase() || 'UNKNOWN',
-    statusColor: run.status === 'failed' ? 'bg-red-500' : run.status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500',
-  }));
+  const recentRuns = (recentRunsRaw || []).map((run: any) => {
+    const totalSessions = run.persona_sessions?.length || 0;
+    const completedSessions = run.persona_sessions?.filter((s: any) => s.status === 'completed').length || 0;
+
+    return {
+      id: run.id,
+      url: run.projects?.target_url || 'Unknown',
+      date: new Date(run.created_at).toLocaleDateString(),
+      status: run.status?.toUpperCase() || 'UNKNOWN',
+      statusColor: run.status === 'failed' ? 'bg-red-500' : run.status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500',
+      totalSessions,
+      completedSessions
+    };
+  });
 
   return (
     <div className="animate-in fade-in space-y-10 duration-700">
@@ -147,6 +158,12 @@ export default async function DashboardPage() {
                 </div>
 
                 <div className="flex items-center gap-4">
+                  <div className="flex flex-col items-end gap-1 px-4 border-r border-white/5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Cohort</span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {run.completedSessions}/{run.totalSessions} Ready
+                    </span>
+                  </div>
                   <div className={`rounded-full border border-white/5 bg-white/5 px-3 py-1 text-[10px] font-bold tracking-tighter text-slate-300`}>
                     {run.status}
                   </div>

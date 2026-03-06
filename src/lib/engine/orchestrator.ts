@@ -3,6 +3,7 @@ import { BrowserService } from './browser';
 import { LLMService } from './llm';
 import { Action, PersonaProfile } from './types';
 import { decrypt } from '../utils/vault';
+import { checkAndFinalizeTestRun } from './reporter';
 
 export class Orchestrator {
     private browser: BrowserService;
@@ -15,6 +16,7 @@ export class Orchestrator {
 
     async runSession(sessionId: string, url: string, persona: PersonaProfile) {
         console.log(`🚀 Starting session ${sessionId} for ${persona.name} on ${url}`);
+        let testRunId: string | undefined;
 
         try {
             // 1. Fetch the actual session and project config
@@ -28,6 +30,7 @@ export class Orchestrator {
                 throw new Error(`Failed to fetch session data: ${sessionError?.message}`);
             }
 
+            testRunId = sessionData.test_run_id;
             const project = sessionData.persona_configs?.projects;
             const executionMode = sessionData?.execution_mode || 'autonomous';
 
@@ -125,6 +128,11 @@ export class Orchestrator {
             }).eq('id', sessionId);
         } finally {
             await this.browser.close();
+            if (testRunId) {
+                await checkAndFinalizeTestRun(testRunId).catch(err => {
+                    console.error('Finalization check failed:', err);
+                });
+            }
         }
     }
 

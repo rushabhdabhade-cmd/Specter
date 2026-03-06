@@ -95,16 +95,41 @@ export default async function TestRunPage({ params }: { params: Promise<{ runId:
                             key={session.id}
                             className="group flex items-center justify-between rounded-2xl border border-white/5 bg-[#0f0f0f] p-6 transition-all hover:border-white/10 hover:bg-[#121212]"
                         >
-                            <div className="flex items-center gap-6">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-slate-400 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-all">
-                                    <User className="h-6 w-6" />
+                            <div className="flex flex-col items-start gap-4 flex-1">
+                                <div className="flex items-center gap-6 w-full">
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-slate-400 group-hover:bg-indigo-500/10 group-hover:text-indigo-400 transition-all">
+                                        <User className="h-6 w-6" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-base font-bold text-white">{session.persona_configs?.name}</p>
+                                        <p className="text-xs text-slate-500 max-w-[400px] truncate leading-tight">
+                                            Goal: {session.persona_configs?.goal_prompt}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <p className="text-base font-bold text-white">{session.persona_configs?.name}</p>
-                                    <p className="text-xs text-slate-500 max-w-[400px] truncate">
-                                        Goal: {session.persona_configs?.goal_prompt}
-                                    </p>
-                                </div>
+
+                                {(session.started_at || session.exit_reason) && (
+                                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[10px] font-medium sm:ml-18">
+                                        {session.started_at && (
+                                            <div className="flex items-center gap-1.5 text-slate-400">
+                                                <Clock className="h-3 w-3" />
+                                                <span>Started: {new Date(session.started_at).toLocaleTimeString()}</span>
+                                            </div>
+                                        )}
+                                        {session.completed_at && (
+                                            <div className="flex items-center gap-1.5 text-slate-400 border-l border-white/5 pl-6">
+                                                <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                                                <span>Finished: {new Date(session.completed_at).toLocaleTimeString()}</span>
+                                            </div>
+                                        )}
+                                        {session.exit_reason && (
+                                            <div className={`flex items-center gap-1.5 font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 border border-white/5 ${session.status === 'completed' ? 'text-emerald-500' : 'text-amber-500'
+                                                }`}>
+                                                {session.exit_reason}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex items-center gap-8">
