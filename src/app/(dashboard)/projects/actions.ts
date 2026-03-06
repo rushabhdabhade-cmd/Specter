@@ -5,12 +5,15 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
 import { Orchestrator } from '@/lib/engine/orchestrator';
+import { encrypt } from '@/lib/utils/vault';
 
 export async function createTestRun(formData: {
     url: string;
     scope: string;
     requiresAuth: boolean;
     executionMode: 'autonomous' | 'manual';
+    llmProvider: 'ollama' | 'gemini';
+    geminiKey?: string;
     credentials?: {
         username?: string;
         password?: string;
@@ -50,6 +53,9 @@ export async function createTestRun(formData: {
             target_url: formData.url,
             requires_auth: formData.requiresAuth,
             auth_credentials: formData.credentials ? JSON.stringify(formData.credentials) : null,
+            llm_provider: formData.llmProvider,
+            encrypted_llm_key: formData.geminiKey ? encrypt(formData.geminiKey) : null,
+            save_llm_key: !!formData.geminiKey
         }, { onConflict: 'user_id,target_url' })
         .select()
         .single();

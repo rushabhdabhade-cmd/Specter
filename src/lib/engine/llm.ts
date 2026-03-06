@@ -65,8 +65,9 @@ export class GeminiProvider implements LLMProvider {
     private genAI: GoogleGenerativeAI;
     private model: any;
 
-    constructor() {
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+    constructor(apiKey?: string) {
+        const key = apiKey || process.env.GEMINI_API_KEY || '';
+        this.genAI = new GoogleGenerativeAI(key);
         this.model = this.genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
             generationConfig: {
@@ -113,20 +114,66 @@ export class GeminiProvider implements LLMProvider {
     }
 }
 
+export class OllamaProvider implements LLMProvider {
+    private host: string;
+    private model: string;
+
+    constructor() {
+        this.host = process.env.OLLAMA_HOST || 'http://localhost:11434';
+        this.model = process.env.OLLAMA_MODEL || 'llava';
+    }
+
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
+        const prompt = `You are a synthetic user testing a website. 
+        Your persona:
+        Name: ${persona.name}
+        Goal: ${persona.goal_prompt}
+        Tech Literacy: ${persona.tech_literacy}
+        
+        Current URL: ${observation.url}
+        Past actions: ${JSON.stringify(history)}
+        
+        The provided image is a screenshot of the website with red labels [ID] on interactive elements.
+        Return a valid JSON object ONLY:
+        {
+            "type": "click" | "type" | "scroll" | "wait" | "complete" | "fail",
+            "selector": "string (optional)",
+            "text": "string (optional)",
+            "reasoning": "string",
+            "emotional_state": "string"
+        }`;
+
+        const response = await fetch(`${this.host}/api/generate`, {
+            method: 'POST',
+            body: JSON.stringify({
+                model: this.model,
+                prompt: prompt,
+                images: [observation.screenshot],
+                stream: false,
+                format: 'json'
+            })
+        });
+
+        if (!response.ok) throw new Error(`Ollama error: ${response.statusText}`);
+
+        const data = await response.json();
+        return JSON.parse(data.response) as Action;
+    }
+}
+
 // Factory or switcher logic
 export class LLMService {
     private provider: LLMProvider;
 
-    constructor(providerType: 'openai' | 'ollama' | 'gemini' = 'gemini') {
-        // Preference logic: Gemeni as baseline cloud, Ollama as preferred local
+    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai', apiKey?: string }) {
+        const providerType = config?.provider || 'ollama';
+
         if (providerType === 'gemini') {
-            this.provider = new GeminiProvider();
+            this.provider = new GeminiProvider(config?.apiKey);
         } else if (providerType === 'openai') {
-            this.provider = new OpenAIProvider();
-        } else if (providerType === 'ollama') {
-            throw new Error(`Local Ollama provider will be implemented in the next branch.`);
+            this.provider = new OpenAIProvider(); // We'll update this if needed later
         } else {
-            throw new Error(`Provider ${providerType} not supported.`);
+            this.provider = new OllamaProvider();
         }
     }
 

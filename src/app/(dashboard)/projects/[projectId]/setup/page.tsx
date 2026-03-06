@@ -28,6 +28,8 @@ export default function NewTestRunPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [executionMode, setExecutionMode] = useState<'autonomous' | 'manual'>('autonomous');
+  const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('ollama');
+  const [geminiKey, setGeminiKey] = useState('');
 
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,8 @@ export default function NewTestRunPage() {
         scope,
         requiresAuth,
         executionMode,
+        llmProvider,
+        geminiKey: llmProvider === 'gemini' ? geminiKey : undefined,
         credentials: requiresAuth ? { username, password } : undefined,
         personas
       });
@@ -284,6 +288,62 @@ export default function NewTestRunPage() {
                   <span className="text-[10px] uppercase opacity-60">Approve every action</span>
                 </button>
               </div>
+            </div>
+
+            {/* LLM Engine Selection */}
+            <div className="space-y-6 text-left pt-6 border-t border-white/5">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Globe className="h-4 w-4" />
+                  <span className="text-xs font-bold uppercase tracking-widest">LLM Engine</span>
+                </div>
+                <p className="text-sm text-slate-500">
+                  Select the underlying intelligence for this test run.
+                </p>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setLlmProvider('ollama')}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${llmProvider === 'ollama'
+                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
+                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
+                    }`}
+                >
+                  <span className="text-sm font-bold text-center">Open Source (Local)</span>
+                  <span className="text-[10px] uppercase opacity-60 text-center">Ollama / privacy-first</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLlmProvider('gemini')}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${llmProvider === 'gemini'
+                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
+                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
+                    }`}
+                >
+                  <span className="text-sm font-bold text-center">Gemini (Cloud)</span>
+                  <span className="text-[10px] uppercase opacity-60 text-center">Google 1.5 Pro</span>
+                </button>
+              </div>
+
+              {llmProvider === 'gemini' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Gemini API Key</label>
+                    <input
+                      type="password"
+                      value={geminiKey}
+                      onChange={(e) => setGeminiKey(e.target.value)}
+                      className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all shadow-inner"
+                      placeholder="Enter your Gemini API key"
+                    />
+                    <p className="text-[10px] text-slate-600 px-1">
+                      Key is encrypted and stored securely in our vault.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <button

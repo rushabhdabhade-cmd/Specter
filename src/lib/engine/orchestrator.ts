@@ -2,24 +2,48 @@ import { createAdminClient } from '../supabase/admin';
 import { BrowserService } from './browser';
 import { LLMService } from './llm';
 import { Action, PersonaProfile } from './types';
+import { decrypt } from '../utils/vault';
 
 export class Orchestrator {
     private browser: BrowserService;
-    private llm: LLMService;
+    private llm!: LLMService;
     private supabase = createAdminClient();
 
     constructor() {
         this.browser = new BrowserService();
-        this.llm = new LLMService();
     }
 
     async runSession(sessionId: string, url: string, persona: PersonaProfile) {
         console.log(`🚀 Starting session ${sessionId} for ${persona.name} on ${url}`);
 
         try {
-            // 1. Fetch the actual session to check configuration
-            const { data: sessionData } = await (this.supabase.from('persona_sessions') as any).select('*').eq('id', sessionId).single();
+            // 1. Fetch the actual session and project config
+            const { data: sessionData, error: sessionError } = await (this.supabase
+                .from('persona_sessions') as any)
+                .select('*, persona_configs(*, projects(*))')
+                .eq('id', sessionId)
+                .single();
+
+            if (sessionError || !sessionData) {
+                throw new Error(`Failed to fetch session data: ${sessionError?.message}`);
+            }
+
+            const project = sessionData.persona_configs?.projects;
             const executionMode = sessionData?.execution_mode || 'autonomous';
+
+            // 2. Initialize LLM Service with project preference
+            const provider = project?.llm_provider || 'ollama';
+            let apiKey: string | undefined;
+
+            if (project?.encrypted_llm_key) {
+                try {
+                    apiKey = decrypt(project.encrypted_llm_key);
+                } catch (e) {
+                    console.error('Failed to decrypt LLM key:', e);
+                }
+            }
+
+            this.llm = new LLMService({ provider, apiKey });
 
             await this.browser.init();
             await this.browser.navigate(url);
