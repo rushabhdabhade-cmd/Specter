@@ -48,19 +48,41 @@ export class Orchestrator {
 
             this.llm = new LLMService({ provider, apiKey });
 
-            await this.browser.init();
-            await this.browser.navigate(url);
-
-            const history: Action[] = [];
-            let stepNumber = 1;
-            const maxSteps = 15;
-
             // Update session status to running
             await (this.supabase.from('persona_sessions') as any).update({
                 status: 'running',
                 started_at: new Date().toISOString(),
                 is_paused: executionMode === 'manual'
             }).eq('id', sessionId);
+
+            let stepNumber = 1;
+
+            // Log: Browser Initialization
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: stepNumber++,
+                current_url: url,
+                emotion_tag: 'neutral',
+                inner_monologue: 'Initializing browser engine and preparing clean session container...',
+                action_taken: { type: 'system', info: 'browser_init' } as any
+            });
+
+            await this.browser.init();
+
+            // Log: Navigation
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: stepNumber++,
+                current_url: url,
+                emotion_tag: 'neutral',
+                inner_monologue: `Navigating to target URL: ${url}`,
+                action_taken: { type: 'system', info: 'navigate' } as any
+            });
+
+            await this.browser.navigate(url);
+
+            const history: Action[] = [];
+            const maxSteps = 15;
 
             while (stepNumber <= maxSteps) {
                 // If in manual mode, wait for the user to click "Next Step"
@@ -126,6 +148,15 @@ export class Orchestrator {
                 status: 'error',
                 exit_reason: error.message
             }).eq('id', sessionId);
+
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: 999,
+                current_url: url,
+                emotion_tag: 'frustration',
+                inner_monologue: `Critical engine failure: ${error.message}`,
+                action_taken: { type: 'error', message: error.message } as any
+            });
         } finally {
             await this.browser.close();
             if (testRunId) {
