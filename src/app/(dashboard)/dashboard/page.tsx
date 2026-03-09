@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Plus, CheckCircle2, Play, Clock, Zap } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { auth } from '@clerk/nextjs/server';
+import { LiveDashboardStats } from '@/components/engine/LiveDashboardStats';
 
 export default async function DashboardPage() {
   const { userId } = await auth();
@@ -104,28 +105,14 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-6 md:grid-cols-3">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="group relative overflow-hidden rounded-2xl border border-white/5 bg-[#0f0f0f] p-8 transition-all hover:border-white/10 hover:shadow-2xl hover:shadow-white/[0.02]"
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-400 transition-colors group-hover:text-slate-300">
-                {stat.label}
-              </span>
-              <stat.icon className={`h-5 w-5 ${stat.color} opacity-80`} />
-            </div>
-            <div className="text-4xl font-bold tracking-tight text-white">{stat.value}</div>
-
-            {/* Subtle Gradient Glow */}
-            <div
-              className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${stat.bgColor} opacity-0 blur-[50px] transition-opacity duration-700 group-hover:opacity-100`}
-            />
-          </div>
-        ))}
-      </div>
-
+      <LiveDashboardStats
+        initialStats={{
+          projectsCount: projectsCount || 0,
+          runsCount: runsCount || 0,
+          personasCount: personasCount || 0
+        }}
+        userId={userId}
+      />
       {/* Recent Activity */}
       {recentRuns.length > 0 && (
         <div className="space-y-6">

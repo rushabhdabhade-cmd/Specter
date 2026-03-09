@@ -16,29 +16,51 @@ export class BrowserService {
 
     async navigate(url: string) {
         if (!this.page) throw new Error('Browser not initialized');
-        await this.page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        try {
+            // Wait for main 'load' state (fast and reliable)
+            await this.page.goto(url, { waitUntil: 'load', timeout: 30000 });
+
+            // Attempt to wait for network idle (non-blocking if it takes too long)
+            await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
+                console.log('Network idle not reached during initial navigation, proceeding with load state.');
+            });
+        } catch (err: any) {
+            console.error(`Navigation to ${url} timed out or failed:`, err.message);
+            // If we actually reached the URL but just timed out, we can still proceed
+            if (this.page.url() !== 'about:blank') {
+                console.log('Page is not blank, proceeding despite navigation error...');
+            } else {
+                throw err;
+            }
+        }
     }
 
-    async observe(): Promise<Observation> {
+    async observe(blacklist: string[] = []): Promise<Observation> {
         if (!this.page) throw new Error('Browser not initialized');
 
         // Inject labeling script and return elements info
-        const elementsInfo = await this.page.evaluate(() => {
+        const elementsInfo = await this.page.evaluate((blacklist: string[]) => {
             // Remove old labels
             document.querySelectorAll('.specter-label').forEach(el => el.remove());
 
             const interactables = document.querySelectorAll('button, a, input, select, textarea, [role="button"]');
             const info: any[] = [];
 
-            // Limit to top 100 interactables to prevent payload bloat
+            // Limit to top 50 interactables to prevent payload bloat
             interactables.forEach((el, index) => {
-                if (index > 100) return;
+                if (index > 50) return;
+
+                const selector = `[${index}]`;
+                if (blacklist.includes(selector)) {
+                    return;
+                }
+
                 const htmlEl = el as HTMLElement;
                 const rect = htmlEl.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
                     const label = document.createElement('div');
                     label.className = 'specter-label';
-                    label.innerText = `[${index}]`;
+                    label.innerText = selector;
                     label.style.position = 'absolute';
                     label.style.top = `${rect.top + window.scrollY}px`;
                     label.style.left = `${rect.left + window.scrollX}px`;
@@ -56,13 +78,13 @@ export class BrowserService {
                     info.push({
                         index,
                         type: el.tagName.toLowerCase(),
-                        text: (htmlEl.innerText?.trim() || (el as HTMLInputElement).value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').slice(0, 100),
+                        text: (htmlEl.innerText?.trim() || (el as HTMLInputElement).value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').slice(0, 50),
                         role: el.getAttribute('role') || ''
                     });
                 }
             });
             return info;
-        }).catch(err => {
+        }, blacklist).catch(err => {
             console.warn('DOM labeling failed or timed out:', err);
             return [];
         });
@@ -118,17 +140,17 @@ export class BrowserService {
                     }
                     break;
                 case 'scroll':
-                    await this.page.evaluate(() => window.scrollBy(0, 500));
+                    await this.page.evaluate(() => window.scrollBy(0, 800));
                     break;
                 case 'wait':
-                    await this.page.waitForTimeout(2000);
+                    await this.page.waitForTimeout(1000);
                     break;
             }
         } catch (err) {
             console.warn(`Action ${action.type} failed or timed out, continuing...`, err);
         }
 
-        await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+        await this.page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {
             console.log('Network idle timed out, proceeding anyway...');
         });
     }
