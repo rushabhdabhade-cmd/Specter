@@ -15,10 +15,36 @@ export function SessionLogAccordion({ sessionId }: SessionLogAccordionProps) {
     const supabase = createClient();
 
     useEffect(() => {
-        if (isOpen && logs.length === 0) {
+        if (isOpen) {
             fetchLogs();
+
+            // Subscribe to new logs
+            const channel = supabase
+                .channel(`accordion_logs_${sessionId}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: 'INSERT',
+                        schema: 'public',
+                        table: 'session_logs',
+                        filter: `session_id=eq.${sessionId}`
+                    },
+                    (payload) => {
+                        setLogs((prev) => {
+                            // Prevent duplicates
+                            if (prev.some(log => log.id === payload.new.id)) return prev;
+                            const newLogs = [...prev, payload.new];
+                            return newLogs.sort((a, b) => a.step_number - b.step_number);
+                        });
+                    }
+                )
+                .subscribe();
+
+            return () => {
+                supabase.removeChannel(channel);
+            };
         }
-    }, [isOpen]);
+    }, [isOpen, sessionId, supabase]);
 
     async function fetchLogs() {
         setLoading(true);
@@ -76,6 +102,20 @@ export function SessionLogAccordion({ sessionId }: SessionLogAccordionProps) {
                                     <p className="text-[11px] text-slate-400 font-medium leading-relaxed">
                                         {log.inner_monologue}
                                     </p>
+                                    {(log.action_taken as any)?.ux_feedback && (
+                                        <p className="text-[10px] text-indigo-400/80 italic border-l-2 border-indigo-500/20 pl-2 py-1 bg-indigo-500/5 rounded-r-lg">
+                                            "{(log.action_taken as any).ux_feedback}"
+                                        </p>
+                                    )}
+                                    {(log.action_taken as any)?.possible_paths && (log.action_taken as any).possible_paths.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                            {(log.action_taken as any).possible_paths.map((p: string, i: number) => (
+                                                <span key={i} className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-slate-500 font-mono">
+                                                    {p}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                     {(log.action_taken as any)?.selector && (
                                         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/50 border border-white/5 w-fit">
                                             <span className="text-[8px] font-bold text-indigo-500 uppercase">Target</span>

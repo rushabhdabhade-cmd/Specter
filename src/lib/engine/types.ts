@@ -6,6 +6,9 @@ export interface Action {
     text?: string;
     reasoning: string;
     emotional_state: string;
+    current_url?: string; // The URL where this action was taken
+    ux_feedback?: string; // Qualitative feedback about the current screen
+    possible_paths?: string[]; // Potential navigational paths identified in this step
 }
 
 export interface Observation {

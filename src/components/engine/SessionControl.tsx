@@ -7,10 +7,11 @@ interface SessionControlProps {
     sessionId: string;
     isPaused: boolean;
     status: string;
+    liveStatus?: string;
     onStep?: () => void;
 }
 
-export function SessionControl({ sessionId, isPaused, status, onStep }: SessionControlProps) {
+export function SessionControl({ sessionId, isPaused, status, liveStatus, onStep }: SessionControlProps) {
     const [loading, setLoading] = useState(false);
 
     const handleNextStep = async () => {
@@ -79,10 +80,15 @@ export function SessionControl({ sessionId, isPaused, status, onStep }: SessionC
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center py-6 border border-dashed border-white/5 rounded-2xl bg-white/[0.02] space-y-3">
-                        <Loader2 className="h-6 w-6 text-slate-600 animate-spin" />
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-600">
-                            {status === 'queued' ? 'Waiting in queue...' : 'AI is thinking...'}
-                        </p>
+                        <Loader2 className="h-6 w-6 text-indigo-500 animate-spin" />
+                        <div className="text-center px-4">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-300 animate-pulse mb-1">
+                                {liveStatus || (status === 'queued' ? 'Waiting in queue...' : 'AI is thinking...')}
+                            </p>
+                            <p className="text-[9px] text-slate-600 font-medium">
+                                Real-time intent stream enabled.
+                            </p>
+                        </div>
                     </div>
                 )}
             </div>
