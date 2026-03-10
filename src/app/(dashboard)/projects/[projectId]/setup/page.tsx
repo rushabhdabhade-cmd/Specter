@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Users, Loader2 } from 'lucide-react';
+import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Users, Loader2, Sparkles, X, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { createTestRun } from '../../actions';
+import { SAMPLE_PERSONAS } from '@/lib/constants/personas';
+import type { Persona as SamplePersona } from '@/lib/constants/personas';
 
 type Step = 1 | 2 | 3;
 
@@ -29,6 +31,7 @@ export default function NewTestRunPage() {
   const [password, setPassword] = useState('');
   const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('ollama');
   const [geminiKey, setGeminiKey] = useState('');
+  const [showLibrary, setShowLibrary] = useState(false);
 
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +71,25 @@ export default function NewTestRunPage() {
       };
       setPersonas([...personas, newPersona]);
       setSelectedPersonaId(newId);
+    }
+  };
+
+  const addFromLibrary = (sample: SamplePersona) => {
+    if (personas.length < 5) {
+      const newId = Math.max(...personas.map((p) => p.id), 0) + 1;
+      const newPersona: Persona = {
+        id: newId,
+        name: sample.name,
+        geolocation: sample.geolocation,
+        ageRange: sample.ageRange,
+        techLiteracy: sample.techLiteracy,
+        domainFamiliarity: sample.domainFamiliarity,
+        prompt: sample.prompt,
+        personaCount: 1,
+      };
+      setPersonas([...personas, newPersona]);
+      setSelectedPersonaId(newId);
+      setShowLibrary(false);
     }
   };
 
@@ -373,15 +395,25 @@ export default function NewTestRunPage() {
                   </button>
                 ))}
 
-                {personas.length < 5 && (
+                <div className="pt-2 space-y-2">
                   <button
-                    onClick={addPersona}
-                    className="w-full p-4 rounded-xl border border-dashed border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300 flex flex-col items-center justify-center gap-2 group transition-all"
+                    onClick={() => setShowLibrary(true)}
+                    className="w-full p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20 flex flex-col items-center justify-center gap-2 group transition-all"
                   >
-                    <Plus className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                    <span className="text-[10px] font-bold uppercase tracking-tighter">Add Persona</span>
+                    <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Browse Library</span>
                   </button>
-                )}
+
+                  {personas.length < 5 && (
+                    <button
+                      onClick={addPersona}
+                      className="w-full p-4 rounded-xl border border-dashed border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300 flex flex-col items-center justify-center gap-2 group transition-all"
+                    >
+                      <Plus className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] font-bold uppercase tracking-tighter">Add Persona</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -510,6 +542,84 @@ export default function NewTestRunPage() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Persona Library Modal */}
+      {showLibrary && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="relative w-full max-w-4xl max-h-[85vh] bg-[#0a0a0a] border border-white/10 rounded-[40px] shadow-2xl overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="p-8 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-indigo-500/5 to-transparent">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-indigo-400" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Persona Library</h2>
+                  <p className="text-xs text-slate-500 font-medium">Ready-to-use personas with distinct behaviors & expertise.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLibrary(false)}
+                className="h-10 w-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-500 hover:text-white transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {SAMPLE_PERSONAS.map((sample) => (
+                  <div
+                    key={sample.id}
+                    className="group p-6 rounded-[28px] border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-indigo-500/30 transition-all cursor-pointer relative"
+                    onClick={() => addFromLibrary(sample)}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{sample.name}</h3>
+                        <p className="text-[10px] text-slate-500 font-medium">{sample.description}</p>
+                      </div>
+                      <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border
+                        ${sample.techLiteracy === 'High' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                          sample.techLiteracy === 'Low' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                            'bg-blue-500/10 border-blue-500/20 text-blue-500'}`}>
+                        {sample.techLiteracy} Literacy
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Globe className="h-3 w-3 text-slate-600" />
+                        <span className="text-[10px] text-slate-400 font-medium">{sample.geolocation}</span>
+                        <div className="h-1 w-1 rounded-full bg-slate-700" />
+                        <span className="text-[10px] text-slate-400 font-medium">{sample.ageRange} years</span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-[11px] text-slate-300 leading-relaxed italic">
+                        &ldquo;{sample.prompt.slice(0, 120)}...&rdquo;
+                      </div>
+                    </div>
+
+                    <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                      <div className="h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <Plus className="h-4 w-4 text-white" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-white/5 bg-[#080808] text-center">
+              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+                Select a persona to add it to your testing cohort
+              </p>
             </div>
           </div>
         </div>
