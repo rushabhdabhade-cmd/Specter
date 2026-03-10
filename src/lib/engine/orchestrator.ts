@@ -1,9 +1,11 @@
 import { createAdminClient } from '../supabase/admin';
 import { BrowserService } from './browser';
 import { LLMService } from './llm';
-import { Action, PersonaProfile } from './types';
+import { PersonaProfile, Action, Observation } from './types';
+import { generateAndStoreReport, checkAndFinalizeTestRun } from './reporter';
+import * as fs from 'fs';
+import * as path from 'path';
 import { decrypt } from '../utils/vault';
-import { checkAndFinalizeTestRun } from './reporter';
 
 export class Orchestrator {
     private browser: BrowserService;
@@ -19,7 +21,6 @@ export class Orchestrator {
         let testRunId: string | undefined;
 
         try {
-            // 1. Fetch the actual session and project config
             const { data: sessionData, error: sessionError } = await (this.supabase
                 .from('persona_sessions') as any)
                 .select('*, persona_configs(*, projects(*))')
@@ -34,7 +35,6 @@ export class Orchestrator {
             const project = sessionData.persona_configs?.projects;
             const executionMode = sessionData?.execution_mode || 'autonomous';
 
-            // 2. Initialize LLM Service with project preference
             const provider = project?.llm_provider || 'ollama';
             let apiKey: string | undefined;
 
@@ -48,7 +48,6 @@ export class Orchestrator {
 
             this.llm = new LLMService({ provider, apiKey });
 
-            // Speed up: Update session status to running
             this.updateLiveStatus(sessionId, 'Initializing engine & preparing browser container...');
             await (this.supabase.from('persona_sessions') as any).update({
                 status: 'running',
@@ -58,20 +57,19 @@ export class Orchestrator {
 
             let stepNumber = 1;
 
-            // Log: Browser Initialization
             await (this.supabase.from('session_logs') as any).insert({
                 session_id: sessionId,
                 step_number: stepNumber++,
                 current_url: url,
                 emotion_tag: 'neutral',
-                inner_monologue: 'Initializing browser engine and preparing clean session container...',
+                inner_monologue: 'Initializing browser engine...',
                 action_taken: { type: 'system', info: 'browser_init' } as any
             });
 
             this.updateLiveStatus(sessionId, 'Starting Chromium instance...');
             await this.browser.init();
 
-            // Log: Navigation
+            this.updateLiveStatus(sessionId, `Navigating to ${url}...`);
             await (this.supabase.from('session_logs') as any).insert({
                 session_id: sessionId,
                 step_number: stepNumber++,
@@ -80,19 +78,21 @@ export class Orchestrator {
                 inner_monologue: `Navigating to target URL: ${url}`,
                 action_taken: { type: 'system', info: 'navigate' } as any
             });
-
-            this.updateLiveStatus(sessionId, `Navigating to ${url}...`);
             await this.browser.navigate(url);
 
+            // V10: Deep Discovery Phase (Scan and Store)
+            console.log('🔍 Starting Deep Discovery Triple-Scan...');
+            await this.discoverPageContent(sessionId, stepNumber);
+            stepNumber += 3; // Triple scan takes 3 steps
+
             const history: Action[] = [];
-            const maxSteps = 15;
+            const maxSteps = 20; // Increased max steps to allow for discovery
             let consecutiveSameActions = 0;
             let lastActionKey = '';
             const selectorAttempts = new Map<string, number>();
             const blacklist = new Set<string>();
 
             while (stepNumber <= maxSteps) {
-                // Check if session has been stopped externally
                 const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
                     .select('status')
                     .eq('id', sessionId)
@@ -104,43 +104,36 @@ export class Orchestrator {
                     await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
-                        current_url: url, // Use the initial url here
+                        current_url: url,
                         emotion_tag: 'neutral',
-                        inner_monologue: 'Session stop signal received. Gracefully shutting down...',
+                        inner_monologue: 'Session stop signal received. Generating report...',
                         action_taken: { type: 'system', info: 'manual_stop' } as any
                     });
+
+                    if (testRunId) {
+                        await generateAndStoreReport(testRunId).catch(e => console.error('Final report failed:', e));
+                    }
                     break;
                 }
 
-                // If in manual mode, write/wait for step signal...
                 if (executionMode === 'manual') {
-                    this.updateLiveStatus(sessionId, 'Waiting for your command (Manual Mode)...');
-                    console.log(`⏸️ Session ${sessionId} paused. Waiting for step signal...`);
+                    this.updateLiveStatus(sessionId, 'Waiting for command (Manual Mode)...');
                     await this.waitForStepSignal(sessionId);
                 }
 
-                // Perception Phase
-                this.updateLiveStatus(sessionId, `Step ${stepNumber}: Step 1 - Capturing Visual State...`);
-                console.log(`📸 Observing step ${stepNumber}...`);
+                this.updateLiveStatus(sessionId, `Step ${stepNumber}: Observing Visual State...`);
                 const observation = await this.browser.observe(Array.from(blacklist));
-                // Cognition Phase
-                this.updateLiveStatus(sessionId, `Step ${stepNumber}: Step 2 - Multi-Model Consensus Analysis...`);
-                console.log(`🧠 Deciding next action (Multi-Model)...`);
+                const localScreenshotPath = await this.saveScreenshotLocally(sessionId, stepNumber, observation.screenshot);
 
-                // Filter DOM Context to remove blacklisted items
+                this.updateLiveStatus(sessionId, `Step ${stepNumber}: Deciding next move...`);
+
                 let filteredDomContext = observation.domContext || '[]';
                 if (blacklist.size > 0 && observation.domContext) {
                     try {
                         const elements = JSON.parse(observation.domContext);
-                        const filtered = elements.filter((el: any) => {
-                            const selector = `[${el.index}]`;
-                            return !blacklist.has(selector);
-                        });
+                        const filtered = elements.filter((el: any) => !blacklist.has(`[${el.index}]`));
                         filteredDomContext = JSON.stringify(filtered);
-                        console.log(`🛡️ Blacklist active: Hiding ${elements.length - filtered.length} elements from AI.`);
-                    } catch (e) {
-                        console.error('Failed to filter blacklisted elements:', e);
-                    }
+                    } catch (e) { }
                 }
 
                 const filteredObservation = { ...observation, domContext: filteredDomContext };
@@ -157,77 +150,60 @@ export class Orchestrator {
                     lastActionKey = currentActionKey;
                 }
 
-                // Cycle Detection (V8 Enhancement)
                 const actionHistory = history.map(h => h.type === 'wait' || h.type === 'scroll' ? h.type : `${h.type}-${h.selector || ''}`);
                 const isCycle = actionHistory.length >= 4 &&
                     actionHistory[actionHistory.length - 1] === actionHistory[actionHistory.length - 3] &&
                     actionHistory[actionHistory.length - 2] === currentActionKey;
 
-                const loopThreshold = action.type === 'wait' ? 2 : 3;
-                if (consecutiveSameActions >= loopThreshold || isCycle) {
-                    const reason = isCycle ? 'Cycle detected (A-B-A-B)' : 'Repetitive action detected';
-                    this.updateLiveStatus(sessionId, `Engine detected loop (${reason})! Forcing recovery scroll...`);
-                    console.log(`🔄 Loop detected (${reason}) for session ${sessionId}! Forcing manual recovery action...`);
+                if (consecutiveSameActions >= (action.type === 'wait' ? 2 : 3) || isCycle) {
+                    this.updateLiveStatus(sessionId, `Engine detected loop! Forcing recovery...`);
                     action = {
                         type: 'scroll',
-                        reasoning: `I've detected a ${isCycle ? 'repetitive cycle' : 'loop'}. I'll scroll to see if new context appears and break the pattern.`,
+                        reasoning: `I've detected a loop. I'll scroll to break the pattern.`,
                         emotional_state: 'frustrated'
                     };
-                    consecutiveSameActions = 0; // reset
-                    (this.supabase.from('session_logs') as any).insert({
+                    consecutiveSameActions = 0;
+                    await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
                         current_url: observation.url,
                         emotion_tag: 'frustration',
-                        inner_monologue: 'Loop detected. Forcing a scroll to break cycle.',
+                        inner_monologue: 'Loop detected. Forcing a scroll.',
                         action_taken: { type: 'system', info: 'loop_breaker_scroll' } as any
-                    }).then(() => { });
+                    });
+                    stepNumber++;
                 }
 
-                console.log(`🎭 Action: ${action.type} ${action.selector || ''} (${action.emotional_state})`);
-                this.updateLiveStatus(sessionId, `Intent: ${action.reasoning.slice(0, 80)}...`);
-
-                // Log step to Supabase (Non-blocking)
-                (this.supabase.from('session_logs') as any).insert({
+                await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
                     step_number: stepNumber,
                     current_url: observation.url,
                     screenshot_url: `data:image/jpeg;base64,${observation.screenshot}`,
                     emotion_tag: this.mapEmotion(action.emotional_state),
-                    emotion_score: 5,
                     inner_monologue: action.reasoning,
-                    action_taken: action as any
-                }).then(({ error: logError }: { error: any }) => {
-                    if (logError) console.error(`❌ Failed to log step ${stepNumber}:`, logError);
+                    action_taken: { ...action, local_screenshot_path: localScreenshotPath } as any
                 });
 
                 if (action.type === 'complete' || action.type === 'fail') {
                     await (this.supabase.from('persona_sessions') as any).update({
                         status: action.type === 'complete' ? 'completed' : 'abandoned',
                         completed_at: new Date().toISOString(),
-                        exit_reason: action.reasoning,
-                        is_paused: false
+                        exit_reason: action.reasoning
                     }).eq('id', sessionId);
                     break;
                 }
 
-                // Execution Phase
                 this.updateLiveStatus(sessionId, `Performing: ${action.type} ${action.selector || ''}`);
                 await this.browser.perform(action);
 
-                // Track selector attempts for blacklisting (V5 Hardening)
                 if (action.type === 'click' && action.selector) {
                     const attemptKey = `${observation.url}:${action.selector}`;
                     const attempts = (selectorAttempts.get(attemptKey) || 0) + 1;
                     selectorAttempts.set(attemptKey, attempts);
-
-                    if (attempts >= 3) {
-                        console.warn(`🚫 Selector ${action.selector} blacklisted on ${observation.url} after 3 attempts.`);
-                        blacklist.add(action.selector);
-                    }
+                    if (attempts >= 3) blacklist.add(action.selector);
                 }
 
-                action.current_url = observation.url; // Save context for next step
+                action.current_url = observation.url;
                 history.push(action);
                 stepNumber++;
 
@@ -241,80 +217,118 @@ export class Orchestrator {
 
             if (stepNumber > maxSteps) {
                 await (this.supabase.from('persona_sessions') as any).update({
-                    status: 'abandoned',
+                    status: 'completed',
                     completed_at: new Date().toISOString(),
-                    exit_reason: 'Maximum steps reached'
+                    exit_reason: 'Max steps reached — session concluded'
                 }).eq('id', sessionId);
             }
 
         } catch (err: any) {
             console.error(`❌ Session ${sessionId} failed:`, err.message);
-
-            // Log specific error to session logs
-            (this.supabase.from('session_logs') as any).insert({
-                session_id: sessionId,
-                step_number: 999,
-                action_type: 'error',
-                inner_monologue: `Critical engine failure: ${err.message}`,
-                emotion_tag: 'frustration',
-                metadata: { error_stack: err.stack }
-            }).then(() => { });
-
-            this.updateLiveStatus(sessionId, `Critical Failure: ${err.message.slice(0, 50)}...`);
-            await (this.supabase.from('persona_sessions') as any).update({
-                status: 'error',
-                error_message: err.message
-            }).eq('id', sessionId);
+            await (this.supabase.from('persona_sessions') as any).update({ status: 'error', error_message: err.message }).eq('id', sessionId);
         } finally {
             await this.browser.close();
-            if (testRunId) {
-                await checkAndFinalizeTestRun(testRunId).catch(err => {
-                    console.error('Finalization check failed:', err);
+            if (testRunId) await checkAndFinalizeTestRun(testRunId).catch(() => { });
+        }
+    }
+
+    private async discoverPageContent(sessionId: string, startStep: number) {
+        if (!this.browser) return;
+        this.updateLiveStatus(sessionId, '🔍 Phase: Deep Discovery Scan...');
+
+        // Segment 1: Capture Top
+        const obs1 = await this.browser.observe();
+        const lp1 = await this.saveScreenshotLocally(sessionId, startStep, obs1.screenshot);
+        await (this.supabase.from('session_logs') as any).insert({
+            session_id: sessionId,
+            step_number: startStep,
+            current_url: obs1.url,
+            screenshot_url: `data:image/jpeg;base64,${obs1.screenshot}`,
+            emotion_tag: 'neutral',
+            inner_monologue: 'Deep Discovery: Segment 1 (Top)',
+            action_taken: { type: 'system', info: 'discovery_top', local_screenshot_path: lp1 } as any
+        });
+
+        // Smart Discovery: Check if we actually need to scroll
+        const heights = await (this.browser as any).page.evaluate(() => {
+            return {
+                vh: window.innerHeight,
+                dh: document.documentElement.scrollHeight
+            };
+        });
+
+        if (heights.dh > heights.vh) {
+            // Segment 2: Scroll and Capture (Mid)
+            await this.browser.perform({ type: 'scroll', reasoning: 'Discovery scroll (mid)', emotional_state: 'curious' });
+            const obs2 = await this.browser.observe();
+            const lp2 = await this.saveScreenshotLocally(sessionId, startStep + 1, obs2.screenshot);
+            await (this.supabase.from('session_logs') as any).insert({
+                session_id: sessionId,
+                step_number: startStep + 1,
+                current_url: obs2.url,
+                screenshot_url: `data:image/jpeg;base64,${obs2.screenshot}`,
+                emotion_tag: 'neutral',
+                inner_monologue: 'Deep Discovery: Segment 2 (Mid)',
+                action_taken: { type: 'system', info: 'discovery_mid', local_screenshot_path: lp2 } as any
+            });
+
+            if (heights.dh > heights.vh * 1.5) {
+                // Segment 3: Scroll and Capture (Bottom)
+                // Fast Mode: No need for another networkidle after a scroll
+                await (this.browser as any).page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+                await this.browser.waitForTimeout(500);
+
+                const obs3 = await this.browser.observe();
+                const lp3 = await this.saveScreenshotLocally(sessionId, startStep + 2, obs3.screenshot);
+                await (this.supabase.from('session_logs') as any).insert({
+                    session_id: sessionId,
+                    step_number: startStep + 2,
+                    current_url: obs3.url,
+                    screenshot_url: `data:image/jpeg;base64,${obs3.screenshot}`,
+                    emotion_tag: 'neutral',
+                    inner_monologue: 'Deep Discovery: Segment 3 (Bottom)',
+                    action_taken: { type: 'system', info: 'discovery_bottom', local_screenshot_path: lp3 } as any
                 });
             }
+        } else {
+            console.log('📄 Page is short, skipping Deep Discovery scrolls.');
         }
     }
 
     private async updateLiveStatus(sessionId: string, status: string) {
-        (this.supabase.from('persona_sessions') as any)
-            .update({ live_status: status })
-            .eq('id', sessionId)
-            .then(() => { });
+        // Non-blocking status update
+        (this.supabase.from('persona_sessions') as any).update({ live_status: status }).eq('id', sessionId).then(() => { });
     }
 
     private async waitForStepSignal(sessionId: string): Promise<void> {
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                clearInterval(interval);
-                reject(new Error('Manual step timeout reached (10 minutes)'));
-            }, 10 * 60 * 1000);
-
+            const timeout = setTimeout(() => { clearInterval(interval); reject(new Error('Manual step timeout')); }, 600000);
             const interval = setInterval(async () => {
-                const { data: session, error } = await (this.supabase.from('persona_sessions') as any)
-                    .select('step_requested')
-                    .eq('id', sessionId)
-                    .single();
-
-                if (error) {
-                    console.error('Error polling for step signal:', error);
-                    return;
-                }
-
-                if (session?.step_requested) {
-                    clearInterval(interval);
-                    clearTimeout(timeout);
-                    console.log(`🚀 Step signal received for session ${sessionId}`);
-                    resolve();
-                }
+                const { data: session } = await (this.supabase.from('persona_sessions') as any).select('step_requested').eq('id', sessionId).single();
+                if (session?.step_requested) { clearInterval(interval); clearTimeout(timeout); resolve(); }
             }, 2000);
         });
     }
 
+    private async saveScreenshotLocally(sessionId: string, step: number, base64Data: string): Promise<string> {
+        try {
+            const dir = path.join(process.cwd(), 'public', 'screenshots', sessionId);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            const fileName = `step_${step}.jpg`;
+            const filePath = path.join(dir, fileName);
+            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+            return `/screenshots/${sessionId}/${fileName}`;
+        } catch (error) {
+            console.error('❌ Failed to save screenshot:', error);
+            return '';
+        }
+    }
+
     private mapEmotion(state: string): 'neutral' | 'confusion' | 'frustration' | 'delight' {
-        const s = state.toLowerCase();
-        if (s.includes('happy') || s.includes('delight') || s.includes('excited')) return 'delight';
-        if (s.includes('frustrat') || s.includes('angry') || s.includes('stuck')) return 'frustration';
-        if (s.includes('confus') || s.includes('lost') || s.includes('where')) return 'confusion';
+        const s = (state || 'neutral').toLowerCase();
+        if (s.includes('happy') || s.includes('delight')) return 'delight';
+        if (s.includes('frustrat') || s.includes('angry')) return 'frustration';
+        if (s.includes('confus') || s.includes('lost')) return 'confusion';
         return 'neutral';
     }
 }

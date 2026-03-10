@@ -26,8 +26,8 @@ export async function syncUser() {
 
     if (!existingUser) {
         // Create user in Supabase
-        const { data: newUser, error: insertError } = await supabase
-            .from('users')
+        const { data: newUser, error: insertError } = await (supabase
+            .from('users') as any)
             .insert({
                 id: userId,
                 email: user.emailAddresses[0].emailAddress,

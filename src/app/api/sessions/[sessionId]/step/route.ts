@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server';
 
 export async function POST(
     request: Request,
-    { params }: { params: { sessionId: string } }
+    { params }: { params: Promise<{ sessionId: string }> }
 ) {
-    const sessionId = params.sessionId;
+    const { sessionId } = await params;
     const adminSupabase = createAdminClient();
 
     const { error } = await (adminSupabase.from('persona_sessions') as any)

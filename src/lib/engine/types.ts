@@ -30,4 +30,5 @@ export interface PersonaProfile {
 
 export interface LLMProvider {
     decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action>;
+    generateSummary(prompt: string): Promise<string>;
 }
