@@ -13,7 +13,12 @@ interface LiveSessionListProps {
 
 export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListProps) {
     const [sessions, setSessions] = useState(initialSessions);
+    const [isMounted, setIsMounted] = useState(false);
     const supabase = createClient();
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     useEffect(() => {
         setSessions(initialSessions);
@@ -87,13 +92,13 @@ export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListP
                                     {session.started_at && (
                                         <div className="flex items-center gap-1.5 text-slate-400">
                                             <Clock className="h-3 w-3" />
-                                            <span>Started: {new Date(session.started_at).toLocaleTimeString()}</span>
+                                            <span>Started: {isMounted ? new Date(session.started_at).toLocaleTimeString() : '...'}</span>
                                         </div>
                                     )}
                                     {session.completed_at && (
                                         <div className="flex items-center gap-1.5 text-slate-400 border-l border-white/5 pl-6">
                                             <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                                            <span>Finished: {new Date(session.completed_at).toLocaleTimeString()}</span>
+                                            <span>Finished: {isMounted ? new Date(session.completed_at).toLocaleTimeString() : '...'}</span>
                                         </div>
                                     )}
                                     {session.exit_reason && (

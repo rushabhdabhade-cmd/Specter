@@ -20,14 +20,13 @@ interface Persona {
 
 export default function NewTestRunPage() {
   const [step, setStep] = useState<Step>(1);
-  const [url, setUrl] = useState('https://yourapp.build');
+  const [url, setUrl] = useState('');
   const [scope, setScope] = useState('');
 
   // Auth state
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [executionMode, setExecutionMode] = useState<'autonomous' | 'manual'>('autonomous');
   const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('ollama');
   const [geminiKey, setGeminiKey] = useState('');
 
@@ -73,6 +72,10 @@ export default function NewTestRunPage() {
   };
 
   const handleLaunch = async () => {
+    if (llmProvider === 'gemini' && !geminiKey.trim()) {
+      setError('Gemini API Key is required.');
+      return;
+    }
     setIsLaunching(true);
     setError(null);
     try {
@@ -80,7 +83,7 @@ export default function NewTestRunPage() {
         url,
         scope,
         requiresAuth,
-        executionMode,
+        executionMode: 'autonomous',
         llmProvider,
         geminiKey: llmProvider === 'gemini' ? geminiKey : undefined,
         credentials: requiresAuth ? { username, password } : undefined,
@@ -144,6 +147,12 @@ export default function NewTestRunPage() {
         </div>
       </div>
 
+      {error && step === 1 && (
+        <div className="w-full max-w-2xl p-4 mb-6 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium animate-in fade-in slide-in-from-top-2">
+          {error}
+        </div>
+      )}
+
       {step === 1 && (
         <div className="flex w-full max-w-2xl flex-col items-center space-y-10 text-center">
           <div className="space-y-3">
@@ -157,7 +166,7 @@ export default function NewTestRunPage() {
             <div className="space-y-4 text-left">
               <div className="flex items-center gap-2 text-slate-400">
                 <Globe className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-widest">Application URL</span>
+                <span className="text-xs font-bold uppercase tracking-widest">Application URL <span className="text-red-500 lowercase normal-case italic opacity-70 ml-1 text-[10px] font-medium">(Required)</span></span>
               </div>
               <input
                 type="text"
@@ -250,46 +259,6 @@ export default function NewTestRunPage() {
               )}
             </div>
 
-            {/* Execution Strategy Section */}
-            <div className="space-y-6 text-left pt-6 border-t border-white/5">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <Zap className="h-4 w-4" />
-                  <span className="text-xs font-bold uppercase tracking-widest">Execution Strategy</span>
-                </div>
-                <p className="text-sm text-slate-500">
-                  Choose how Specter explores your application.
-                </p>
-              </div>
-
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setExecutionMode('autonomous')}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${executionMode === 'autonomous'
-                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
-                    }`}
-                >
-                  <Zap className={`h-5 w-5 ${executionMode === 'autonomous' ? 'fill-current' : ''}`} />
-                  <span className="text-sm font-bold">Autonomous</span>
-                  <span className="text-[10px] uppercase opacity-60">Hands-free testing</span>
-                </button>
-                <button
-                  onClick={() => setExecutionMode('manual')}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${executionMode === 'manual'
-                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
-                    }`}
-                >
-                  <div className="flex h-5 w-5 items-center justify-center">
-                    <div className="h-4 w-4 border-2 border-current rounded-sm" />
-                  </div>
-                  <span className="text-sm font-bold">Manual Step</span>
-                  <span className="text-[10px] uppercase opacity-60">Approve every action</span>
-                </button>
-              </div>
-            </div>
-
             {/* LLM Engine Selection */}
             <div className="space-y-6 text-left pt-6 border-t border-white/5">
               <div className="space-y-2">
@@ -301,6 +270,12 @@ export default function NewTestRunPage() {
                   Select the underlying intelligence for this test run.
                 </p>
               </div>
+
+              {llmProvider === 'gemini' && !geminiKey.trim() && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] font-bold uppercase tracking-wider animate-in fade-in slide-in-from-top-2">
+                  ⚠️ Gemini API Key is required to use the cloud engine.
+                </div>
+              )}
 
               <div className="flex gap-4">
                 <button
@@ -330,7 +305,7 @@ export default function NewTestRunPage() {
               {llmProvider === 'gemini' && (
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Gemini API Key</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Gemini API Key <span className="text-red-500 lowercase normal-case italic opacity-70 ml-1 font-medium">(Required)</span></label>
                     <input
                       type="password"
                       value={geminiKey}
@@ -347,7 +322,19 @@ export default function NewTestRunPage() {
             </div>
 
             <button
-              onClick={() => setStep(2)}
+              onClick={() => {
+                if (!url.trim()) {
+                  setError('Application URL is required.');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  return;
+                }
+                if (llmProvider === 'gemini' && !geminiKey.trim()) {
+                  setError('Gemini API Key is required to use the cloud engine.');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  return;
+                }
+                setStep(2);
+              }}
               className="w-full py-6 rounded-[20px] bg-[#000] hover:bg-[#2a2a2a] text-white font-bold flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg group border border-white/5"
             >
               Configure Persona Cohort

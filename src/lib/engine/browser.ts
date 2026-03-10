@@ -20,9 +20,9 @@ export class BrowserService {
             // Wait for main 'load' state (fast and reliable)
             await this.page.goto(url, { waitUntil: 'load', timeout: 30000 });
 
-            // Attempt to wait for network idle (non-blocking if it takes too long)
-            await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
-                console.log('Network idle not reached during initial navigation, proceeding with load state.');
+            // Attempt to wait for network idle (reduced for Fast Mode)
+            await this.page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => {
+                console.log('Network idle not reached quickly, proceeding anyway.');
             });
         } catch (err: any) {
             console.error(`Navigation to ${url} timed out or failed:`, err.message);
@@ -115,13 +115,15 @@ export class BrowserService {
                     if (action.selector) {
                         const indexMatch = action.selector.match(/\[(\d+)\]/);
                         if (indexMatch) {
-                            const index = indexMatch[1];
+                            const index = parseInt(indexMatch[1]);
                             const interactables = await this.page.$$('button, a, input, select, textarea, [role="button"]');
-                            if (interactables[parseInt(index)]) {
-                                await interactables[parseInt(index)].click({ timeout: 10000 });
+                            const element = interactables[index];
+                            if (element) {
+                                await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => { });
+                                await element.click({ timeout: 10000, force: true });
                             }
                         } else {
-                            await this.page.click(action.selector, { timeout: 10000 });
+                            await this.page.click(action.selector, { timeout: 10000, force: true });
                         }
                     }
                     break;
@@ -129,10 +131,12 @@ export class BrowserService {
                     if (action.selector && action.text) {
                         const indexMatch = action.selector.match(/\[(\d+)\]/);
                         if (indexMatch) {
-                            const index = indexMatch[1];
+                            const index = parseInt(indexMatch[1]);
                             const interactables = await this.page.$$('button, a, input, select, textarea, [role="button"]');
-                            if (interactables[parseInt(index)]) {
-                                await interactables[parseInt(index)].fill(action.text, { timeout: 10000 });
+                            const element = interactables[index];
+                            if (element) {
+                                await element.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => { });
+                                await element.fill(action.text, { timeout: 10000 });
                             }
                         } else {
                             await this.page.fill(action.selector, action.text, { timeout: 10000 });
@@ -150,9 +154,13 @@ export class BrowserService {
             console.warn(`Action ${action.type} failed or timed out, continuing...`, err);
         }
 
-        await this.page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {
-            console.log('Network idle timed out, proceeding anyway...');
-        });
+        // V14 Fast Mode: Standard actions don't need a full networkidle wait.
+        // We only wait a small amount to allow for immediate UI shifts.
+        await this.page.waitForTimeout(500);
+    }
+
+    async waitForTimeout(ms: number) {
+        if (this.page) await this.page.waitForTimeout(ms);
     }
 
     async close() {
