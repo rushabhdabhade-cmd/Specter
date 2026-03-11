@@ -16,6 +16,7 @@ import { StepFeedbackCard } from '@/components/reports/StepFeedbackCard';
 import { FeedbackSummary } from '@/components/reports/FeedbackSummary';
 import { WebsiteHeatmap } from '@/components/reports/WebsiteHeatmap';
 import { ActionItems } from '@/components/reports/ActionItems';
+import { ReportActions } from '@/components/reports/ReportActions';
 
 export default async function ReportPage({ params }: { params: Promise<{ testRunId: string }> }) {
   const { testRunId } = await params;
@@ -78,7 +79,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
   // All steps across all sessions for heatmap
   const allSteps = (sessions || []).flatMap((s: any) =>
-    (s.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number)
+    [...(s.session_logs || [])].sort((a: any, b: any) => a.step_number - b.step_number)
   );
 
   const uxScore = report?.product_opportunity_score || 0;
@@ -87,11 +88,11 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
   const frictionColor = frictionLevel === 'N/A' ? 'text-slate-500' : frictionLevel === 'Low' ? 'text-emerald-400' : frictionLevel === 'Medium' ? 'text-amber-400' : 'text-red-400';
 
   return (
-    <div className="animate-in fade-in space-y-12 duration-700 max-w-[1200px] mx-auto pb-16">
+    <div className="report-container animate-in fade-in space-y-12 duration-700 max-w-[1200px] mx-auto pb-16">
 
       {/* ── Header — Premium High-Impact Project Summary ────────────────────────── */}
       <div className="flex flex-col space-y-8">
-        <Link href="/dashboard" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-colors w-fit">
+        <Link href="/dashboard" className="no-print flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-colors w-fit">
           <ChevronLeft className="h-3 w-3" />
           Back to Dashboard
         </Link>
@@ -125,21 +126,16 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                   <div className="flex items-center gap-3 text-slate-400">
                     <Layers className="h-4 w-4 text-indigo-500/30" />
                     <p className="text-lg font-medium tracking-tight">
-                      Strategic analysis for <span className="text-indigo-400 select-all font-bold underline decoration-indigo-500/30 underline-offset-4 cursor-pointer hover:text-indigo-300 transition-colors uppercase tracking-widest text-xs">{run.projects?.target_url}</span>
+                      Strategic analysis for <span className="text-indigo-400 select-all font-bold underline decoration-indigo-500/30 underline-offset-4 cursor-pointer hover:text-indigo-300 transition-colors uppercase tracking-widest text-xs">{run.projects?.target_url?.replace(/</g, '&lt;')}</span>
                     </p>
                   </div>
 
                   {/* Top Actions */}
                   <div className="flex items-center gap-4 pt-4">
-                    <RefreshButton testRunId={testRunId} />
-                    <div className="flex items-center gap-2">
-                      <button className="flex h-11 items-center gap-2 rounded-xl border border-white/5 bg-white/5 px-6 text-xs font-bold text-white hover:bg-white/10 transition-all active:scale-95">
-                        <Share2 className="h-4 w-4" /> Share
-                      </button>
-                      <button className="flex h-11 items-center gap-2 rounded-xl bg-white px-6 text-xs font-black uppercase tracking-widest text-black hover:bg-slate-200 transition-all active:scale-95 shadow-xl shadow-white/5">
-                        <Download className="h-4 w-4" /> Export PDF
-                      </button>
+                    <div className="no-print">
+                      <RefreshButton testRunId={testRunId} />
                     </div>
+                    <ReportActions />
                   </div>
                 </div>
               </div>
@@ -281,10 +277,11 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
       <div className="space-y-32">
         {sessions?.map((session: any, idx: number) => {
           const score = sessionScores[idx];
-          const logs = (session.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number);
+          const logs = [...(session.session_logs || [])].sort((a: any, b: any) => a.step_number - b.step_number);
           const isCompleted = session.status === 'completed';
-          const personaName = session.persona_configs?.name;
-          const literacy = session.persona_configs?.tech_literacy;
+          const personaName = (session.persona_configs?.name ?? '').replace(/</g, '&lt;');
+          const literacy = (session.persona_configs?.tech_literacy ?? '').replace(/</g, '&lt;');
+          const goalPrompt = (session.persona_configs?.goal_prompt ?? '').replace(/</g, '&lt;');
 
           // Local emotion stats for this persona
           const personaEmotionStats = { delight: 0, neutral: 0, confusion: 0, frustration: 0 };
@@ -307,7 +304,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                     </div>
                   </div>
                   <p className="text-lg font-medium text-slate-400 italic max-w-2xl leading-relaxed">
-                    &ldquo;{session.persona_configs?.goal_prompt}&rdquo;
+                    &ldquo;{goalPrompt}&rdquo;
                   </p>
                 </div>
 
