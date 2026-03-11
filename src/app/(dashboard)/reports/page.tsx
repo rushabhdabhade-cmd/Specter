@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
-import { BarChart3, Sparkles } from 'lucide-react';
+import { BarChart3, Sparkles, Zap, Target, Activity, Cpu } from 'lucide-react';
 import { ReportsList } from '@/components/reports/ReportsList';
 
 export default async function ReportsPage() {
@@ -47,11 +47,7 @@ export default async function ReportsPage() {
             id: testRun?.id || r.id,
             projectName: project?.name || 'Untitled Project',
             url: project?.target_url || 'Unknown URL',
-            completedAt: testRun?.completed_at ? new Date(testRun.completed_at).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric'
-            }) : new Date(r.created_at).toLocaleDateString(),
+            completedAt: testRun?.completed_at ? new Date(testRun.completed_at).toLocaleDateString() : new Date(r.created_at).toLocaleDateString(),
             usabilityScore,
             frictionLevel: usabilityScore >= 75 ? 'Low' : usabilityScore >= 50 ? 'Medium' : 'High',
             funnelRate: r.funnel_rate || 0,
@@ -60,38 +56,36 @@ export default async function ReportsPage() {
     });
 
     return (
-        <div className="animate-in fade-in space-y-12 duration-1000 max-w-[1200px] mx-auto pb-20">
-            {/* Premium Header */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-12 border-b border-white/5">
-                <div className="space-y-4 max-w-2xl">
-                    <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                            <BarChart3 className="h-5 w-5 text-indigo-400" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Analytics Hub</span>
+        <div className="animate-in fade-in space-y-20 duration-1000">
+            {/* ── INTELLIGENCE HEADER ────────────────────────────────────────── */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+                <div className="space-y-4">
+                    <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+                        <Activity className="h-3.5 w-3.5" />
+                        Analytical Intelligence Hub
                     </div>
-                    <h1 className="text-6xl font-black tracking-tighter text-white leading-tight">
-                        Experience <span className="text-indigo-400">Reports</span>
+                    <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white leading-tight">
+                        Intelligence <br /> <span className="italic opacity-50">Briefing.</span>
                     </h1>
-                    <p className="text-lg font-medium text-slate-400 leading-relaxed italic">
-                        &ldquo;Deciphering the psychological friction points across your user journey using high-fidelity behavioral synthesis.&rdquo;
+                    <p className="max-w-md text-sm font-medium text-slate-400 italic leading-relaxed">
+                        Deciphering the psychological friction points and behavioral conversion rates synthesized across your infrastructure.
                     </p>
                 </div>
 
-                <div className="flex-shrink-0 bg-white/[0.02] border border-white/5 rounded-[32px] px-8 py-6 backdrop-blur-3xl group transition-all hover:bg-white/[0.04]">
-                    <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                            <Sparkles className="h-6 w-6 text-emerald-400" />
+                <div className="flex-shrink-0 bg-[#0a0a0a] border border-white/5 rounded-[32px] px-10 py-8 backdrop-blur-3xl group transition-all hover:border-white/10">
+                    <div className="flex items-center gap-6">
+                        <div className="h-14 w-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                            <Cpu className="h-7 w-7 text-indigo-400" />
                         </div>
                         <div>
-                            <p className="text-2xl font-black text-white">{reports.length}</p>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Total Synthesized</p>
+                            <p className="text-3xl font-black tracking-tighter text-white">{reports.length}</p>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-700">Total Datasets</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Reports List Wrapper */}
+            {/* ── REPORTS GRID ────────────────────────────────────────────────── */}
             <ReportsList initialReports={reports} />
         </div>
     );
