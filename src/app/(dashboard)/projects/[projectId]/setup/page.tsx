@@ -93,6 +93,16 @@ export default function NewTestRunPage() {
     }
   };
 
+  const removePersona = (id: number) => {
+    if (personas.length > 1) {
+      const updatedPersonas = personas.filter((p) => p.id !== id);
+      setPersonas(updatedPersonas);
+      if (selectedPersonaId === id) {
+        setSelectedPersonaId(updatedPersonas[0].id);
+      }
+    }
+  };
+
   const handleLaunch = async () => {
     if (llmProvider === 'gemini' && !geminiKey.trim()) {
       setError('Gemini API Key is required.');
@@ -379,20 +389,32 @@ export default function NewTestRunPage() {
               <div className="text-xs font-bold uppercase tracking-widest text-slate-500 px-1">Your Cohort</div>
               <div className="space-y-2">
                 {personas.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedPersonaId(p.id)}
-                    className={`w-full text-left p-4 rounded-xl border flex items-center gap-4 transition-all ${selectedPersonaId === p.id
-                      ? 'bg-[#1a1a1a] border-white/10 text-white shadow-lg'
-                      : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300'
-                      }`}
-                  >
-                    <span className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-[#151515] text-slate-600'
-                      }`}>
-                      {p.id}
-                    </span>
-                    <span className="font-semibold text-sm truncate">{p.name}</span>
-                  </button>
+                  <div key={p.id} className="group relative">
+                    <button
+                      onClick={() => setSelectedPersonaId(p.id)}
+                      className={`w-full text-left p-4 rounded-xl border flex items-center gap-4 transition-all ${selectedPersonaId === p.id
+                        ? 'bg-[#1a1a1a] border-white/10 text-white shadow-lg'
+                        : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300'
+                        }`}
+                    >
+                      <span className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-[#151515] text-slate-600'
+                        }`}>
+                        {p.id}
+                      </span>
+                      <span className="font-semibold text-sm truncate">{p.name}</span>
+                    </button>
+                    {personas.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removePersona(p.id);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 ))}
 
                 <div className="pt-2 space-y-2">

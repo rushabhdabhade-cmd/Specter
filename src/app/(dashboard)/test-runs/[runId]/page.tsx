@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, Cpu, User, Play, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { ChevronRight, Cpu, User, Play, CheckCircle2, AlertCircle, Clock, BarChart3 } from 'lucide-react';
 import { SessionLogAccordion } from '@/components/engine/SessionLogAccordion';
 import { RerunButton } from '@/components/engine/RerunButton';
 import { StopButton } from '@/components/engine/StopButton';
@@ -86,6 +86,17 @@ export default async function TestRunPage({ params }: { params: Promise<{ runId:
                                 Engine: {run.projects?.llm_provider || 'Ollama'}
                             </span>
                         </div>
+                        {run.status === 'completed' && (
+                            <Link
+                                href={`/reports/${run.id}`}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 border border-indigo-400/50 shadow-[0_0_20px_rgba(99,102,241,0.3)] transition-all group animate-in fade-in slide-in-from-right-4"
+                            >
+                                <BarChart3 className="h-3.5 w-3.5 text-white group-hover:scale-110 transition-transform" />
+                                <span className="text-[11px] font-black text-white uppercase tracking-widest leading-none pt-0.5">
+                                    View Full Report
+                                </span>
+                            </Link>
+                        )}
                     </div>
                 </div>
             </div>

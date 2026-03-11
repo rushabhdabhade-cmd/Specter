@@ -131,9 +131,11 @@ export async function createTestRun(formData: {
                 goal_prompt: p.prompt,
             } as any;
 
-            orchestrator.runSession(session.id, formData.url, personaProfile).catch(err => {
+            try {
+                await orchestrator.runSession(session.id, formData.url, personaProfile);
+            } catch (err) {
                 console.error(`Autonomous session ${session.id} failed:`, err);
-            });
+            }
         }
     }
 

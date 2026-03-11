@@ -16,6 +16,8 @@ interface HeatmapStep {
 
 interface WebsiteHeatmapProps {
     steps: HeatmapStep[];
+    dropOffStats?: Record<string, number>;
+    totalSessions?: number;
 }
 
 // Deterministic position hash from a string seed
@@ -99,7 +101,7 @@ interface PageGroup {
     totalClicks: number;
 }
 
-export function WebsiteHeatmap({ steps }: WebsiteHeatmapProps) {
+export function WebsiteHeatmap({ steps, dropOffStats = {}, totalSessions = 1 }: WebsiteHeatmapProps) {
     const [expandedPage, setExpandedPage] = useState<string | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [canvasSize, setCanvasSize] = useState({ w: 800, h: 450 });
@@ -143,6 +145,9 @@ export function WebsiteHeatmap({ steps }: WebsiteHeatmapProps) {
                 const frictionPct = Math.min(100, group.frictionScore);
                 const frictionColor = frictionPct === 0 ? '#10b981' : frictionPct < 30 ? '#f59e0b' : '#ef4444';
 
+                const dropOffCount = dropOffStats[group.url] || 0;
+                const dropOffPct = Math.round((dropOffCount / Math.max(1, totalSessions)) * 100);
+
                 const emotionCounts = group.steps.reduce<Record<string, number>>((a, s) => {
                     a[s.emotion_tag] = (a[s.emotion_tag] || 0) + 1; return a;
                 }, {});
@@ -168,6 +173,10 @@ export function WebsiteHeatmap({ steps }: WebsiteHeatmapProps) {
                                 <div className="text-right">
                                     <p className="text-[9px] text-slate-600 uppercase tracking-widest font-black">Clicks</p>
                                     <p className="text-lg font-black text-white">{group.totalClicks}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[9px] text-slate-600 uppercase tracking-widest font-black">Drop-off</p>
+                                    <p className="text-lg font-black text-red-500">{dropOffPct}%</p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[9px] text-slate-600 uppercase tracking-widest font-black">Friction</p>
