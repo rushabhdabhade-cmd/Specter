@@ -17,6 +17,7 @@ import { FeedbackSummary } from '@/components/reports/FeedbackSummary';
 import { WebsiteHeatmap } from '@/components/reports/WebsiteHeatmap';
 import { ActionItems } from '@/components/reports/ActionItems';
 import { ReportActions } from '@/components/reports/ReportActions';
+import { TechnicalAudit } from '@/components/reports/TechnicalAudit';
 
 export default async function ReportPage({ params }: { params: Promise<{ testRunId: string }> }) {
   const { testRunId } = await params;
@@ -207,6 +208,9 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
         )}
 
         <ActionItems items={reportData.actionItems || []} />
+
+        {/* ── Technical Health Audit ─────────────────────────────────────── */}
+        <TechnicalAudit data={reportData.technicalAudit || null} />
       </div>
 
       {/* ── Cohort Segmentation Profiling ─────────────────────────────────── */}
