@@ -1,13 +1,18 @@
 export type ActionType = 'click' | 'type' | 'scroll' | 'wait' | 'complete' | 'fail';
 
+export type UXEmotion = 'delight' | 'satisfaction' | 'curiosity' | 'surprise' | 'neutral' | 'confusion' | 'boredom' | 'frustration' | 'disappointment';
+
 export interface Action {
     type: ActionType;
     selector?: string;
     text?: string;
     reasoning: string;
-    emotional_state: string;
+    emotional_state: UXEmotion | string;
+    emotional_intensity: number; // 0.0 to 1.0
     current_url?: string; // The URL where this action was taken
     ux_feedback?: string; // Qualitative feedback about the current screen
+    proposed_solution?: string; // Actionable advice if friction is detected
+    specific_emotion?: string; // More nuanced emotion label (e.g. 'cautious optimism')
     possible_paths?: string[]; // Potential navigational paths identified in this step
 }
 
@@ -37,6 +42,11 @@ export interface PersonaProfile {
 
 export interface LLMProvider {
     decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist?: string[], triedElements?: string[]): Promise<Action>;
-    analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }>;
+    analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{
+        ux_feedback: string,
+        emotional_state: string,
+        emotional_intensity: number,
+        proposed_solution?: string
+    }>;
     generateSummary(prompt: string): Promise<string>;
 }
