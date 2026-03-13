@@ -72,7 +72,7 @@ export async function rerunTestRun(runId: string) {
             continue;
         }
 
-        // 5. Launch Orchestrator
+        // 5. Launch Orchestrator (Fire and forget - do NOT await here to avoid server action timeouts)
         const orchestrator = new Orchestrator();
         const personaProfile = {
             name: s.persona_configs.name,
@@ -83,11 +83,9 @@ export async function rerunTestRun(runId: string) {
             goal_prompt: s.persona_configs.goal_prompt,
         } as any;
 
-        try {
-            await orchestrator.runSession(newSession.id, originalRun.projects.target_url, personaProfile);
-        } catch (err) {
+        orchestrator.runSession(newSession.id, originalRun.projects.target_url, personaProfile).catch((err: any) => {
             console.error(`Rerun session ${newSession.id} failed:`, err);
-        }
+        });
     }
 
     redirect(`/test-runs/${newRun.id}`);

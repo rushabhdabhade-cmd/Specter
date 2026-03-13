@@ -11,12 +11,19 @@ export interface Action {
     possible_paths?: string[]; // Potential navigational paths identified in this step
 }
 
+export interface ObservationSection {
+    screenshot: string;
+    domContext: string;
+}
+
 export interface Observation {
-    screenshot: string; // Base64
+    screenshot: string; // Current or main screenshot (base64)
+    screenshots?: string[]; // DEPRECATED: use sections
     url: string;
     title: string;
-    domContext?: string;
+    domContext?: string; // Current or main dom context
     dimensions: { width: number; height: number };
+    sections?: ObservationSection[];
 }
 
 export interface PersonaProfile {
@@ -29,6 +36,7 @@ export interface PersonaProfile {
 }
 
 export interface LLMProvider {
-    decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist?: string[]): Promise<Action>;
+    decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist?: string[], triedElements?: string[]): Promise<Action>;
+    analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }>;
     generateSummary(prompt: string): Promise<string>;
 }

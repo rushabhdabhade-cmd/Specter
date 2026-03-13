@@ -47,8 +47,15 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
     const freq: Record<string, { count: number; tags: string[] }> = {};
 
     logs.forEach(log => {
-        const text = log.action_taken?.ux_feedback || '';
+        let text: any = log.action_taken?.ux_feedback || '';
         if (!text || text === 'undefined') return;
+
+        // If it's an object (happened in some LLM runs), try to extract 'overall' or just stringify
+        if (typeof text === 'object') {
+            text = text.overall || text.feedback || JSON.stringify(text);
+        }
+
+        if (typeof text !== 'string') return;
 
         const words = text.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/);
         // Use 2-gram and 1-gram

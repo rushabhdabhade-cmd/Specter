@@ -125,14 +125,14 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
             const feedback = log.action_taken?.ux_feedback && log.action_taken.ux_feedback !== 'undefined'
                 ? ` | UX: ${String(log.action_taken.ux_feedback).slice(0, 120)}`
                 : '';
-            qualitativeData.push(`S${log.step_number}[${log.emotion_tag}]: ${String(log.inner_monologue || '').slice(0, 150)}${feedback}`);
+            qualitativeData.push(`S${log.step_number}[${log.emotion_tag}] @ ${log.current_url}: ${String(log.inner_monologue || '').slice(0, 150)}${feedback}`);
         });
     });
 
     const averageScore = Math.round(totalScore / sessions.length);
     const funnelRate = (completedCount / sessions.length) * 100;
 
-    // 3. AI Synthesis — uses project fetched directly from test_run above
+    // 3. AI Synthesis -- uses project fetched directly from test_run above
     let aiSynthesis = `### 📋 Summary\n${sessions.length} personas tested. ${completedCount} completed. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis unavailable.*`;
 
     try {
@@ -156,12 +156,12 @@ Key session logs detail:
 ${qualitativeData.join('\n')}
 
 Write a professional UX report in Markdown with:
-# STRATEGIC SUMMARY
-(Write a high-impact, 3-5 sentence executive conclusion based on the full raw feedback. State clearly if the site worked or failed for the cohort and why. Do NOT use multiple headers or complex sections.)
+# STRATEGIC UX AUDIT
+(Write a high-impact, 3-5 sentence professional UX audit conclusion. Focus on: Visual Hierarchy, Content Relevance, Navigation Friction, and overall Trust/Brand Perception. State clearly if the site meets the persona's expectations and where the biggest drop-off risks are.)
 
 Finally, provide a SEPARATE section for automated parsing:
 [ACTION_ITEMS]
-- (Priority: High/Medium/Low) | Fix: [Short title] | Detail: [1 sentence]
+- (Priority: High/Medium/Low) | Fix: [UX Improvement Title] | Detail: [Specific recommendation]
 ...
 (Max 5 items)
 [/ACTION_ITEMS]`;
@@ -261,18 +261,50 @@ Finally, provide a SEPARATE section for automated parsing:
 export async function checkAndFinalizeTestRun(testRunId: string) {
     const supabase = createAdminClient();
 
-    const { data, error } = await supabase
+    // 1. Fetch sessions with their last log time to detect staleness
+    const { data: sessions, error } = await supabase
         .from('persona_sessions')
-        .select('status')
+        .select('id, status, created_at')
         .eq('test_run_id', testRunId);
 
-    if (error || !data) {
-        console.error('Error checking sessions for finalization:', error);
+    if (error || !sessions) {
+        console.error('❌ Error checking sessions for finalization:', error);
         return;
     }
 
-    const sessions = data as { status: string }[];
-    const activeSessions = sessions.filter(s => s.status === 'running' || s.status === 'queued');
+    const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+    const now = Date.now();
+    let hasStaleSessions = false;
+
+    for (const session of (sessions as any[])) {
+        const isPending = session.status === 'running' || session.status === 'queued';
+        if (isPending) {
+            // Use created_at if updated_at isn't automatically maintained by Supabase
+            const lastUpdate = new Date(session.updated_at || session.created_at).getTime();
+            if (now - lastUpdate > STALE_THRESHOLD_MS) {
+                console.warn(`⚠️ Session ${session.id} appears stale (last update ${Math.round((now - lastUpdate) / 60000)}m ago). Abandoning to unblock report.`);
+                await (supabase.from('persona_sessions') as any)
+                    .update({
+                        status: 'abandoned',
+                        exit_reason: 'Automatic abandonment due to inactivity (stale)'
+                    })
+                    .eq('id', session.id);
+                hasStaleSessions = true;
+            }
+        }
+    }
+
+    // Refresh session data if we updated any
+    let finalSessions = sessions;
+    if (hasStaleSessions) {
+        const { data: refreshed } = await supabase
+            .from('persona_sessions')
+            .select('status')
+            .eq('test_run_id', testRunId);
+        finalSessions = refreshed || sessions;
+    }
+
+    const activeSessions = (finalSessions as any[]).filter(s => s.status === 'running' || s.status === 'queued');
 
     if (activeSessions.length === 0) {
         console.log(`🎯 Final session completed for Test Run ${testRunId}. Triggering final report...`);

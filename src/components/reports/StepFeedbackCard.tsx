@@ -51,8 +51,11 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
     const [pathsOpen, setPathsOpen] = useState(false);
     const cfg = EMOTION_CONFIG[step.emotion_tag] ?? EMOTION_CONFIG.neutral;
     const actionType = step.action_taken?.type ?? 'system';
-    const uxFeedback = step.action_taken?.ux_feedback;
-    const hasFeedback = uxFeedback && uxFeedback !== 'undefined' && uxFeedback.length > 5;
+    let uxFeedback = step.action_taken?.ux_feedback as any;
+    if (uxFeedback && typeof uxFeedback === 'object') {
+        uxFeedback = uxFeedback.overall || uxFeedback.feedback || JSON.stringify(uxFeedback);
+    }
+    const hasFeedback = uxFeedback && uxFeedback !== 'undefined' && String(uxFeedback).length > 5;
     const paths = step.action_taken?.possible_paths ?? [];
     const hasScreenshot = !!step.screenshot_url;
 

@@ -46,7 +46,8 @@ function buildActionPrompt(
     observation: Observation,
     persona: PersonaProfile,
     history: Action[],
-    blockedPaths: string[] = []
+    blockedPaths: string[] = [],
+    triedElements: string[] = []
 ): string {
     const lastAction = history[history.length - 1];
     const isStuck = lastAction &&
@@ -60,46 +61,83 @@ Suggestions:
 - Check if you need to click a parent container instead.\n`
         : '';
 
-    return `You are ${persona.name}, a synthetic user (tech literacy: ${persona.tech_literacy}).
+    const triedNote = triedElements.length > 0
+        ? `[CRITICAL] TRIED ELEMENTS ON THIS URL (FAILURES):
+The following elements were ALREADY CLICKED but did NOT lead to a new page. 
+DO NOT CLICK THEM AGAIN. DO NOT CLICK VARIATIONS OF THEM. 
+CLICKING THESE AGAIN WILL CAUSE AN INFINITE LOOP REDUCING YOUR SCORE.
+TRIED ELEMENTS:
+${triedElements.map(e => `- "${e}"`).join('\n')}
+
+Actionable Advice: 
+- If you've tried the main CTAs, look for sub-links, footer links, or social icons.
+- If you're stuck, SCROLL to find new sections.
+- Do NOT express "delight" if you decide to click a tried element; instead, express FRUSTRATION.\n`
+        : '';
+
+    const uniquePagesVisited = new Set(history.map(a => a.current_url?.split('#')[0])).size;
+
+    let visualGuidance = '';
+    let elementsContext = '';
+
+    if (observation.sections && observation.sections.length > 0) {
+        visualGuidance = `I have provided ${observation.sections.length} sections of the page (captured while scrolling Top -> Mid -> Bottom). 
+Each section consists of a screenshot followed by its specific INTERACTIVE ELEMENTS (JSON).
+[CRITICAL] Use the JSON immediate following a screenshot to identify elements labeled [0], [1], etc. in that specific image.`;
+
+        elementsContext = observation.sections.map((s, idx) => {
+            const label = idx === 0 ? 'TOP' : idx === 1 ? 'MIDDLE' : 'BOTTOM';
+            return `--- SECTION: ${label} ---\n(Context for the image above)\n${truncateDom(s.domContext)}\n`;
+        }).join('\n');
+    } else {
+        visualGuidance = `The provided image has indigo labels like [0], [1], etc. these correspond EXACTLY to the "index" in the JSON below.`;
+        elementsContext = `INTERACTIVE ELEMENTS (JSON):\n${truncateDom(observation.domContext)}`;
+    }
+
+    return `You are ${persona.name}, a synthetic UX Auditor (tech literacy: ${persona.tech_literacy}).
 Goal: ${persona.goal_prompt}
 Current URL: ${observation.url}
+Unique Pages Visited: ${uniquePagesVisited}/3 (Goal: Explore at least 3 unique sub-pages before completing)
 ${stuckNote}
+${triedNote}
+
+UX AUDIT DIRECTIVE:
+Your primary objective is to evaluate the website's quality. Provide detailed, critical observations in 'ux_feedback' regarding:
+- Visual Hierarchy: Is the most important content emphasized? 
+- Content Quality: Is the messaging clear and relevant?
+- Navigation Friction: Are there confusing menus, broken links, or repetitive steps?
+- Responsiveness: Does the layout feel cramped or poorly spaced?
 
 VISUAL GUIDANCE:
-The provided image has indigo labels like [0], [1], etc. these correspond EXACTLY to the "index" in the JSON below.
+${visualGuidance}
 
-INTERACTIVE ELEMENTS (JSON):
-${truncateDom(observation.domContext)}
+${elementsContext}
 
 HISTORY (Last 10):
 ${trimHistory(history)}
 
-${blockedPaths.length > 0 ? `🚫 PREVIOUSLY FAILED PATHS (Identity: Text:URL):
-${blockedPaths.join('\n')}\n` : ''}
-
 TASK:
-1) Analyze the screenshot and JSON. Note the location of labels.
-2) Use IDs/Classes in the JSON to identify structural components (e.g., "login-btn").
-3) Decide the NEXT action to move toward your goal.
-4) Provide qualitative UX feedback in 'ux_feedback'.
+1) Analyze ALL provided screenshots and their corresponding semantic elements.
+2) Decide the NEXT action to move toward your goal AND increase page variety.
+3) If you've already explored a page, favor finding NEW links/buttons to other sections.
+4) Provide a DETAILED UX observation in 'ux_feedback'.
 
 Rules:
-- [CRITICAL] ALWAYS use the labels in brackets, e.g., "[index]", for the 'selector' field. 
-- [FORBIDDEN] Do NOT use CSS selectors, IDs, or classes in the 'selector' field.
-- Do NOT attempt any elements that match the FAILED PATHS listed above (even if they have a different index now).
-- Never repeat an index click that didn't change the state/URL.
-- Max 1 wait per 5 actions.
+- [CRITICAL] Instead of using precise coordinates or indices, describe the target element in the 'text' field (e.g., "the login button", "the pricing link").
+- The engine now uses AI to find the element based on your description.
+- Never repeat an action that didn't change the state.
+- [CRITICAL] Be critical. If something is generic or misplaced, say so.
 
 EMOTIONAL STATE:
-- Delight: High satisfaction. Use this if navigation is fast, clear, matches your expectation, or feels premium. **Mandatory if you describe the step as "clear", "straightforward", "logical", or "easy".**
+- Delight: High satisfaction. Use this if you discover a link or section that directly relates to your goal, or if a navigation step successfully leads you to a new, relevant page. **Mandatory if you describe the step as "interesting", "useful", "found", "clear", or "easy".**
 - Neutral: Standard interaction with no specific positive or negative feedback.
 - Confusion: Lost, unsure where to click, or UI is ambiguous.
 - Frustration: Stuck, broken UI, repeated failures, or loops.
 
-[CRITICAL] Reward smooth, logical navigation by selecting 'Delight'. 
-[CRITICAL] If you state that the UI is "clear" or "straightforward" in your reasoning/feedback, you MUST return 'delight' in the 'emotional_state' field.
+[CRITICAL] Reward finding relevant information or functional, helpful UI by selecting 'delight'. 
+[CRITICAL] If you state that a discovery is "good", "useful", or "helpful" in your reasoning, you MUST return 'delight' in the 'emotional_state' field.
 
-Return JSON: { "type","selector","text"?,"reasoning","emotional_state","ux_feedback","possible_paths":[] }`;
+Return JSON: { "type","selector"?, "text", "reasoning","emotional_state","ux_feedback" }`;
 }
 
 // ─── Providers ────────────────────────────────────────────────────────────────
@@ -111,20 +149,26 @@ export class OpenAIProvider implements LLMProvider {
         this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history, blacklist);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
+
+        const content: any[] = [{ type: 'text', text: prompt }];
+
+        if (observation.sections && observation.sections.length > 0) {
+            observation.sections.forEach((s, idx) => {
+                const label = idx === 0 ? 'TOP' : idx === 1 ? 'MIDDLE' : 'BOTTOM';
+                content.push({ type: 'text', text: `IMAGE: ${label} SECTION` });
+                content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${s.screenshot}` } });
+            });
+        } else {
+            content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}` } });
+        }
 
         const response = await this.client.chat.completions.create({
             model: 'gpt-4o',
             messages: [
                 { role: 'system', content: 'You are a synthetic UX persona navigating a website. Always return valid JSON.' },
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: prompt },
-                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}` } }
-                    ]
-                }
+                { role: 'user', content }
             ],
             response_format: zodResponseFormat(ActionSchema, 'action')
         });
@@ -132,6 +176,36 @@ export class OpenAIProvider implements LLMProvider {
         const choice = response.choices[0].message.content;
         if (!choice) throw new Error('No response from OpenAI');
         return JSON.parse(choice) as Action;
+    }
+
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+        const prompt = `You are evaluating a specific section of a webpage (${sectionLabel}).
+Goal: ${persona.goal_prompt}
+Current URL: ${observation.url}
+
+Analyze the provided screenshot and semantic elements for this section. Focus purely on UX observations and value proposition.
+Provide your findings in 'ux_feedback'.`;
+
+        const response = await this.client.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a world-class UX Auditor. Your goal is to provide granular, objective feedback on specific parts of a webpage."
+                },
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${observation.screenshot}` } },
+                    ],
+                },
+            ],
+            response_format: zodResponseFormat(z.object({ ux_feedback: z.string() }), "feedback"),
+        });
+
+        const res = JSON.parse(response.choices[0].message.content || '{"ux_feedback": "No feedback provided."}');
+        return res;
     }
 
     async generateSummary(prompt: string): Promise<string> {
@@ -151,13 +225,8 @@ export class GeminiProvider implements LLMProvider {
         this.genAI = new GoogleGenerativeAI(key);
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history, blacklist);
-
-        const screenshotSize = observation.screenshot?.length || 0;
-        if (screenshotSize < 100) {
-            console.warn('⚠️ Screenshot too small:', screenshotSize, 'bytes');
-        }
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
 
         const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
         let lastError: any = null;
@@ -170,14 +239,25 @@ export class GeminiProvider implements LLMProvider {
                 });
 
                 const content: any[] = [prompt];
-                if (screenshotSize > 100) {
+                if (observation.sections && observation.sections.length > 0) {
+                    observation.sections.forEach((s, idx) => {
+                        const label = idx === 0 ? 'TOP' : idx === 1 ? 'MIDDLE' : 'BOTTOM';
+                        content.push(`IMAGE: ${label} SECTION`);
+                        content.push({ inlineData: { data: s.screenshot, mimeType: 'image/jpeg' } });
+                    });
+                } else if (observation.screenshot.length > 100) {
                     content.push({ inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } });
                 }
 
                 const result = await model.generateContent(content);
                 const response = await result.response;
                 if (response) {
-                    return JSON.parse(response.text()) as Action;
+                    const result = JSON.parse(response.text()) as Action;
+                    // Harden: Ensure ux_feedback is a string
+                    if (result.ux_feedback && typeof result.ux_feedback === 'object') {
+                        result.ux_feedback = JSON.stringify(result.ux_feedback);
+                    }
+                    return result;
                 }
             } catch (err: any) {
                 lastError = err;
@@ -186,6 +266,39 @@ export class GeminiProvider implements LLMProvider {
         }
 
         throw lastError || new Error('All Gemini models failed');
+    }
+
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+        const prompt = `You are evaluating a specific section of a webpage (${sectionLabel}).
+Goal: ${persona.goal_prompt}
+Current URL: ${observation.url}
+
+Analyze the provided screenshot and semantic elements for this section. Focus purely on UX observations and value proposition.
+Provide your findings in 'ux_feedback'.`;
+
+        const model = this.genAI.getGenerativeModel({
+            model: "gemini-2.0-flash",
+            generationConfig: { responseMimeType: "application/json" }
+        });
+
+        const result = await model.generateContent([
+            prompt,
+            {
+                inlineData: {
+                    data: observation.screenshot,
+                    mimeType: "image/jpeg"
+                }
+            }
+        ]);
+
+        const text = result.response.text();
+        try {
+            const parsed = JSON.parse(text);
+            const feedback = typeof parsed === 'string' ? parsed : (parsed.ux_feedback || JSON.stringify(parsed));
+            return { ux_feedback: String(feedback) };
+        } catch (e) {
+            return { ux_feedback: text };
+        }
     }
 
     async generateSummary(prompt: string): Promise<string> {
@@ -217,7 +330,7 @@ export class OllamaProvider implements LLMProvider {
         this.models = modelStr.split(',').map(m => m.trim());
     }
 
-    private async fetchWithRetry(model: string, prompt: string, screenshot: string, signal: AbortSignal, retries = 2): Promise<any> {
+    private async fetchWithRetry(model: string, prompt: string, screenshots: string[], signal: AbortSignal, retries = 2): Promise<any> {
         for (let i = 0; i <= retries; i++) {
             try {
                 const response = await fetch(`${this.host}/api/generate`, {
@@ -226,7 +339,7 @@ export class OllamaProvider implements LLMProvider {
                     body: JSON.stringify({
                         model,
                         prompt,
-                        images: screenshot ? [screenshot] : [],
+                        images: screenshots || [],
                         stream: false,
                         format: 'json'
                     }),
@@ -248,8 +361,8 @@ export class OllamaProvider implements LLMProvider {
         }
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history, blacklist);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
         console.log(`🤖 Ollama inference (${this.models.join(', ')})...`);
         console.time('inference_total');
 
@@ -260,9 +373,17 @@ export class OllamaProvider implements LLMProvider {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 300000);
                 try {
-                    const data = await this.fetchWithRetry(model, prompt, observation.screenshot, controller.signal);
+                    const screenshots = observation.sections && observation.sections.length > 0
+                        ? observation.sections.map(s => s.screenshot)
+                        : [observation.screenshot];
+                    const data = await this.fetchWithRetry(model, prompt, screenshots, controller.signal);
                     clearTimeout(timeoutId);
-                    return { model, action: JSON.parse(data.response) as Action };
+                    const action = JSON.parse(data.response) as Action;
+                    // Harden: Ensure ux_feedback is a string
+                    if (action.ux_feedback && typeof action.ux_feedback === 'object') {
+                        action.ux_feedback = JSON.stringify(action.ux_feedback);
+                    }
+                    return { model, action };
                 } catch (err: any) {
                     console.error(`❌ ${model} failed:`, err.message);
                     return null;
@@ -278,7 +399,10 @@ export class OllamaProvider implements LLMProvider {
                 const controller = new AbortController();
                 setTimeout(() => controller.abort(), 600000);
                 try {
-                    const data = await this.fetchWithRetry(model, prompt, observation.screenshot, controller.signal);
+                    const screenshots = observation.sections && observation.sections.length > 0
+                        ? observation.sections.map(s => s.screenshot)
+                        : [observation.screenshot];
+                    const data = await this.fetchWithRetry(model, prompt, screenshots, controller.signal);
                     validResults.push({ model, action: JSON.parse(data.response) as Action });
                     break;
                 } catch (err: any) {
@@ -311,6 +435,37 @@ export class OllamaProvider implements LLMProvider {
         }
     }
 
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+        const prompt = `[UX SPECIALIST AUDIT: ${sectionLabel.toUpperCase()}]
+Goal: ${persona.goal_prompt}
+URL: ${observation.url}
+
+Task: Analyze this specific section and provide qualitative UX feedback.
+Focus: Visual hierarchy, clarity of purpose, and potential friction.
+
+Return strictly JSON: { "ux_feedback": "..." }`;
+
+        const abortController = new AbortController();
+        const timeout = setTimeout(() => abortController.abort(), 60000);
+
+        try {
+            const result = await this.fetchWithRetry(
+                this.models[0], // Use first available vision model
+                prompt,
+                [observation.screenshot],
+                abortController.signal
+            );
+            const parsed = JSON.parse(result.message?.content || result.response || '{}');
+            const feedback = typeof parsed === 'string' ? parsed : (parsed.ux_feedback || JSON.stringify(parsed));
+            return { ux_feedback: String(feedback) };
+        } catch (e) {
+            console.error(`Ollama analysis failed:`, e);
+            return { ux_feedback: "Local analysis timed out." };
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
     private synthesize(results: { model: string, action: Action }[]): Action {
         if (results.length === 1) return results[0].action;
 
@@ -339,8 +494,12 @@ export class LLMService {
         }
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
-        return this.provider.decideNextAction(observation, persona, history, blacklist);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
+        return this.provider.decideNextAction(observation, persona, history, blacklist, triedElements);
+    }
+
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+        return this.provider.analyzeSection(observation, persona, sectionLabel);
     }
 
     async generateSummary(prompt: string): Promise<string> {
