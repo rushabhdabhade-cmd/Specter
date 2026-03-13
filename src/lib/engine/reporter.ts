@@ -240,7 +240,32 @@ Finally, provide a SEPARATE section for automated parsing:
                     if (url) acc[url] = (acc[url] || 0) + 1;
                 }
                 return acc;
-            }, {})
+            }, {}),
+            technicalAudit: (() => {
+                const audit = sessions.reduce((acc: any, s: any) => {
+                    (s.session_logs || []).forEach((log: any) => {
+                        const tech = log.action_taken?.technical_metrics;
+                        const finding = log.action_taken?.heuristic_finding;
+
+                        if (tech?.has_errors) {
+                            if (Array.isArray(tech.broken_links)) {
+                                tech.broken_links.forEach((link: string) => acc.brokenLinks.add(link));
+                            } else {
+                                acc.brokenLinks.add(log.current_url);
+                            }
+                        }
+                        if (tech?.latency_ms > 3000) acc.slowPages.add(log.current_url);
+                        if (finding?.includes('Rage click')) acc.frictionPoints.push({ url: log.current_url, issue: finding });
+                    });
+                    return acc;
+                }, { brokenLinks: new Set<string>(), slowPages: new Set<string>(), frictionPoints: [] as any[] });
+
+                return {
+                    brokenLinks: Array.from(audit.brokenLinks),
+                    slowPages: Array.from(audit.slowPages),
+                    frictionPoints: audit.frictionPoints
+                };
+            })()
         },
         heatmap_data_url: null,
         created_at: new Date().toISOString()

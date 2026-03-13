@@ -7,6 +7,11 @@ export interface ScoringLog {
     emotion_tag: 'delight' | 'satisfaction' | 'curiosity' | 'surprise' | 'neutral' | 'confusion' | 'boredom' | 'frustration' | 'disappointment' | string;
     action_taken?: {
         emotional_intensity?: number;
+        heuristic_finding?: string | null;
+        technical_metrics?: {
+            latency_ms?: number;
+            has_errors?: boolean;
+        };
     };
 }
 
@@ -73,6 +78,26 @@ export function calculateSessionScore(session: ScoringSession): number {
         }
 
         if (currentScore < minScore) minScore = currentScore;
+
+        // --- Heuristic/Technical Penalties ---
+        const tech = log.action_taken?.technical_metrics;
+        const finding = log.action_taken?.heuristic_finding;
+
+        // 1. Broken Link / Technical Error Penalty
+        if (tech?.has_errors) {
+            currentScore = Math.max(0, currentScore - 15);
+        }
+
+        // 2. High Latency Penalty (> 3s)
+        if (tech?.latency_ms && tech.latency_ms > 3000) {
+            const delayPenalty = Math.min(10, (tech.latency_ms - 3000) / 1000); // Max 10 points
+            currentScore = Math.max(0, currentScore - delayPenalty);
+        }
+
+        // 3. Behavioral Friction (Rage Click)
+        if (finding?.includes('Rage click')) {
+            currentScore = Math.max(0, currentScore - 20);
+        }
     });
 
     if (session.status === 'abandoned' || session.status === 'error') {

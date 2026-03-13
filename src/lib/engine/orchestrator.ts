@@ -1,7 +1,7 @@
 import { createAdminClient } from '../supabase/admin';
 import { BrowserService } from './browser';
 import { LLMService } from './llm';
-import { PersonaProfile, Action, Observation } from './types';
+import { PersonaProfile, Action, Observation, HeuristicMetrics } from './types';
 import { generateAndStoreReport, checkAndFinalizeTestRun } from './reporter';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -12,6 +12,13 @@ export class Orchestrator {
     private llm!: LLMService;
     private supabase = createAdminClient();
     private trackedScans = new Set<string>();
+    private heuristicState: HeuristicMetrics = {
+        broken_links: [],
+        navigation_latency: [],
+        request_failures: 0,
+        action_latency: [],
+        last_load_time: 0
+    };
 
     constructor() {
         this.browser = new BrowserService();
@@ -128,6 +135,7 @@ export class Orchestrator {
                 let lastActionKey = '';
                 const blacklistedActions = new Set<string>();
                 const triedElementsOnUrl = new Map<string, Set<string>>(); // Track clicks per URL
+                const actionFrequency = new Map<string, number>(); // For rage click detection
 
                 while (stepNumber <= maxSteps) {
                     const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
@@ -171,9 +179,16 @@ export class Orchestrator {
                     const currentActionKey = `${action.type}-${action.text || ''}`;
                     if (currentActionKey === lastActionKey) {
                         consecutiveSameActions++;
+                        actionFrequency.set(currentActionKey, (actionFrequency.get(currentActionKey) || 0) + 1);
                     } else {
                         consecutiveSameActions = 0;
                         lastActionKey = currentActionKey;
+                    }
+
+                    // Rage click detection
+                    const isRageClick = (actionFrequency.get(currentActionKey) || 0) >= 3 && action.type === 'click';
+                    if (isRageClick) {
+                        console.warn(`🖱️ Rage click detected on: ${action.text || action.selector}`);
                     }
 
                     if (consecutiveSameActions >= 3) {
@@ -215,14 +230,28 @@ export class Orchestrator {
                     const postActionObservation = await this.browser.observe().catch(() => observation);
 
                     // Log the action 
+                    const technicalMetrics = this.browser.getMetrics();
+                    this.heuristicState = technicalMetrics; // Sync state
+
                     await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
                         current_url: postActionUrl,
                         screenshot_url: `data:image/jpeg;base64,${postActionObservation.screenshot}`,
-                        emotion_tag: this.mapEmotion(action.emotional_state),
-                        inner_monologue: action.reasoning,
-                        action_taken: { ...action, local_screenshot_path: localScreenshotPath } as any
+                        emotion_tag: isRageClick ? 'frustration' : this.mapEmotion(action.emotional_state),
+                        inner_monologue: isRageClick
+                            ? `User is rage clicking on an unresponsive element: "${action.text || 'Unknown'}". ${action.reasoning}`
+                            : action.reasoning,
+                        action_taken: {
+                            ...action,
+                            local_screenshot_path: localScreenshotPath,
+                            heuristic_finding: isRageClick ? 'Rage click detected - unresponsive element' : null,
+                            technical_metrics: {
+                                latency_ms: technicalMetrics.last_load_time,
+                                has_errors: technicalMetrics.broken_links.length > 0,
+                                broken_links: technicalMetrics.broken_links // Detailed list for audit
+                            }
+                        } as any
                     });
 
                     action.current_url = postActionUrl;
