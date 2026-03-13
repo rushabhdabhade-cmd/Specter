@@ -47,6 +47,10 @@ export function SentimentTimeline({ steps, personaName }: SentimentTimelineProps
                         const cfg = EMOTION_CONFIG[step.emotion_tag] || EMOTION_CONFIG.neutral;
                         const delta = scoreDelta(step.emotion_tag);
                         const actionType = step.action_taken?.type || 'step';
+                        let uxFeedback: any = step.action_taken?.ux_feedback;
+                        if (uxFeedback && typeof uxFeedback === 'object') {
+                            uxFeedback = uxFeedback.overall || uxFeedback.feedback || JSON.stringify(uxFeedback);
+                        }
 
                         return (
                             <div key={`${step.step_number}-${i}`} className="group/step relative flex flex-col items-center min-w-[72px]">
@@ -85,9 +89,9 @@ export function SentimentTimeline({ steps, personaName }: SentimentTimelineProps
                                     <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-4">
                                         {step.inner_monologue}
                                     </p>
-                                    {step.action_taken?.ux_feedback && (
+                                    {uxFeedback && (
                                         <p className="text-[10px] text-indigo-400 italic border-l-2 border-indigo-500/30 pl-2">
-                                            &ldquo;{step.action_taken.ux_feedback}&rdquo;
+                                            &ldquo;{uxFeedback}&rdquo;
                                         </p>
                                     )}
                                 </div>

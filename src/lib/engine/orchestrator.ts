@@ -11,6 +11,7 @@ export class Orchestrator {
     private browser: BrowserService;
     private llm!: LLMService;
     private supabase = createAdminClient();
+    private trackedScans = new Set<string>();
 
     constructor() {
         this.browser = new BrowserService();
@@ -21,8 +22,21 @@ export class Orchestrator {
         let testRunId: string | undefined;
         const maxRetries = 2;
 
+        let stepNumber = 1;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                // Log initial session start
+                await (this.supabase.from('session_logs') as any).insert({
+                    session_id: sessionId,
+                    step_number: 0,
+                    current_url: url,
+                    emotion_tag: 'neutral',
+                    inner_monologue: `Mission started for ${persona.name}. Initializing browser and navigating to ${url}...`,
+                    action_taken: { type: 'system', info: 'session_started' } as any
+                }).then(({ error }: any) => {
+                    if (error) console.error('❌ Failed to insert initial log:', error.message);
+                });
+
                 const { data: sessionData, error: sessionError } = await (this.supabase
                     .from('persona_sessions') as any)
                     .select('*, persona_configs(*, projects(*))')
@@ -37,7 +51,7 @@ export class Orchestrator {
                 const project = sessionData.persona_configs?.projects;
                 const executionMode = sessionData?.execution_mode || 'autonomous';
 
-                const provider = project?.llm_provider || 'ollama';
+                const provider = project?.llm_provider || 'openai';
                 let apiKey: string | undefined;
 
                 if (project?.encrypted_llm_key) {
@@ -69,7 +83,7 @@ export class Orchestrator {
                     is_paused: executionMode === 'manual'
                 }).eq('id', sessionId);
 
-                let stepNumber = 1;
+                stepNumber = 1;
 
                 await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
@@ -80,8 +94,13 @@ export class Orchestrator {
                     action_taken: { type: 'system', info: 'browser_init' } as any
                 });
 
-                this.updateLiveStatus(sessionId, 'Starting Chromium instance...');
-                await this.browser.init();
+                this.updateLiveStatus(sessionId, 'Starting Stagehand instance...');
+                // Map common providers to Stagehand-compatible models
+                const stagehandModel = provider === 'openai' ? 'gpt-4o' :
+                    provider === 'anthropic' ? 'claude-3-5-sonnet-20240620' :
+                        provider === 'gemini' ? 'google/gemini-2.0-flash' : 'gpt-4o';
+
+                await this.browser.init(stagehandModel, apiKey);
 
                 this.updateLiveStatus(sessionId, `Navigating to ${url}...`);
                 await (this.supabase.from('session_logs') as any).insert({
@@ -93,21 +112,22 @@ export class Orchestrator {
                     action_taken: { type: 'system', info: 'navigate' } as any
                 });
                 await this.browser.navigate(url);
+                const actualUrl = await this.browser.evaluate(() => window.location.href).catch(() => url);
+                this.trackedScans.add(this.normalizeUrl(actualUrl));
 
-                // V10: Deep Discovery Phase (Scan and Store)
-                console.log('🔍 Starting Deep Discovery Triple-Scan...');
-                stepNumber = await this.discoverPageContent(sessionId, stepNumber);
+                // Phase 1: Sequential Analysis (First Page)
+                console.log('🔍 Starting Sequential Analysis...');
+                const discovery = await this.discoverPageContent(sessionId, stepNumber, persona);
+                stepNumber = discovery.nextStep;
+                // No need to set the initial observation here as the loop will handle currentUrl
 
+                // Phase 2: Journey Execution
                 const history: Action[] = [];
-                const maxSteps = 20; // Increased max steps to allow for discovery
+                const maxSteps = 30;
                 let consecutiveSameActions = 0;
                 let lastActionKey = '';
-                const selectorAttempts = new Map<string, number>();
-                const blacklist = new Set<string>(); // Legacy/Temporary index-based blacklist
-                const semanticBlacklist = new Set<string>(); // Stable keys: "tag:text:href"
-                let prevVisualHash = ''; // Track visual state for loop detection
-
-                let lastObservationsElements: any[] = [];
+                const blacklistedActions = new Set<string>();
+                const triedElementsOnUrl = new Map<string, Set<string>>(); // Track clicks per URL
 
                 while (stepNumber <= maxSteps) {
                     const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
@@ -116,21 +136,8 @@ export class Orchestrator {
                         .single();
 
                     if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') {
-                        console.log(`🛑 Stop signal detected for session ${sessionId}. Exiting...`);
-                        this.updateLiveStatus(sessionId, 'Test run manually stopped by user.');
-                        await (this.supabase.from('session_logs') as any).insert({
-                            session_id: sessionId,
-                            step_number: stepNumber,
-                            current_url: url,
-                            emotion_tag: 'neutral',
-                            inner_monologue: 'Session stop signal received. Generating report...',
-                            action_taken: { type: 'system', info: 'manual_stop' } as any
-                        });
-
-                        if (testRunId) {
-                            await generateAndStoreReport(testRunId).catch(e => console.error('Final report failed:', e));
-                        }
-                        return; // Break out of function
+                        console.log(`🛑 Stop signal detected for session ${sessionId}.`);
+                        return;
                     }
 
                     if (executionMode === 'manual') {
@@ -138,162 +145,122 @@ export class Orchestrator {
                         await this.waitForStepSignal(sessionId);
                     }
 
-                    this.updateLiveStatus(sessionId, `Step ${stepNumber}: Observing Visual State...`);
+                    // ─── Sequential Analysis Requirement ───
+                    const currentUrl = await this.browser.evaluate(() => window.location.href);
+                    const normalizedUrl = this.normalizeUrl(currentUrl);
 
-                    const currentIndicesToBlock: string[] = [];
-                    if (semanticBlacklist.size > 0 && lastObservationsElements.length > 0) {
-                        lastObservationsElements.forEach((el: any) => {
-                            const normalizedText = (el.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                            const normalizedHref = (el.href || '').toLowerCase().trim().replace(/\/$/, '');
-                            const key = `${el.tagName}:${normalizedText}:${normalizedHref}`;
-                            if (semanticBlacklist.has(key)) {
-                                currentIndicesToBlock.push(`[${el.index}]`);
-                            }
-                        });
+                    let observation: Observation;
+                    if (!this.trackedScans.has(normalizedUrl)) {
+                        this.updateLiveStatus(sessionId, `First time on ${normalizedUrl}. Starting Sequential Analysis...`);
+                        this.trackedScans.add(normalizedUrl);
+                        const discovery = await this.discoverPageContent(sessionId, stepNumber, persona);
+                        stepNumber = discovery.nextStep;
+                        observation = discovery.observation;
+                    } else {
+                        this.updateLiveStatus(sessionId, `Step ${stepNumber}: Aggregating findings and deciding next move...`);
+                        // For non-first visits, we still do a full scan to ensure consistency with Sequential Analysis UX
+                        const discovery = await this.discoverPageContent(sessionId, stepNumber, persona);
+                        stepNumber = discovery.nextStep;
+                        observation = discovery.observation;
                     }
 
-                    const observation = await this.browser.observe(currentIndicesToBlock);
-                    lastObservationsElements = JSON.parse(observation.domContext || '[]');
                     const localScreenshotPath = await this.saveScreenshotLocally(sessionId, stepNumber, observation.screenshot);
 
-                    // --- Visual State Check ---
-                    const currentVisualHash = `${observation.screenshot?.length || 0}:${observation.screenshot?.slice(100, 200)}`;
-                    const isVisualStatic = currentVisualHash === prevVisualHash;
-                    prevVisualHash = currentVisualHash;
+                    const tried = Array.from(triedElementsOnUrl.get(normalizedUrl) || []);
+                    const action = await this.llm.decideNextAction(observation, persona, history, Array.from(blacklistedActions), tried);
 
-                    this.updateLiveStatus(sessionId, `Step ${stepNumber}: Deciding next move...`);
-
-                    const elements = lastObservationsElements;
-
-                    // Filter out semantically blacklisted items for the LLM context
-                    const filtered = elements.filter((el: any) => {
-                        const normalizedText = (el.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const normalizedHref = (el.href || '').toLowerCase().trim().replace(/\/$/, '');
-                        const key = `${el.tagName}:${normalizedText}:${normalizedHref}`;
-                        return !semanticBlacklist.has(key);
-                    });
-                    const filteredDomContext = JSON.stringify(filtered);
-                    const filteredObservation = { ...observation, domContext: filteredDomContext };
-
-                    const blockedHints = Array.from(semanticBlacklist).slice(-8);
-                    let action = await this.llm.decideNextAction(filteredObservation, persona, history, blockedHints);
-
-                    const currentActionKey = action.type === 'wait' || action.type === 'scroll'
-                        ? action.type
-                        : `${action.type}-${action.selector || ''}`;
-
-                    if (currentActionKey === lastActionKey && (['click', 'type', 'wait', 'scroll'].includes(action.type))) {
+                    // Stall detection
+                    const currentActionKey = `${action.type}-${action.text || ''}`;
+                    if (currentActionKey === lastActionKey) {
                         consecutiveSameActions++;
                     } else {
                         consecutiveSameActions = 0;
                         lastActionKey = currentActionKey;
                     }
 
-                    const actionHistory = history.map(h => h.type === 'wait' || h.type === 'scroll' ? h.type : `${h.type}-${h.selector || ''}`);
-                    const isCycle = actionHistory.length >= 4 &&
-                        actionHistory[actionHistory.length - 1] === actionHistory[actionHistory.length - 3] &&
-                        actionHistory[actionHistory.length - 2] === currentActionKey;
-
-                    const isUrlStatic = observation.url === (history[history.length - 1]?.current_url || url);
-                    const isStuck = isUrlStatic && isVisualStatic;
-                    if (consecutiveSameActions >= (action.type === 'wait' ? 2 : 3) || isCycle || (isStuck && history.length > 3)) {
-                        this.updateLiveStatus(sessionId, `Engine detected loop! Forcing recovery...`);
-
-                        // Blacklist the failing element semantically
-                        if (action.selector) {
-                            const indexMatch = action.selector.match(/\[(\d+)\]/);
-                            if (indexMatch) {
-                                const idx = parseInt(indexMatch[1]);
-                                const el = elements.find((e: any) => e.index === idx);
-                                if (el) {
-                                    const normalizedText = (el.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                                    const normalizedHref = (el.href || '').toLowerCase().trim().replace(/\/$/, '');
-                                    const key = `${el.tagName}:${normalizedText}:${normalizedHref}`;
-                                    console.log(`🚫 Semantically blacklisting: ${key}`);
-                                    semanticBlacklist.add(key);
-                                }
-                            }
-                        }
-
-                        // --- NEW: Explicitly blacklist the failing element ---
-                        if (action.selector) blacklist.add(action.selector);
-
+                    if (consecutiveSameActions >= 3) {
                         const scrollDirection = stepNumber % 2 === 0 ? 'bottom' : 'top';
+                        this.updateLiveStatus(sessionId, `Loop detected. Recovery scroll ${scrollDirection}...`);
+
                         const recoveryAction: Action = {
                             type: 'scroll',
                             text: scrollDirection,
-                            reasoning: `I've detected a loop. I'll scroll to the ${scrollDirection} to break the pattern and reset my perspective.`,
-                            emotional_state: 'frustrated',
-                            current_url: observation.url
+                            reasoning: `Loop detected (repeated the same action 3 times). Performing a ${scrollDirection} scroll to find new content.`,
+                            emotional_state: 'neutral'
                         };
 
-                        // Add to history so the LLM sees the recovery step
-                        history.push(recoveryAction);
+                        await this.browser.perform(recoveryAction);
 
+                        // Log the recovery attempt
+                        const recoveryObservation = await this.browser.observe().catch(() => ({ url: currentUrl, screenshot: '' }));
                         await (this.supabase.from('session_logs') as any).insert({
                             session_id: sessionId,
                             step_number: stepNumber,
-                            current_url: observation.url,
-                            emotion_tag: 'frustration',
-                            inner_monologue: `Loop detected on ${action.selector || 'action'}. Forcing a ${scrollDirection} scroll.`,
-                            action_taken: { type: 'system', info: `loop_breaker_${scrollDirection}` } as any
+                            current_url: recoveryObservation.url,
+                            screenshot_url: recoveryObservation.screenshot ? `data:image/jpeg;base64,${recoveryObservation.screenshot}` : null,
+                            emotion_tag: 'neutral',
+                            inner_monologue: recoveryAction.reasoning,
+                            action_taken: recoveryAction as any
                         });
 
                         consecutiveSameActions = 0;
                         stepNumber++;
-
-                        // Perform the recovery scroll immediately
-                        await this.browser.perform(recoveryAction);
-
-                        // Skip the normal action execution for this heartbeat
                         continue;
                     }
 
+                    this.updateLiveStatus(sessionId, `Acting: ${action.type} ${action.text || ''}`);
+                    await this.browser.perform(action);
+
+                    // Fetch post-action state
+                    const postActionUrl = await this.browser.evaluate(() => window.location.href).catch(() => observation.url);
+                    const postActionObservation = await this.browser.observe().catch(() => observation);
+
+                    // Log the action 
                     await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
-                        current_url: observation.url,
-                        screenshot_url: `data:image/jpeg;base64,${observation.screenshot}`,
+                        current_url: postActionUrl,
+                        screenshot_url: `data:image/jpeg;base64,${postActionObservation.screenshot}`,
                         emotion_tag: this.mapEmotion(action.emotional_state),
                         inner_monologue: action.reasoning,
                         action_taken: { ...action, local_screenshot_path: localScreenshotPath } as any
                     });
 
-                    if (action.type === 'complete' || action.type === 'fail') {
-                        await (this.supabase.from('persona_sessions') as any).update({
-                            status: action.type === 'complete' ? 'completed' : 'abandoned',
-                            completed_at: new Date().toISOString(),
-                            exit_reason: action.reasoning
-                        }).eq('id', sessionId);
-                        return; // Success
-                    }
-
-                    this.updateLiveStatus(sessionId, `Performing: ${action.type} ${action.selector || ''}`);
-                    await this.browser.perform(action);
-
-                    if (action.type === 'click' && action.selector) {
-                        const indexMatch = action.selector.match(/\[(\d+)\]/);
-                        if (indexMatch) {
-                            const idx = parseInt(indexMatch[1]);
-                            const el = elements.find((e: any) => e.index === idx);
-                            if (el) {
-                                const normalizedText = (el.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                                const normalizedHref = (el.href || '').toLowerCase().trim().replace(/\/$/, '');
-                                const attemptKey = `${el.tagName}:${normalizedText}:${normalizedHref}`;
-
-                                const attempts = (selectorAttempts.get(attemptKey) || 0) + 1;
-                                selectorAttempts.set(attemptKey, attempts);
-                                if (attempts >= 3) {
-                                    console.log(`🚫 Max attempts reached for semantic key: ${attemptKey}`);
-                                    semanticBlacklist.add(attemptKey);
-                                }
-                            }
-                        }
-                    }
-
-                    action.current_url = observation.url;
+                    action.current_url = postActionUrl;
                     history.push(action);
                     stepNumber++;
+
+                    // Blacklist/Tried logic: if we clicked something and URL didn't change
+                    const normalizedPostUrl = this.normalizeUrl(postActionUrl);
+                    const normalizedPreUrl = this.normalizeUrl(observation.url);
+
+                    if (action.type === 'click' && normalizedPostUrl === normalizedPreUrl) {
+                        if (!triedElementsOnUrl.has(normalizedPostUrl)) {
+                            triedElementsOnUrl.set(normalizedPostUrl, new Set());
+                        }
+
+                        const currentTried = triedElementsOnUrl.get(normalizedPostUrl)!;
+                        if (action.text) currentTried.add(action.text);
+                        if (action.selector) currentTried.add(action.selector);
+
+                        // If we've tried many things on this page and still haven't moved, force a recovery
+                        if (currentTried.size >= 5) {
+                            console.log(`🧨 Excessive failed clicks on ${normalizedPostUrl}. Forcing recovery scroll.`);
+                            const recoveryAction: Action = {
+                                type: 'scroll',
+                                text: 'bottom',
+                                reasoning: `Stuck in a click loop with ${currentTried.size} failed attempts. Scrolling to find new areas.`,
+                                emotional_state: 'frustration'
+                            };
+                            await this.browser.perform(recoveryAction);
+                        }
+
+                        if (consecutiveSameActions >= 2) {
+                            if (action.text) blacklistedActions.add(action.text);
+                            if (action.selector) blacklistedActions.add(action.selector);
+                            console.log(`🚫 Blacklisting stuck element: ${action.text || action.selector}`);
+                        }
+                    }
 
                     if (executionMode === 'manual') {
                         await (this.supabase.from('persona_sessions') as any).update({
@@ -307,164 +274,145 @@ export class Orchestrator {
                     await (this.supabase.from('persona_sessions') as any).update({
                         status: 'completed',
                         completed_at: new Date().toISOString(),
-                        exit_reason: 'Max steps reached — session concluded'
+                        exit_reason: 'Max steps reached'
                     }).eq('id', sessionId);
                 }
-                return; // Success, exit retry loop
+
+                await (this.supabase.from('session_logs') as any).insert({
+                    session_id: sessionId,
+                    step_number: stepNumber++,
+                    current_url: url,
+                    emotion_tag: 'delight',
+                    inner_monologue: 'Session completed successfully. All goals met or max steps reached.',
+                    action_taken: { type: 'system', info: 'session_completed' } as any
+                });
+                return;
 
             } catch (err: any) {
                 console.error(`❌ Session ${sessionId} failed (Attempt ${attempt}):`, err.message);
-
                 if (attempt < maxRetries) {
                     await this.browser.close().catch(() => { });
-                    continue; // Rerun loop
+                    continue;
                 }
-
                 await (this.supabase.from('persona_sessions') as any).update({
                     status: 'error',
-                    error_message: err.message
+                    error_message: err.message,
+                    completed_at: new Date().toISOString()
                 }).eq('id', sessionId);
+
+                await (this.supabase.from('session_logs') as any).insert({
+                    session_id: sessionId,
+                    step_number: stepNumber++,
+                    current_url: url,
+                    emotion_tag: 'frustration',
+                    inner_monologue: `Session failed permanently: ${err.message}`,
+                    action_taken: { type: 'system', info: 'session_error', error: err.message } as any
+                });
             } finally {
-                await this.browser.close();
-                if (testRunId) await checkAndFinalizeTestRun(testRunId).catch(() => { });
+                await this.browser.close().catch(() => { });
+                if (testRunId) {
+                    try {
+                        await checkAndFinalizeTestRun(testRunId);
+                    } catch (finalError) {
+                        console.error(`❌ Finalization failed for run ${testRunId}:`, finalError);
+                    }
+                }
             }
         }
     }
 
-    private async discoverPageContent(sessionId: string, startStep: number): Promise<number> {
-        if (!this.browser) return startStep;
+    private async discoverPageContent(sessionId: string, startStep: number, persona: PersonaProfile): Promise<{ nextStep: number, observation: Observation }> {
+        if (!this.browser) return { nextStep: startStep, observation: { url: '', screenshot: '', domContext: '[]', title: '', dimensions: { width: 1280, height: 800 } } };
         let currentStep = startStep;
-        this.updateLiveStatus(sessionId, '🔍 Phase: Deep Discovery Scan...');
 
-        // Segment 1: Capture Top
-        const obs1 = await this.browser.observe();
-        const lp1 = await this.saveScreenshotLocally(sessionId, currentStep, obs1.screenshot);
-        await (this.supabase.from('session_logs') as any).insert({
-            session_id: sessionId,
-            step_number: currentStep,
-            current_url: obs1.url,
-            screenshot_url: `data:image/jpeg;base64,${obs1.screenshot}`,
-            emotion_tag: 'neutral',
-            inner_monologue: 'Deep Discovery: Segment 1 (Top)',
-            action_taken: { type: 'system', info: 'discovery_top', local_screenshot_path: lp1 } as any
-        });
-        currentStep++;
+        const labels = ['Top', 'Mid', 'Bottom'] as const;
+        const currentUrl = await this.browser.evaluate(() => window.location.href);
+        const sections: any[] = [];
 
-        // Smart Discovery: Check if we actually need to scroll
-        const heights = await this.browser.evaluate(() => {
-            return {
-                vh: window.innerHeight,
-                dh: document.documentElement.scrollHeight
-            };
-        });
+        for (const label of labels) {
+            this.updateLiveStatus(sessionId, `Analyzing Page Section: ${label}...`);
 
-        if (heights.dh > heights.vh) {
-            // Segment 2: Scroll and Capture (Mid)
-            await this.browser.perform({ type: 'scroll', reasoning: 'Discovery scroll (mid)', emotional_state: 'curious' });
-            const obs2 = await this.browser.observe();
-            const lp2 = await this.saveScreenshotLocally(sessionId, currentStep, obs2.screenshot);
+            // Scroll to the appropriate section
+            if (label === 'Top') {
+                await this.browser.evaluate(() => window.scrollTo(0, 0));
+            } else if (label === 'Mid') {
+                await this.browser.evaluate(() => window.scrollTo(0, window.innerHeight));
+            } else if (label === 'Bottom') {
+                await this.browser.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+            }
+
+            await this.browser.waitForTimeout(1500);
+
+            // Capture and Analyze
+            const section = await this.browser.captureSection(label);
+            sections.push(section);
+
+            const { ux_feedback } = await this.llm.analyzeSection({
+                screenshot: section.screenshot,
+                url: currentUrl,
+                title: '',
+                domContext: section.domContext,
+                dimensions: { width: 1280, height: 800 }
+            }, persona, label);
+
+            const localPath = await this.saveScreenshotLocally(sessionId, currentStep, section.screenshot);
+
+            // Log Methodical Feedback
             await (this.supabase.from('session_logs') as any).insert({
                 session_id: sessionId,
                 step_number: currentStep,
-                current_url: obs2.url,
-                screenshot_url: `data:image/jpeg;base64,${obs2.screenshot}`,
+                current_url: currentUrl,
+                screenshot_url: `data:image/jpeg;base64,${section.screenshot}`,
                 emotion_tag: 'neutral',
-                inner_monologue: 'Deep Discovery: Segment 2 (Mid)',
-                action_taken: { type: 'system', info: 'discovery_mid', local_screenshot_path: lp2 } as any
+                inner_monologue: ux_feedback,
+                action_taken: {
+                    type: 'system',
+                    info: `sequential_analysis_${label.toLowerCase()}`,
+                    local_screenshot_path: localPath,
+                    ux_feedback: ux_feedback
+                } as any
             });
+
             currentStep++;
-
-            if (heights.dh > heights.vh * 1.5) {
-                // Segment 3: Scroll and Capture (Bottom)
-                await this.browser.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-                await this.browser.waitForTimeout(500);
-
-                const obs3 = await this.browser.observe();
-                const lp3 = await this.saveScreenshotLocally(sessionId, currentStep, obs3.screenshot);
-                await (this.supabase.from('session_logs') as any).insert({
-                    session_id: sessionId,
-                    step_number: currentStep,
-                    current_url: obs3.url,
-                    screenshot_url: `data:image/jpeg;base64,${obs3.screenshot}`,
-                    emotion_tag: 'neutral',
-                    inner_monologue: 'Deep Discovery: Segment 3 (Bottom)',
-                    action_taken: { type: 'system', info: 'discovery_bottom', local_screenshot_path: lp3 } as any
-                });
-                currentStep++;
-            }
         }
 
-        // --- NEW: Navigational Scout Phase ---
+        // Return to top before finishing discovery
+        await this.browser.evaluate(() => window.scrollTo(0, 0));
+        await this.browser.waitForTimeout(300);
+
+        // Aggregate elements for the final observation
+        let fullDom: any[] = [];
         try {
-            const elements = JSON.parse(obs1.domContext || '[]');
-            const navKeywords = ['pricing', 'feature', 'about', 'login', 'signup', 'product', 'contact', 'faq'];
-
-            // Find links that look like primary navigation
-            const discoveryLinks = elements.filter((el: any) => {
-                if (el.tagName !== 'A' || !el.text) return false;
-                const text = el.text.toLowerCase();
-                const isNav = el.attributes?.role === 'menuitem' || el.attributes?.class?.toLowerCase().includes('nav') || el.attributes?.class?.toLowerCase().includes('header');
-                const hasKeyword = navKeywords.some(k => text.includes(k));
-                return isNav || (hasKeyword && text.length < 30);
-            }).slice(0, 6); // Expanded scout limit
-
-            if (discoveryLinks.length > 0) {
-                console.log(`🧭 Found ${discoveryLinks.length} discovery links. Scouting...`);
-
-                for (const link of discoveryLinks) {
-                    this.updateLiveStatus(sessionId, `🔍 Scouting: ${link.text}...`);
-
-                    // Navigate to the sub-page
-                    try {
-                        await this.browser.perform({
-                            type: 'click',
-                            selector: `[index="${link.index}"]`,
-                            reasoning: `Scouting sub-page: ${link.text}`,
-                            emotional_state: 'curious'
-                        });
-                    } catch (navError) {
-                        console.warn(`⚠️ Failed to scout ${link.text}:`, navError);
-                        await this.browser.navigate(obs1.url);
-                        continue;
-                    }
-
-                    const subObs = await this.browser.observe();
-                    const subLp = await this.saveScreenshotLocally(sessionId, currentStep, subObs.screenshot);
-
-                    // Add a scroll discovery for sub-pages too
-                    await this.browser.evaluate(() => window.scrollTo(0, 800));
-                    await this.browser.waitForTimeout(500);
-                    const subObsMid = await this.browser.observe(); // Capture mid-scroll state
-
-                    await (this.supabase.from('session_logs') as any).insert({
-                        session_id: sessionId,
-                        step_number: currentStep,
-                        current_url: subObs.url,
-                        screenshot_url: `data:image/jpeg;base64,${subObs.screenshot}`,
-                        emotion_tag: 'neutral',
-                        inner_monologue: `Navigational Discovery: Scouted ${link.text} page.`,
-                        action_taken: {
-                            type: 'system',
-                            info: `scout_${link.text.toLowerCase().replace(/\s+/g, '_')}`,
-                            local_screenshot_path: subLp
-                        } as any
-                    });
-
-                    currentStep++;
-                    // Go back to home to resume scouting
-                    await this.browser.navigate(obs1.url);
-                }
-            }
+            sections.forEach(s => {
+                const elements = JSON.parse(s.domContext || '[]');
+                fullDom = fullDom.concat(elements);
+            });
         } catch (e) {
-            console.error('❌ Navigational Discovery failed:', e);
+            console.error('Failed to aggregate DOM context:', e);
         }
 
-        return currentStep;
+        return {
+            nextStep: currentStep,
+            observation: {
+                url: currentUrl,
+                screenshot: sections[0].screenshot, // Use Top as main
+                domContext: JSON.stringify(fullDom),
+                title: '',
+                dimensions: { width: 1280, height: 720 },
+                sections
+            }
+        };
     }
 
     private async updateLiveStatus(sessionId: string, status: string) {
-        // Non-blocking status update
-        (this.supabase.from('persona_sessions') as any).update({ live_status: status }).eq('id', sessionId).then(() => { });
+        console.log(`📡 [Session ${sessionId.slice(0, 8)}] Status: ${status}`);
+        const { error } = await (this.supabase.from('persona_sessions') as any)
+            .update({ live_status: status })
+            .eq('id', sessionId);
+
+        if (error) {
+            console.error(`❌ Failed to update persona_sessions.live_status for session ${sessionId}:`, error.message);
+        }
     }
 
     private async waitForStepSignal(sessionId: string): Promise<void> {
@@ -494,30 +442,23 @@ export class Orchestrator {
     private mapEmotion(state: string): 'neutral' | 'confusion' | 'frustration' | 'delight' {
         const s = (state || 'neutral').toLowerCase();
 
-        // Delight: High satisfaction/smoothness
-        if (s.includes('happy') || s.includes('delight') || s.includes('smooth') ||
-            s.includes('easy') || s.includes('love') || s.includes('great') ||
-            s.includes('amazing') || s.includes('satisfying') || s.includes('impressive') ||
-            s.includes('clear') || s.includes('straightforward') || s.includes('simple') ||
-            s.includes('logical') || s.includes('quick') || s.includes('fast') || s.includes('direct')) {
-            return 'delight';
-        }
+        // Block "delight" on frustration keywords
+        if (s.includes('frustrat') || s.includes('angry') || s.includes('annoy') || s.includes('stuck') || s.includes('broken') || s.includes('loop')) return 'frustration';
+        if (s.includes('confus') || s.includes('lost') || s.includes('unsure') || s.includes('how') || s.includes('where')) return 'confusion';
 
-        // Frustration: Stuck or errors
-        if (s.includes('frustrat') || s.includes('angry') || s.includes('annoy') ||
-            s.includes('stuck') || s.includes('broken') || s.includes('slow') ||
-            s.includes('difficult') || s.includes('ugh') || s.includes('loop')) {
-            return 'frustration';
-        }
-
-        // Confusion: UX ambiguity
-        if (s.includes('confus') || s.includes('lost') || s.includes('unsure') ||
-            s.includes('where') || s.includes('find') || s.includes('how') ||
-            s.includes('complex') || s.includes('unclear') || s.includes('mystery') ||
-            s.includes('puzzl') || s.includes('ambiguous')) {
-            return 'confusion';
-        }
+        if (s.includes('happy') || s.includes('delight') || s.includes('smooth') || s.includes('great') || s.includes('clear') || s.includes('simple')) return 'delight';
 
         return 'neutral';
+    }
+
+    private normalizeUrl(url: string): string {
+        try {
+            const u = new URL(url);
+            let normalized = u.origin + u.pathname;
+            if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+            return normalized.toLowerCase();
+        } catch {
+            return url.toLowerCase().split('#')[0].replace(/\/$/, '');
+        }
     }
 }

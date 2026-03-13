@@ -119,7 +119,7 @@ export async function createTestRun(formData: {
                 continue;
             }
 
-            // Launch Orchestrator (Fire and forget for Phase 1)
+            // Launch Orchestrator (Fire and forget - do NOT await here to avoid server action timeouts)
             const orchestrator = new Orchestrator();
             const personaProfile = {
                 name: p.name,
@@ -131,11 +131,9 @@ export async function createTestRun(formData: {
                 goal_prompt: p.prompt,
             } as any;
 
-            try {
-                await orchestrator.runSession(session.id, formData.url, personaProfile);
-            } catch (err) {
+            orchestrator.runSession(session.id, formData.url, personaProfile).catch((err: any) => {
                 console.error(`Autonomous session ${session.id} failed:`, err);
-            }
+            });
         }
     }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@clerk/nextjs';
 import { SessionControl } from '@/components/engine/SessionControl';
 import {
     ChevronLeft,
@@ -30,6 +31,7 @@ export default function SessionPage() {
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const { getToken } = useAuth();
 
     // Auto-redirect to report when completed
     useEffect(() => {
@@ -54,15 +56,18 @@ export default function SessionPage() {
 
     useEffect(() => {
         async function fetchData() {
+            const token = await getToken();
+            const authenticatedSupabase = createClient(token || undefined);
+
             // Fetch session with persona config
-            const { data: sessionData } = await supabase
+            const { data: sessionData } = await authenticatedSupabase
                 .from('persona_sessions')
                 .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
                 .eq('id', sessionId)
                 .single();
 
             // Fetch existing logs
-            const { data: logData } = await supabase
+            const { data: logData } = await authenticatedSupabase
                 .from('session_logs')
                 .select('*')
                 .eq('session_id', sessionId)
@@ -71,41 +76,41 @@ export default function SessionPage() {
             setSession(sessionData);
             setLogs(logData || []);
             setLoading(false);
+
+            // Subscribe to session updates
+            const sessionSub = authenticatedSupabase
+                .channel(`session_${sessionId}`)
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'persona_sessions',
+                    filter: `id=eq.${sessionId}`
+                }, (payload) => {
+                    setSession((prev: any) => ({ ...prev, ...payload.new }));
+                })
+                .subscribe();
+
+            // Subscribe to new logs
+            const logsSub = authenticatedSupabase
+                .channel(`logs_${sessionId}`)
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'session_logs',
+                    filter: `session_id=eq.${sessionId}`
+                }, (payload) => {
+                    setLogs((prev) => [...prev, payload.new]);
+                })
+                .subscribe();
+
+            return () => {
+                authenticatedSupabase.removeChannel(sessionSub);
+                authenticatedSupabase.removeChannel(logsSub);
+            };
         }
 
         fetchData();
-
-        // Subscribe to session updates
-        const sessionSub = supabase
-            .channel(`session_${sessionId}`)
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'persona_sessions',
-                filter: `id=eq.${sessionId}`
-            }, (payload) => {
-                setSession((prev: any) => ({ ...prev, ...payload.new }));
-            })
-            .subscribe();
-
-        // Subscribe to new logs
-        const logsSub = supabase
-            .channel(`logs_${sessionId}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'session_logs',
-                filter: `session_id=eq.${sessionId}`
-            }, (payload) => {
-                setLogs((prev) => [...prev, payload.new]);
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(sessionSub);
-            supabase.removeChannel(logsSub);
-        };
-    }, [sessionId, supabase]);
+    }, [sessionId, getToken]);
 
     useEffect(() => {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
