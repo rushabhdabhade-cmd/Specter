@@ -157,11 +157,9 @@ export class Orchestrator {
                         stepNumber = discovery.nextStep;
                         observation = discovery.observation;
                     } else {
-                        this.updateLiveStatus(sessionId, `Step ${stepNumber}: Aggregating findings and deciding next move...`);
-                        // For non-first visits, we still do a full scan to ensure consistency with Sequential Analysis UX
-                        const discovery = await this.discoverPageContent(sessionId, stepNumber, persona);
-                        stepNumber = discovery.nextStep;
-                        observation = discovery.observation;
+                        // Already scanned this URL, just do a normal observation to see if anything changed
+                        this.updateLiveStatus(sessionId, `Step ${stepNumber}: Observing current state...`);
+                        observation = await this.browser.observe();
                     }
 
                     const localScreenshotPath = await this.saveScreenshotLocally(sessionId, stepNumber, observation.screenshot);
@@ -186,7 +184,8 @@ export class Orchestrator {
                             type: 'scroll',
                             text: scrollDirection,
                             reasoning: `Loop detected (repeated the same action 3 times). Performing a ${scrollDirection} scroll to find new content.`,
-                            emotional_state: 'neutral'
+                            emotional_state: 'neutral',
+                            emotional_intensity: 0.5
                         };
 
                         await this.browser.perform(recoveryAction);
@@ -250,7 +249,8 @@ export class Orchestrator {
                                 type: 'scroll',
                                 text: 'bottom',
                                 reasoning: `Stuck in a click loop with ${currentTried.size} failed attempts. Scrolling to find new areas.`,
-                                emotional_state: 'frustration'
+                                emotional_state: 'frustration',
+                                emotional_intensity: 0.8
                             };
                             await this.browser.perform(recoveryAction);
                         }
@@ -347,13 +347,15 @@ export class Orchestrator {
             const section = await this.browser.captureSection(label);
             sections.push(section);
 
-            const { ux_feedback } = await this.llm.analyzeSection({
+            const { ux_feedback, emotional_state, emotional_intensity, proposed_solution } = await this.llm.analyzeSection({
                 screenshot: section.screenshot,
                 url: currentUrl,
                 title: '',
                 domContext: section.domContext,
                 dimensions: { width: 1280, height: 800 }
             }, persona, label);
+
+            const feedbackString = String(ux_feedback || 'No feedback');
 
             const localPath = await this.saveScreenshotLocally(sessionId, currentStep, section.screenshot);
 
@@ -363,13 +365,17 @@ export class Orchestrator {
                 step_number: currentStep,
                 current_url: currentUrl,
                 screenshot_url: `data:image/jpeg;base64,${section.screenshot}`,
-                emotion_tag: 'neutral',
-                inner_monologue: ux_feedback,
+                emotion_tag: this.mapEmotion(emotional_state),
+                inner_monologue: feedbackString,
                 action_taken: {
                     type: 'system',
                     info: `sequential_analysis_${label.toLowerCase()}`,
                     local_screenshot_path: localPath,
-                    ux_feedback: ux_feedback
+                    ux_feedback: feedbackString,
+                    emotional_state: emotional_state,
+                    emotional_intensity: emotional_intensity,
+                    proposed_solution: proposed_solution,
+                    specific_emotion: emotional_state // Label for UI
                 } as any
             });
 
@@ -439,14 +445,20 @@ export class Orchestrator {
         }
     }
 
-    private mapEmotion(state: string): 'neutral' | 'confusion' | 'frustration' | 'delight' {
+    private mapEmotion(state: string): string {
         const s = (state || 'neutral').toLowerCase();
 
-        // Block "delight" on frustration keywords
+        // High priority friction
         if (s.includes('frustrat') || s.includes('angry') || s.includes('annoy') || s.includes('stuck') || s.includes('broken') || s.includes('loop')) return 'frustration';
-        if (s.includes('confus') || s.includes('lost') || s.includes('unsure') || s.includes('how') || s.includes('where')) return 'confusion';
+        if (s.includes('disappoint') || s.includes('fail') || s.includes('sad')) return 'disappointment';
+        if (s.includes('confus') || s.includes('lost') || s.includes('unsure') || s.includes('how') || s.includes('where') || s.includes('skeptic') || s.includes('suspicio')) return 'confusion';
+        if (s.includes('bore') || s.includes('slow') || s.includes('repetitive')) return 'boredom';
 
-        if (s.includes('happy') || s.includes('delight') || s.includes('smooth') || s.includes('great') || s.includes('clear') || s.includes('simple')) return 'delight';
+        // Positive
+        if (s.includes('happy') || s.includes('delight') || s.includes('wow') || s.includes('great')) return 'delight';
+        if (s.includes('satisf') || s.includes('good') || s.includes('work') || s.includes('clear')) return 'satisfaction';
+        if (s.includes('curio') || s.includes('interest') || s.includes('want')) return 'curiosity';
+        if (s.includes('surpris') || s.includes('reveal') || s.includes('unexpect')) return 'surprise';
 
         return 'neutral';
     }
