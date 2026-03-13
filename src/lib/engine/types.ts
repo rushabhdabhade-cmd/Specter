@@ -16,6 +16,12 @@ export interface Action {
     possible_paths?: string[]; // Potential navigational paths identified in this step
 }
 
+export interface Archetype {
+    id: string;
+    icon_type: 'users' | 'zap' | 'user' | 'check' | 'globe' | 'x' | 'shopping-cart' | 'home' | 'settings';
+    desc: string;
+}
+
 export interface ObservationSection {
     screenshot: string;
     domContext: string;
@@ -49,4 +55,6 @@ export interface LLMProvider {
         proposed_solution?: string
     }>;
     generateSummary(prompt: string): Promise<string>;
+    generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]>;
+    suggestArchetypes(siteContext: string): Promise<Archetype[]>;
 }
