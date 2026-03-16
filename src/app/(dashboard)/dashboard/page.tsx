@@ -56,7 +56,7 @@ export default async function DashboardPage() {
     },
   ];
 
-  const recentRuns = (recentRunsRaw || []).map((run: any) => ({
+  const recentRuns = (recentRunsRaw || []).map((run) => ({
     id: run.id,
     url: run.projects?.target_url || 'Unknown',
     date: new Date(run.created_at).toLocaleDateString(),
