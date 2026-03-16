@@ -25,16 +25,19 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
   const supabase = await createClient();
 
   // Fetch test run with project details
+  // Fetch test run with project details and verify ownership
   const { data: run, error: runError } = await supabase
     .from('test_runs')
     .select(`
       *,
-      projects (
+      projects!inner (
         name,
-        target_url
+        target_url,
+        user_id
       )
     `)
     .eq('id', testRunId)
+    .eq('projects.user_id', userId)
     .single();
 
   if (runError || !run) redirect('/reports');
