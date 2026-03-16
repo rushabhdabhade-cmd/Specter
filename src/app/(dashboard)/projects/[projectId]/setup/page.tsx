@@ -277,7 +277,7 @@ export default function NewTestRunPage() {
           </div>
 
           <div className="w-full space-y-10 rounded-[48px] border border-white/5 bg-[#0a0a0a] p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] backdrop-blur-3xl relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-50" />
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-50 pointer-events-none" />
 
             <div className="space-y-6 text-left relative focus-within:translate-y-[-4px] transition-transform duration-500">
               <div className="flex items-center gap-3 text-slate-400">
@@ -515,12 +515,12 @@ export default function NewTestRunPage() {
                   <div className="space-y-4">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Suggested Archetypes</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {dynamicArchetypes.map((arch) => {
+                      {dynamicArchetypes.map((arch, idx) => {
                         const Icon = ICON_MAP[arch.icon_type] || Users;
                         const isSelected = selectedArchetypes.includes(arch.id);
                         return (
                           <button
-                            key={arch.id}
+                            key={arch.id || `arch-${idx}`}
                             type="button"
                             onClick={() => {
                               if (isSelected) {
@@ -544,6 +544,11 @@ export default function NewTestRunPage() {
                           </button>
                         );
                       })}
+                      {dynamicArchetypes.length === 0 && (
+                        <div className="col-span-full py-12 text-center border border-dashed border-white/5 rounded-2xl bg-white/[0.01]">
+                          <p className="text-slate-500 text-sm">No specific archetypes found. Try selecting manually.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -621,7 +626,7 @@ export default function NewTestRunPage() {
                             : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300'
                             }`}
                         >
-                          <span className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-[#151515] text-slate-600'
+                          <span className={`min-w-[24px] h-6 px-1 rounded flex items-center justify-center text-[10px] font-bold shrink-0 ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-[#151515] text-slate-600'
                             }`}>
                             {p.id}
                           </span>

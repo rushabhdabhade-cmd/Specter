@@ -22,6 +22,17 @@ export class Orchestrator {
 
     constructor() {
         this.browser = new BrowserService();
+        this.registerGlobalCleanup();
+    }
+
+    private registerGlobalCleanup() {
+        const cleanup = async () => {
+            console.log('🧹 Performing global browser cleanup...');
+            await this.browser.close().catch(() => { });
+        };
+        process.on('exit', cleanup);
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
     }
 
     async runSession(sessionId: string, url: string, persona: PersonaProfile) {
@@ -32,7 +43,7 @@ export class Orchestrator {
         let stepNumber = 1;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                // Log initial session start
+                // Step 0: Session Start
                 await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
                     step_number: 0,
@@ -40,8 +51,6 @@ export class Orchestrator {
                     emotion_tag: 'neutral',
                     inner_monologue: `Mission started for ${persona.name}. Initializing browser and navigating to ${url}...`,
                     action_taken: { type: 'system', info: 'session_started' } as any
-                }).then(({ error }: any) => {
-                    if (error) console.error('❌ Failed to insert initial log:', error.message);
                 });
 
                 const { data: sessionData, error: sessionError } = await (this.supabase
@@ -50,29 +59,21 @@ export class Orchestrator {
                     .eq('id', sessionId)
                     .single();
 
-                if (sessionError || !sessionData) {
-                    throw new Error(`Failed to fetch session data: ${sessionError?.message}`);
-                }
+                if (sessionError || !sessionData) throw new Error(`Failed to fetch session data: ${sessionError?.message}`);
 
                 testRunId = sessionData.test_run_id;
                 const project = sessionData.persona_configs?.projects;
                 const executionMode = sessionData?.execution_mode || 'autonomous';
-
                 const provider = project?.llm_provider || 'openai';
-                let apiKey: string | undefined;
 
+                let apiKey: string | undefined;
                 if (project?.encrypted_llm_key) {
-                    try {
-                        apiKey = decrypt(project.encrypted_llm_key);
-                    } catch (e) {
-                        console.error('Failed to decrypt LLM key:', e);
-                    }
+                    try { apiKey = decrypt(project.encrypted_llm_key); } catch (e) { }
                 }
 
                 this.llm = new LLMService({ provider, apiKey });
 
                 if (attempt > 1) {
-                    console.log(`🔄 Retrying session ${sessionId} (Attempt ${attempt}/${maxRetries})...`);
                     await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: 0,
@@ -90,8 +91,8 @@ export class Orchestrator {
                     is_paused: executionMode === 'manual'
                 }).eq('id', sessionId);
 
+                // Step 1: Browser Init
                 stepNumber = 1;
-
                 await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
                     step_number: stepNumber++,
@@ -101,14 +102,13 @@ export class Orchestrator {
                     action_taken: { type: 'system', info: 'browser_init' } as any
                 });
 
-                this.updateLiveStatus(sessionId, 'Starting Stagehand instance...');
-                // Map common providers to Stagehand-compatible models
                 const stagehandModel = provider === 'openai' ? 'gpt-4o' :
                     provider === 'anthropic' ? 'claude-3-5-sonnet-20240620' :
                         provider === 'gemini' ? 'google/gemini-2.0-flash' : 'gpt-4o';
 
                 await this.browser.init(stagehandModel, apiKey);
 
+                // Step 2: Main Navigation
                 this.updateLiveStatus(sessionId, `Navigating to ${url}...`);
                 await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
@@ -119,64 +119,57 @@ export class Orchestrator {
                     action_taken: { type: 'system', info: 'navigate' } as any
                 });
                 await this.browser.navigate(url);
-                const actualUrl = await this.browser.evaluate(() => window.location.href).catch(() => url);
-                this.trackedScans.add(this.normalizeUrl(actualUrl));
 
-                // Phase 1: Sequential Analysis (First Page)
-                console.log('🔍 Starting Sequential Analysis...');
-                const discovery = await this.discoverPageContent(sessionId, stepNumber, persona);
-                stepNumber = discovery.nextStep;
-                // No need to set the initial observation here as the loop will handle currentUrl
-
-                // Phase 2: Journey Execution
                 const history: Action[] = [];
-                const maxSteps = 30;
-                let consecutiveSameActions = 0;
-                let lastActionKey = '';
+                const maxSteps = 20;
+                const triedElementsOnUrl = new Map<string, Set<string>>();
+                const actionFrequency = new Map<string, number>();
                 const blacklistedActions = new Set<string>();
-                const triedElementsOnUrl = new Map<string, Set<string>>(); // Track clicks per URL
-                const actionFrequency = new Map<string, number>(); // For rage click detection
+                let lastActionKey = '';
+                let consecutiveSameActions = 0;
 
                 while (stepNumber <= maxSteps) {
                     const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
-                        .select('status')
-                        .eq('id', sessionId)
-                        .single();
+                        .select('status').eq('id', sessionId).single();
 
-                    if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') {
-                        console.log(`🛑 Stop signal detected for session ${sessionId}.`);
-                        return;
-                    }
+                    if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') return;
 
                     if (executionMode === 'manual') {
                         this.updateLiveStatus(sessionId, 'Waiting for command (Manual Mode)...');
                         await this.waitForStepSignal(sessionId);
                     }
 
-                    // ─── Sequential Analysis Requirement ───
                     const currentUrl = await this.browser.evaluate(() => window.location.href);
                     const normalizedUrl = this.normalizeUrl(currentUrl);
 
                     let observation: Observation;
+                    // Unified Observation with JIT methodical discovery
                     if (!this.trackedScans.has(normalizedUrl)) {
-                        this.updateLiveStatus(sessionId, `First time on ${normalizedUrl}. Starting Sequential Analysis...`);
+                        console.log(`🔍 First time on ${normalizedUrl}. Starting unified methodical scan...`);
+                        this.updateLiveStatus(sessionId, `Initial scan of ${normalizedUrl}...`);
                         this.trackedScans.add(normalizedUrl);
-                        const discovery = await this.discoverPageContent(sessionId, stepNumber, persona);
-                        stepNumber = discovery.nextStep;
-                        observation = discovery.observation;
+
+                        // Captures fragments & rich top-view in one sweep
+                        observation = await this.browser.observe([], true);
+
+                        // Log discovery fragments (using current stepNumber)
+                        if (observation.sections && observation.sections.length > 1) {
+                            for (const [idx, section] of observation.sections.entries()) {
+                                const label = idx === 0 ? 'Top' : idx === 1 ? 'Mid' : 'Bottom';
+                                await this.saveAndLogDiscovery(sessionId, stepNumber++, section, label, persona, observation.url);
+                            }
+                        }
                     } else {
-                        // Already scanned this URL, just do a normal observation to see if anything changed
-                        this.updateLiveStatus(sessionId, `Step ${stepNumber}: Observing current state...`);
+                        this.updateLiveStatus(sessionId, `Step ${stepNumber}: Analyzing view...`);
                         observation = await this.browser.observe();
                     }
 
-                    const localScreenshotPath = await this.saveScreenshotLocally(sessionId, stepNumber, observation.screenshot);
-
+                    // --- Cognition: Decide next action ---
                     const tried = Array.from(triedElementsOnUrl.get(normalizedUrl) || []);
                     const action = await this.llm.decideNextAction(observation, persona, history, Array.from(blacklistedActions), tried);
 
-                    // Stall detection
-                    const currentActionKey = `${action.type}-${action.text || ''}`;
+                    // --- Recovery & Loop Detection ---
+                    const currentActionKey = `${action.type}-${action.text || action.selector || ''}`;
                     if (currentActionKey === lastActionKey) {
                         consecutiveSameActions++;
                         actionFrequency.set(currentActionKey, (actionFrequency.get(currentActionKey) || 0) + 1);
@@ -185,268 +178,150 @@ export class Orchestrator {
                         lastActionKey = currentActionKey;
                     }
 
-                    // Rage click detection
-                    const isRageClick = (actionFrequency.get(currentActionKey) || 0) >= 3 && action.type === 'click';
-                    if (isRageClick) {
-                        console.warn(`🖱️ Rage click detected on: ${action.text || action.selector}`);
-                    }
-
                     if (consecutiveSameActions >= 3) {
                         const scrollDirection = stepNumber % 2 === 0 ? 'bottom' : 'top';
-                        this.updateLiveStatus(sessionId, `Loop detected. Recovery scroll ${scrollDirection}...`);
-
                         const recoveryAction: Action = {
                             type: 'scroll',
                             text: scrollDirection,
-                            reasoning: `Loop detected (repeated the same action 3 times). Performing a ${scrollDirection} scroll to find new content.`,
+                            reasoning: `Loop detected. Performing recovery scroll to ${scrollDirection}.`,
                             emotional_state: 'neutral',
-                            emotional_intensity: 0.5
+                            emotional_intensity: 0.1
                         };
-
+                        this.updateLiveStatus(sessionId, `Acting: Recovery ${scrollDirection}...`);
                         await this.browser.perform(recoveryAction);
 
-                        // Log the recovery attempt
-                        const recoveryObservation = await this.browser.observe().catch(() => ({ url: currentUrl, screenshot: '' }));
                         await (this.supabase.from('session_logs') as any).insert({
                             session_id: sessionId,
-                            step_number: stepNumber,
-                            current_url: recoveryObservation.url,
-                            screenshot_url: recoveryObservation.screenshot ? `data:image/jpeg;base64,${recoveryObservation.screenshot}` : null,
+                            step_number: stepNumber++,
+                            current_url: currentUrl,
                             emotion_tag: 'neutral',
                             inner_monologue: recoveryAction.reasoning,
                             action_taken: recoveryAction as any
                         });
-
                         consecutiveSameActions = 0;
-                        stepNumber++;
                         continue;
                     }
 
+                    // --- Execution: Perform action ---
                     this.updateLiveStatus(sessionId, `Acting: ${action.type} ${action.text || ''}`);
                     await this.browser.perform(action);
 
-                    // Fetch post-action state
+                    // --- Post-Action Discovery ---
                     const postActionUrl = await this.browser.evaluate(() => window.location.href).catch(() => observation.url);
                     const postActionObservation = await this.browser.observe().catch(() => observation);
-
-                    // Log the action 
                     const technicalMetrics = this.browser.getMetrics();
-                    this.heuristicState = technicalMetrics; // Sync state
 
-                    await (this.supabase.from('session_logs') as any).insert({
+                    // --- Logging: Finalize step ---
+                    const localScreenshotPath = await this.saveScreenshotLocally(sessionId, stepNumber, postActionObservation.screenshot);
+                    const isRageClick = (actionFrequency.get(currentActionKey) || 0) >= 3 && action.type === 'click';
+
+                    const { error: logError } = await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
                         current_url: postActionUrl,
                         screenshot_url: `data:image/jpeg;base64,${postActionObservation.screenshot}`,
                         emotion_tag: isRageClick ? 'frustration' : this.mapEmotion(action.emotional_state),
                         inner_monologue: isRageClick
-                            ? `User is rage clicking on an unresponsive element: "${action.text || 'Unknown'}". ${action.reasoning}`
+                            ? `Stuck loop on "${action.text || 'Element'}". ${action.reasoning}`
                             : action.reasoning,
                         action_taken: {
                             ...action,
                             local_screenshot_path: localScreenshotPath,
-                            heuristic_finding: isRageClick ? 'Rage click detected - unresponsive element' : null,
                             technical_metrics: {
                                 latency_ms: technicalMetrics.last_load_time,
-                                has_errors: technicalMetrics.broken_links.length > 0,
-                                broken_links: technicalMetrics.broken_links // Detailed list for audit
+                                broken_links_count: technicalMetrics.broken_links.length
                             }
                         } as any
                     });
+
+                    if (logError) console.error(`❌ Failed to log step ${stepNumber}:`, logError.message);
 
                     action.current_url = postActionUrl;
                     history.push(action);
                     stepNumber++;
 
-                    // Blacklist/Tried logic: if we clicked something and URL didn't change
+                    // URL tracking & Stuck tracking
                     const normalizedPostUrl = this.normalizeUrl(postActionUrl);
-                    const normalizedPreUrl = this.normalizeUrl(observation.url);
-
-                    if (action.type === 'click' && normalizedPostUrl === normalizedPreUrl) {
-                        if (!triedElementsOnUrl.has(normalizedPostUrl)) {
-                            triedElementsOnUrl.set(normalizedPostUrl, new Set());
-                        }
-
-                        const currentTried = triedElementsOnUrl.get(normalizedPostUrl)!;
+                    if (action.type === 'click' && normalizedPostUrl === normalizedUrl) {
+                        if (!triedElementsOnUrl.has(normalizedUrl)) triedElementsOnUrl.set(normalizedUrl, new Set());
+                        const currentTried = triedElementsOnUrl.get(normalizedUrl)!;
                         if (action.text) currentTried.add(action.text);
                         if (action.selector) currentTried.add(action.selector);
-
-                        // If we've tried many things on this page and still haven't moved, force a recovery
-                        if (currentTried.size >= 5) {
-                            console.log(`🧨 Excessive failed clicks on ${normalizedPostUrl}. Forcing recovery scroll.`);
-                            const recoveryAction: Action = {
-                                type: 'scroll',
-                                text: 'bottom',
-                                reasoning: `Stuck in a click loop with ${currentTried.size} failed attempts. Scrolling to find new areas.`,
-                                emotional_state: 'frustration',
-                                emotional_intensity: 0.8
-                            };
-                            await this.browser.perform(recoveryAction);
-                        }
-
                         if (consecutiveSameActions >= 2) {
                             if (action.text) blacklistedActions.add(action.text);
                             if (action.selector) blacklistedActions.add(action.selector);
-                            console.log(`🚫 Blacklisting stuck element: ${action.text || action.selector}`);
                         }
                     }
 
                     if (executionMode === 'manual') {
-                        await (this.supabase.from('persona_sessions') as any).update({
-                            is_paused: true,
-                            step_requested: false
-                        }).eq('id', sessionId);
+                        await (this.supabase.from('persona_sessions') as any).update({ is_paused: true, step_requested: false }).eq('id', sessionId);
                     }
                 }
 
-                if (stepNumber > maxSteps) {
-                    await (this.supabase.from('persona_sessions') as any).update({
-                        status: 'completed',
-                        completed_at: new Date().toISOString(),
-                        exit_reason: 'Max steps reached'
-                    }).eq('id', sessionId);
-                }
-
-                await (this.supabase.from('session_logs') as any).insert({
-                    session_id: sessionId,
-                    step_number: stepNumber++,
-                    current_url: url,
-                    emotion_tag: 'delight',
-                    inner_monologue: 'Session completed successfully. All goals met or max steps reached.',
-                    action_taken: { type: 'system', info: 'session_completed' } as any
-                });
-                return;
-
-            } catch (err: any) {
-                console.error(`❌ Session ${sessionId} failed (Attempt ${attempt}):`, err.message);
-                if (attempt < maxRetries) {
-                    await this.browser.close().catch(() => { });
-                    continue;
-                }
                 await (this.supabase.from('persona_sessions') as any).update({
-                    status: 'error',
-                    error_message: err.message,
-                    completed_at: new Date().toISOString()
+                    status: 'completed',
+                    completed_at: new Date().toISOString(),
+                    exit_reason: stepNumber > maxSteps ? 'Max steps reached' : 'Goals met'
                 }).eq('id', sessionId);
 
                 await (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
                     step_number: stepNumber++,
                     current_url: url,
-                    emotion_tag: 'frustration',
-                    inner_monologue: `Session failed permanently: ${err.message}`,
-                    action_taken: { type: 'system', info: 'session_error', error: err.message } as any
+                    emotion_tag: 'delight',
+                    inner_monologue: 'Session completed successfully.',
+                    action_taken: { type: 'system', info: 'session_completed' } as any
                 });
+
+            } catch (err: any) {
+                console.error(`❌ Session ${sessionId} failed:`, err.message);
+                if (attempt < maxRetries) {
+                    await this.browser.close().catch(() => { });
+                    continue;
+                }
+                await (this.supabase.from('persona_sessions') as any).update({ status: 'error', error_message: err.message, completed_at: new Date().toISOString() }).eq('id', sessionId);
             } finally {
                 await this.browser.close().catch(() => { });
-                if (testRunId) {
-                    try {
-                        await checkAndFinalizeTestRun(testRunId);
-                    } catch (finalError) {
-                        console.error(`❌ Finalization failed for run ${testRunId}:`, finalError);
-                    }
-                }
+                if (testRunId) await checkAndFinalizeTestRun(testRunId).catch(() => { });
             }
         }
     }
 
-    private async discoverPageContent(sessionId: string, startStep: number, persona: PersonaProfile): Promise<{ nextStep: number, observation: Observation }> {
-        if (!this.browser) return { nextStep: startStep, observation: { url: '', screenshot: '', domContext: '[]', title: '', dimensions: { width: 1280, height: 800 } } };
-        let currentStep = startStep;
+    private async saveAndLogDiscovery(sessionId: string, step: number, section: any, label: string, persona: PersonaProfile, url: string) {
+        const localPath = await this.saveScreenshotLocally(sessionId, step, section.screenshot);
 
-        const labels = ['Top', 'Mid', 'Bottom'] as const;
-        const currentUrl = await this.browser.evaluate(() => window.location.href);
-        const sections: any[] = [];
+        // Analyze section in background (Parallel with Scan logging)
+        const analysis = await this.llm.analyzeSection({
+            screenshot: section.screenshot,
+            url: url,
+            title: '',
+            domContext: section.domContext,
+            dimensions: { width: 1280, height: 800 }
+        }, persona, label).catch(() => ({ ux_feedback: `Scanning ${label} section...`, emotional_state: 'neutral', emotional_intensity: 0.3 }));
 
-        for (const label of labels) {
-            this.updateLiveStatus(sessionId, `Analyzing Page Section: ${label}...`);
-
-            // Scroll to the appropriate section
-            if (label === 'Top') {
-                await this.browser.evaluate(() => window.scrollTo(0, 0));
-            } else if (label === 'Mid') {
-                await this.browser.evaluate(() => window.scrollTo(0, window.innerHeight));
-            } else if (label === 'Bottom') {
-                await this.browser.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-            }
-
-            await this.browser.waitForTimeout(1500);
-
-            // Capture and Analyze
-            const section = await this.browser.captureSection(label);
-            sections.push(section);
-
-            const { ux_feedback, emotional_state, emotional_intensity, proposed_solution } = await this.llm.analyzeSection({
-                screenshot: section.screenshot,
-                url: currentUrl,
-                title: '',
-                domContext: section.domContext,
-                dimensions: { width: 1280, height: 800 }
-            }, persona, label);
-
-            const feedbackString = String(ux_feedback || 'No feedback');
-
-            const localPath = await this.saveScreenshotLocally(sessionId, currentStep, section.screenshot);
-
-            // Log Methodical Feedback
-            await (this.supabase.from('session_logs') as any).insert({
-                session_id: sessionId,
-                step_number: currentStep,
-                current_url: currentUrl,
-                screenshot_url: `data:image/jpeg;base64,${section.screenshot}`,
-                emotion_tag: this.mapEmotion(emotional_state),
-                inner_monologue: feedbackString,
-                action_taken: {
-                    type: 'system',
-                    info: `sequential_analysis_${label.toLowerCase()}`,
-                    local_screenshot_path: localPath,
-                    ux_feedback: feedbackString,
-                    emotional_state: emotional_state,
-                    emotional_intensity: emotional_intensity,
-                    proposed_solution: proposed_solution,
-                    specific_emotion: emotional_state // Label for UI
-                } as any
-            });
-
-            currentStep++;
-        }
-
-        // Return to top before finishing discovery
-        await this.browser.evaluate(() => window.scrollTo(0, 0));
-        await this.browser.waitForTimeout(300);
-
-        // Aggregate elements for the final observation
-        let fullDom: any[] = [];
-        try {
-            sections.forEach(s => {
-                const elements = JSON.parse(s.domContext || '[]');
-                fullDom = fullDom.concat(elements);
-            });
-        } catch (e) {
-            console.error('Failed to aggregate DOM context:', e);
-        }
-
-        return {
-            nextStep: currentStep,
-            observation: {
-                url: currentUrl,
-                screenshot: sections[0].screenshot, // Use Top as main
-                domContext: JSON.stringify(fullDom),
-                title: '',
-                dimensions: { width: 1280, height: 720 },
-                sections
-            }
-        };
+        await (this.supabase.from('session_logs') as any).insert({
+            session_id: sessionId,
+            step_number: step,
+            current_url: url,
+            screenshot_url: `data:image/jpeg;base64,${section.screenshot}`,
+            emotion_tag: this.mapEmotion(analysis.emotional_state),
+            inner_monologue: analysis.ux_feedback,
+            action_taken: {
+                type: 'system',
+                info: `sequential_analysis_${label.toLowerCase()}`,
+                local_screenshot_path: localPath,
+                proposed_solution: analysis.proposed_solution,
+                specific_emotion: analysis.emotional_state
+            } as any
+        });
     }
 
     private async updateLiveStatus(sessionId: string, status: string) {
         console.log(`📡 [Session ${sessionId.slice(0, 8)}] Status: ${status}`);
-        const { error } = await (this.supabase.from('persona_sessions') as any)
-            .update({ live_status: status })
-            .eq('id', sessionId);
-
-        if (error) {
-            console.error(`❌ Failed to update persona_sessions.live_status for session ${sessionId}:`, error.message);
+        try {
+            await (this.supabase.from('persona_sessions') as any).update({ live_status: status }).eq('id', sessionId);
+        } catch (e) {
+            // silent catch
         }
     }
 
@@ -469,35 +344,30 @@ export class Orchestrator {
             fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
             return `/screenshots/${sessionId}/${fileName}`;
         } catch (error) {
-            console.error('❌ Failed to save screenshot:', error);
             return '';
         }
     }
 
     private mapEmotion(state: string): string {
         const s = (state || 'neutral').toLowerCase();
-
-        // High priority friction
-        if (s.includes('frustrat') || s.includes('angry') || s.includes('annoy') || s.includes('stuck') || s.includes('broken') || s.includes('loop')) return 'frustration';
-        if (s.includes('disappoint') || s.includes('fail') || s.includes('sad')) return 'disappointment';
-        if (s.includes('confus') || s.includes('lost') || s.includes('unsure') || s.includes('how') || s.includes('where') || s.includes('skeptic') || s.includes('suspicio')) return 'confusion';
-        if (s.includes('bore') || s.includes('slow') || s.includes('repetitive')) return 'boredom';
-
-        // Positive
-        if (s.includes('happy') || s.includes('delight') || s.includes('wow') || s.includes('great')) return 'delight';
-        if (s.includes('satisf') || s.includes('good') || s.includes('work') || s.includes('clear')) return 'satisfaction';
-        if (s.includes('curio') || s.includes('interest') || s.includes('want')) return 'curiosity';
-        if (s.includes('surpris') || s.includes('reveal') || s.includes('unexpect')) return 'surprise';
-
+        if (s.includes('frustrat') || s.includes('angry')) return 'frustration';
+        if (s.includes('disappoint') || s.includes('fail')) return 'disappointment';
+        if (s.includes('confus') || s.includes('lost')) return 'confusion';
+        if (s.includes('bore') || s.includes('slow')) return 'boredom';
+        if (s.includes('happy') || s.includes('delight')) return 'delight';
+        if (s.includes('satisf') || s.includes('good')) return 'satisfaction';
+        if (s.includes('curio') || s.includes('interest')) return 'curiosity';
         return 'neutral';
     }
 
     private normalizeUrl(url: string): string {
         try {
             const u = new URL(url);
-            let normalized = u.origin + u.pathname;
-            if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
-            return normalized.toLowerCase();
+            const host = u.hostname.replace(/^www\./, '');
+            let path = u.pathname;
+            if (path === '/') path = '';
+            else if (path.endsWith('/')) path = path.slice(0, -1);
+            return `${u.protocol}//${host}${path}`.toLowerCase();
         } catch {
             return url.toLowerCase().split('#')[0].replace(/\/$/, '');
         }

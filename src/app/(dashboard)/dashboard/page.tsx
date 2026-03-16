@@ -80,7 +80,7 @@ export default async function DashboardPage() {
           className="group flex items-center gap-4 rounded-2xl bg-white px-8 py-5 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
         >
           <Plus className="h-5 w-5" />
-          Initialize Protocol
+          Initialize Cohort
         </Link>
       </div>
 

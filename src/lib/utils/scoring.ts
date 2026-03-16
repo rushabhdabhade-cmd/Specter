@@ -51,7 +51,11 @@ export function calculateSessionScore(session: ScoringSession): number {
 
     logs.forEach((log, i) => {
         const weight = EMOTION_WEIGHTS[log.emotion_tag] || 0;
-        const intensity = log.action_taken?.emotional_intensity ?? 0.5;
+        const i_val = log.action_taken?.emotional_intensity;
+        // Handle cases where LLM returns numbers like 700 instead of 0.7, or NaN
+        const intensity = typeof i_val === 'number' && !isNaN(i_val)
+            ? (i_val > 1 ? i_val / 1000 : Math.max(0, Math.min(1, i_val)))
+            : 0.5;
 
         // Base Impact
         let impact = weight * intensity * literacyMultiplier;

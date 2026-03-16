@@ -134,8 +134,9 @@ export async function createTestRun(formData: {
                 goal_prompt: p.prompt,
             } as any;
 
+            console.log(`🚀 Launching Orchestrator for session ${session.id}...`);
             orchestrator.runSession(session.id, formData.url, personaProfile).catch((err: any) => {
-                console.error(`Autonomous session ${session.id} failed:`, err);
+                console.error(`❌ Autonomous session ${session.id} failed:`, err);
             });
         }
     }
@@ -162,8 +163,9 @@ export async function suggestAudienceArchetypes(formData: {
         if (observation.sections) {
             siteContext += observation.sections.map((s: any, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
         }
+        console.log('📄 Site context captured successfully.');
     } catch (err) {
-        console.error('Browser discovery failed for archetype suggestion:', err);
+        console.error('⚠️ Browser discovery failed for archetype suggestion fallback to URL:', err);
         siteContext = `URL: ${formData.url}`;
     } finally {
         await browser.close();
@@ -174,7 +176,9 @@ export async function suggestAudienceArchetypes(formData: {
         apiKey: formData.geminiKey
     });
 
-    return llm.suggestArchetypes(siteContext);
+    const suggested = await llm.suggestArchetypes(siteContext);
+    console.log(`🤖 Gemini suggested ${(suggested as any).length || 0} archetypes.`);
+    return suggested;
 }
 
 export async function generateAIPersonas(formData: {
@@ -212,9 +216,10 @@ export async function generateAIPersonas(formData: {
     });
 
     const personas = await llm.generatePersonas(siteContext, formData.userPrompt, formData.archetypes);
+    console.log(`👥 Gemini generated ${personas.length} personas.`);
 
     return personas.map((p: PersonaProfile, idx: number) => ({
-        id: Date.now() + idx,
+        id: idx + 1,
         name: p.name,
         geolocation: p.geolocation,
         ageRange: p.age_range,

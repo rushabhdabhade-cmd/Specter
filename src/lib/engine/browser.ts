@@ -50,7 +50,7 @@ export class BrowserService {
             // Listen for new pages globally in this context
             const pwContext = this.page?.context ? this.page.context() : context;
             if (pwContext && typeof pwContext.on === 'function') {
-                this.attachNetworkListeners(pwContext); // Attach to context for all pages
+                this.attachNetworkListeners(pwContext);
 
                 pwContext.on('page', async (newPage: any) => {
                     console.log(`✨ New tab detected: ${newPage.url()}. Switching...`);
@@ -90,9 +90,7 @@ export class BrowserService {
                             this.metrics.broken_links.push(`${status}: ${url}`);
                         }
                     }
-                } catch (e) {
-                    // Ignore transient response errors
-                }
+                } catch (e) { }
             });
 
             target.on('requestfailed', (request: any) => {
@@ -101,107 +99,92 @@ export class BrowserService {
                     const url = typeof request.url === 'function' ? request.url() : 'unknown';
                     const error = typeof request.failure === 'function' ? request.failure()?.errorText : 'unknown';
                     console.warn(`🚦 Request failed: ${url} - ${error}`);
-                } catch (e) {
-                    // Ignore transient request errors
-                }
+                } catch (e) { }
             });
-        } catch (err: any) {
-            console.warn(`⚠️ Could not attach network listeners: ${err.message}`);
-        }
+        } catch (err: any) { }
     }
 
     async navigate(url: string) {
-        if (!this.page) {
-            console.error('❌ Cannot navigate: Browser page not initialized.');
-            return;
-        }
+        if (!this.page) return;
         const start = Date.now();
         try {
-            await this.page.goto(url, { waitUntil: 'load', timeoutMs: 60000 });
-            await this.page.waitForLoadState('networkidle', 5000).catch(() => { });
+            await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
             const duration = Date.now() - start;
             this.metrics.navigation_latency.push(duration);
             this.metrics.last_load_time = duration;
         } catch (err: any) {
             console.error(`Navigation to ${url} failed:`, err.message);
-            if (this.page.url() === 'about:blank') throw err;
         }
     }
 
-    async captureSection(label: string): Promise<ObservationSection> {
+    async captureSection(label: string, lightweight: boolean = false): Promise<ObservationSection> {
         if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
-        console.log(`📸 Capturing section: ${label}...`);
 
-        // Aggressive settling before capture to prevent black screenshots
-        await this.page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => { });
-        await this.page.waitForTimeout(1000);
+        // Fast settling for fragments
+        await this.page.waitForLoadState('domcontentloaded', { timeout: 2000 }).catch(() => { });
+        await this.page.waitForTimeout(lightweight ? 200 : 500);
 
-        // Use Stagehand observation for semantic parity
-        const observations = await this.stagehand.observe({ page: this.page }).catch(() => []);
-        const mappedElements = observations.map((ob: any, i: number) => ({
-            index: i,
-            type: ob.selector ? 'element' : 'unknown',
-            text: ob.description || ob.label || '',
-            selector: ob.selector,
-            role: ob.method || 'element',
-            href: (ob.attributes?.href) || '',
-            id: (ob.attributes?.id) || '',
-            classes: (ob.attributes?.class) || ''
-        }));
+        let mappedElements = [];
+        if (!lightweight) {
+            console.log(`🧠 Performing semantic discovery for ${label}...`);
+            const observations = await this.stagehand.observe({ page: this.page }).catch(() => []);
+            mappedElements = observations.map((ob: any, i: number) => ({
+                index: i,
+                type: ob.selector ? 'element' : 'unknown',
+                text: (ob.description || ob.label || '').slice(0, 50),
+                selector: ob.selector,
+                role: ob.method || 'element'
+            }));
+        }
 
-        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 40 });
+        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 30 });
         return {
             screenshot: screenshot.toString('base64'),
-            domContext: JSON.stringify(mappedElements.slice(0, 50))
+            domContext: JSON.stringify(mappedElements.slice(0, 40))
         };
     }
 
     async observe(blacklist: string[] = [], fullPageScan: boolean = false): Promise<Observation> {
         if (!this.page || !this.stagehand) {
-            console.error('❌ Cannot observe: Page or Stagehand not initialized.');
-            return {
-                screenshot: '',
-                url: '',
-                title: '',
-                domContext: '[]',
-                dimensions: { width: 1280, height: 800 }
-            };
+            return { screenshot: '', url: '', title: '', domContext: '[]', dimensions: { width: 1280, height: 800 } };
         }
 
         const sections: ObservationSection[] = [];
         let mainObservation: ObservationSection;
 
         if (fullPageScan) {
-            console.log('📸 Performing full page multi-section scan...');
-            // Section 1: Top
+            console.log('📸 Starting unified visual scan...');
+            // Step 1: Top (Lightweight)
             await this.page.evaluate(() => window.scrollTo(0, 0));
-            await this.page.waitForTimeout(500);
-            mainObservation = await this.captureSection('Top');
-            sections.push(mainObservation);
+            await this.page.waitForTimeout(300);
+            sections.push(await this.captureSection('Top', true));
 
+            // Step 2: Scroll & Fragments
             const heights = await this.page.evaluate(() => ({
                 vh: window.innerHeight,
                 dh: document.documentElement.scrollHeight
             }));
 
             if (heights.dh > heights.vh) {
-                // Section 2: Mid
                 await this.page.evaluate((vh: number) => window.scrollTo(0, vh), heights.vh);
                 await this.page.waitForTimeout(500);
-                sections.push(await this.captureSection('Mid'));
+                sections.push(await this.captureSection('Mid', true));
 
                 if (heights.dh > heights.vh * 1.5) {
-                    // Section 3: Bottom
                     await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
                     await this.page.waitForTimeout(500);
-                    sections.push(await this.captureSection('Bottom'));
+                    sections.push(await this.captureSection('Bottom', true));
                 }
             }
-            // Return to top
+
+            // Final Step: Return to top and do a RICH observation for the agent's decision making
             await this.page.evaluate(() => window.scrollTo(0, 0));
-            await this.page.waitForTimeout(200);
+            await this.page.waitForTimeout(300);
+            mainObservation = await this.captureSection('Primary View', false);
+            sections[0] = mainObservation;
         } else {
-            mainObservation = await this.captureSection('Current View');
+            mainObservation = await this.captureSection('Current View', false);
             sections.push(mainObservation);
         }
 
@@ -232,15 +215,13 @@ export class BrowserService {
                     console.log(`🤖 Stagehand acting: ${instruction}`);
                     await this.stagehand.act(instruction, { page: this.page });
 
-                    // Robust verification loop
                     let settled = false;
                     for (let i = 0; i < 5; i++) {
                         await this.page.waitForTimeout(1000);
                         const newPageCount = (this.stagehand as any).context?.pages ? (this.stagehand as any).context.pages().length : 1;
                         if (newPageCount > oldPageCount) {
-                            console.log('📈 New tab detected after click. Switching target...');
                             const pages = (this.stagehand as any).context.pages();
-                            this.page = pages[pages.length - 1]; // Pick the newest one
+                            this.page = pages[pages.length - 1];
                             await this.page.bringToFront().catch(() => { });
                             settled = true;
                             break;
@@ -251,8 +232,7 @@ export class BrowserService {
                         }
                     }
                     if (settled) {
-                        await this.page.waitForLoadState('load', { timeout: 10000 }).catch(() => { });
-                        await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
+                        await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
                     }
                     break;
 
@@ -272,8 +252,7 @@ export class BrowserService {
         } catch (err) {
             console.warn(`Stagehand action ${action.type} failed:`, err);
             if (action.selector) {
-                console.log(`🔄 Fallback: Trying selector-based click for ${action.selector}`);
-                await this.page.click(action.selector, { timeoutMs: 5000 }).catch(() => { });
+                await this.page.click(action.selector, { timeout: 5000 }).catch(() => { });
             }
         }
 
@@ -281,10 +260,9 @@ export class BrowserService {
         const newPageCount = (this.stagehand as any).context?.pages().length || 1;
 
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
-            console.log(`✅ Navigation detected (${oldUrl} -> ${newUrl}) or New Tab.`);
-            await this.page.waitForLoadState('load', { timeout: 10000 }).catch(() => { });
+            await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
         }
-        await this.page.waitForTimeout(1000);
+        await this.page.waitForTimeout(300);
     }
 
     async evaluate<T>(fn: (...args: any[]) => T | Promise<T>, ...args: any[]): Promise<T> {
@@ -306,8 +284,5 @@ export class BrowserService {
         return { ...this.metrics };
     }
 
-    static async shutdown() {
-        // Since we moved to instance-based stagehand, we don't have a static one to shutdown easily
-        // but we can leave this as a placeholder if we re-introduce pooling.
-    }
+    static async shutdown() { }
 }

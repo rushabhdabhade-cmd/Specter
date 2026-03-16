@@ -248,21 +248,25 @@ Finally, provide a SEPARATE section for automated parsing:
                         const finding = log.action_taken?.heuristic_finding;
 
                         if (tech?.has_errors) {
+                            const errorMsg = tech.error || '404 - Not Found';
                             if (Array.isArray(tech.broken_links)) {
-                                tech.broken_links.forEach((link: string) => acc.brokenLinks.add(link));
+                                tech.broken_links.forEach((link: string) => acc.brokenLinks.set(link, errorMsg));
                             } else {
-                                acc.brokenLinks.add(log.current_url);
+                                acc.brokenLinks.set(log.current_url, errorMsg);
                             }
                         }
-                        if (tech?.latency_ms > 3000) acc.slowPages.add(log.current_url);
+                        if (tech?.latency_ms > 3000) {
+                            const existing = acc.slowPages.get(log.current_url) || 0;
+                            acc.slowPages.set(log.current_url, Math.max(existing, tech.latency_ms));
+                        }
                         if (finding?.includes('Rage click')) acc.frictionPoints.push({ url: log.current_url, issue: finding });
                     });
                     return acc;
-                }, { brokenLinks: new Set<string>(), slowPages: new Set<string>(), frictionPoints: [] as any[] });
+                }, { brokenLinks: new Map<string, string>(), slowPages: new Map<string, number>(), frictionPoints: [] as any[] });
 
                 return {
-                    brokenLinks: Array.from(audit.brokenLinks),
-                    slowPages: Array.from(audit.slowPages),
+                    brokenLinks: [...audit.brokenLinks.entries()].map(([url, error]) => ({ url, error })),
+                    slowPages: [...audit.slowPages.entries()].map(([url, latency]) => ({ url, latency })),
                     frictionPoints: audit.frictionPoints
                 };
             })()

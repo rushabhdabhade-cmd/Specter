@@ -386,13 +386,15 @@ export default function SessionPage() {
                                                     </div>
                                                 )}
 
-                                                {!isSystem && action?.possible_paths && action.possible_paths.length > 0 && (
+                                                {!isSystem && action?.possible_paths && Array.isArray(action.possible_paths) && action.possible_paths.length > 0 && (
                                                     <div className="mb-3 space-y-1.5">
                                                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Possible Navigational Paths</span>
                                                         <div className="flex flex-wrap gap-1.5">
-                                                            {action.possible_paths.map((path: string, idx: number) => (
+                                                            {action.possible_paths.map((path: any, idx: number) => (
                                                                 <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-slate-500 font-mono">
-                                                                    {path}
+                                                                    {typeof path === 'object'
+                                                                        ? (path.path_name || path.description || JSON.stringify(path))
+                                                                        : String(path)}
                                                                 </span>
                                                             ))}
                                                         </div>

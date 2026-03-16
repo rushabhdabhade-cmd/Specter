@@ -203,7 +203,11 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
         const matchingLogs = logs.filter(l => l.emotion_tag === emo);
         const count = matchingLogs.length;
         const avgIntensity = count > 0
-            ? matchingLogs.reduce((acc, l) => acc + (l.action_taken?.emotional_intensity ?? 0.5), 0) / count
+            ? matchingLogs.reduce((acc, l) => {
+                const i = l.action_taken?.emotional_intensity;
+                const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+                return acc + intensity;
+            }, 0) / count
             : 0;
         return {
             subject: emo.charAt(0).toUpperCase() + emo.slice(1),
@@ -218,8 +222,10 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     const waterfallData = [...logs]
         .sort((a, b) => a.step_number - b.step_number)
         .map(l => {
-            const weight = EMOTION_WEIGHTS[l.emotion_tag] || 0;
-            const intensity = l.action_taken?.emotional_intensity ?? 0.5;
+            const w = EMOTION_WEIGHTS[l.emotion_tag];
+            const weight = typeof w === 'number' ? w : 0;
+            const i = l.action_taken?.emotional_intensity;
+            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
             const delta = weight * intensity;
             const prev = waterfallScore;
             waterfallScore = Math.max(0, Math.min(100, waterfallScore + delta));
@@ -239,9 +245,12 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     const healthData = [...logs]
         .sort((a, b) => a.step_number - b.step_number)
         .map(l => {
-            const weight = EMOTION_WEIGHTS[l.emotion_tag] || 0;
-            const intensity = l.action_taken?.emotional_intensity ?? 0.5;
-            currentHealth = Math.max(0, Math.min(100, currentHealth + (weight * intensity)));
+            const w = EMOTION_WEIGHTS[l.emotion_tag];
+            const weight = typeof w === 'number' ? w : 0;
+            const i = l.action_taken?.emotional_intensity;
+            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+            const delta = weight * intensity;
+            currentHealth = Math.max(0, Math.min(100, currentHealth + delta));
             return { step: l.step_number, health: Math.round(currentHealth), emotion: l.emotion_tag };
         });
 
@@ -250,7 +259,8 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     const delightEmotions = ['delight', 'satisfaction', 'curiosity', 'surprise'];
 
     const scatterData = logs.map(l => {
-        const intensity = l.action_taken?.emotional_intensity ?? 0.5;
+        const i = l.action_taken?.emotional_intensity;
+        const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
         const isFriction = frictionEmotions.includes(l.emotion_tag);
         const isDelight = delightEmotions.includes(l.emotion_tag);
 
@@ -418,7 +428,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                     {[
                         { label: 'Initial Health', value: '100', color: '#6366f1', sub: 'Baseline start' },
                         { label: 'Current Level', value: String(healthData[healthData.length - 1]?.health ?? 100), color: (healthData[healthData.length - 1]?.health ?? 100) > 70 ? '#10b981' : '#f59e0b', sub: 'Calculated Perception' },
-                        { label: 'Worst Point', value: String(Math.min(...healthData.map(d => d.health))), color: '#ef4444', sub: 'The "Peak" Friction' },
+                        { label: 'Worst Point', value: healthData.length > 0 ? String(Math.min(...healthData.map(d => d.health))) : '100', color: '#ef4444', sub: 'The "Peak" Friction' },
                     ].map(({ label, value, color, sub }) => (
                         <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '40' }}>
                             <p className="text-[10px] text-slate-600 uppercase tracking-widest font-black leading-none">{label}</p>
