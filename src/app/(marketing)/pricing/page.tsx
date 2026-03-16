@@ -94,7 +94,7 @@ export default function PricingPage() {
                                         <div className={`flex h-5 w-5 items-center justify-center rounded-full ${tier.highlighted ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-500'}`}>
                                             <Check className="h-3 w-3" />
                                         </div>
-                                        <span className={`text-sm font-medium ${tier.highlighted ? 'text-indigo-50 white/80' : 'text-slate-300'}`}>
+                                        <span className={`text-sm font-medium ${tier.highlighted ? 'text-indigo-100' : 'text-slate-300'}`}>
                                             {feature}
                                         </span>
                                     </li>
