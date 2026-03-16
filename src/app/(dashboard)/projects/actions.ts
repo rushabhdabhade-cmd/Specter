@@ -11,7 +11,7 @@ export async function createTestRun(formData: {
         username?: string;
         password?: string;
     };
-    personas: any[];
+    personas: { name: string; geolocation: string; ageRange: string; techLiteracy: string; prompt: string; }[];
 }) {
     const supabase = await createClient();
 
