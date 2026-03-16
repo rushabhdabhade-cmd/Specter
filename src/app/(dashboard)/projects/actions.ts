@@ -72,7 +72,7 @@ export async function createTestRun(formData: {
             .select()
             .single();
 
-        if (cError || !config) continue;
+        if (cError || !config) throw cError || new Error(`Failed to create persona config for ${p.name}`);
 
         await supabase.from('persona_sessions').insert({
             test_run_id: testRun.id,
