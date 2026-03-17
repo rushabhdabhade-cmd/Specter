@@ -56,10 +56,11 @@ function trimHistory(history: Action[]): string {
     );
 }
 
-function truncateDom(domContext: string | undefined, maxElements = 40): string {
+function truncateDom(domContext: string | undefined, maxElements = 120): string {
     if (!domContext) return '[]';
     try {
         const elements = JSON.parse(domContext);
+        // Prioritize interactive elements to the top if possible, but slice is fine for now
         return JSON.stringify(elements.slice(0, maxElements));
     } catch {
         return '[]';
@@ -82,8 +83,9 @@ Explored: ${uniquePagesVisited}/3 unique pages.
 
 MISSION:
 Evaluate visual hierarchy, messaging clarity, and friction. 
+To audit friction effectively, you MUST interact with the page—clicking links, buttons, or menus that align with your persona's mindset—to explore the full path beyond the fold.
 
-DOM ELEMENTS:
+DOM ELEMENTS (Interactive & Structural):
 ${truncateDom(observation.domContext)}
 
 HISTORY:

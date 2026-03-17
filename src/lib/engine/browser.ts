@@ -125,23 +125,53 @@ export class BrowserService {
         await this.page.waitForLoadState('domcontentloaded', { timeout: 2000 }).catch(() => { });
         await this.page.waitForTimeout(lightweight ? 200 : 500);
 
-        let mappedElements = [];
+        let mappedElements: any[] = [];
         if (!lightweight) {
             console.log(`🧠 Performing semantic discovery for ${label}...`);
             const observations = await this.stagehand.observe({ page: this.page }).catch(() => []);
-            mappedElements = observations.map((ob: any, i: number) => ({
-                index: i,
-                type: ob.selector ? 'element' : 'unknown',
-                text: (ob.description || ob.label || '').slice(0, 50),
-                selector: ob.selector,
-                role: ob.method || 'element'
-            }));
+
+            const selectorsToQuery = observations
+                .filter((ob: any) => ob.selector)
+                .map((ob: any) => ob.selector);
+
+            const boxes = await this.page.evaluate((sels: string[]) => {
+                return sels.map(sel => {
+                    try {
+                        const el = sel.startsWith('xpath=')
+                            ? document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement
+                            : document.querySelector(sel) as HTMLElement;
+                        if (el) {
+                            const rect = el.getBoundingClientRect();
+                            return {
+                                x: Math.round(rect.left + window.scrollX),
+                                y: Math.round(rect.top + window.scrollY),
+                                w: Math.round(rect.width),
+                                h: Math.round(rect.height)
+                            };
+                        }
+                    } catch (e) { }
+                    return null;
+                });
+            }, selectorsToQuery).catch(() => []);
+
+            let boxIndex = 0;
+            mappedElements = observations.map((ob: any, i: number) => {
+                const coords = ob.selector ? boxes[boxIndex++] : null;
+                return {
+                    index: i,
+                    type: ob.selector ? 'element' : 'unknown',
+                    text: (ob.description || ob.label || '').slice(0, 100), // Slightly longer text is fine
+                    selector: ob.selector,
+                    role: ob.method || 'element',
+                    coordinates: coords
+                };
+            });
         }
 
-        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 30 });
+        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 25 }); // Low quality for speed
         return {
             screenshot: screenshot.toString('base64'),
-            domContext: JSON.stringify(mappedElements.slice(0, 40))
+            domContext: JSON.stringify(mappedElements.slice(0, 45)) // Slightly more elements
         };
     }
 

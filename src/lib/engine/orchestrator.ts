@@ -121,7 +121,7 @@ export class Orchestrator {
                 await this.browser.navigate(url);
 
                 const history: Action[] = [];
-                const maxSteps = 20;
+                const maxSteps = 30;
                 const triedElementsOnUrl = new Map<string, Set<string>>();
                 const actionFrequency = new Map<string, number>();
                 const blacklistedActions = new Set<string>();
@@ -203,6 +203,40 @@ export class Orchestrator {
                     }
 
                     // --- Execution: Perform action ---
+                    let clickCoords = null;
+                    if (action.type === 'click' && action.selector) {
+                        clickCoords = await this.browser.evaluate((sel: string) => {
+                            const el = sel.startsWith('xpath=')
+                                ? document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement
+                                : document.querySelector(sel) as HTMLElement;
+                            if (el) {
+                                const rect = el.getBoundingClientRect();
+                                return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), w: Math.round(rect.width), h: Math.round(rect.height) };
+                            }
+                            return null;
+                        }, action.selector).catch(() => null);
+                    }
+
+                    // Fallback to domContext coords if selector is missing or resolver failed
+                    if (action.type === 'click' && !clickCoords && (action.text || action.reasoning)) {
+                        try {
+                            const dom = JSON.parse(observation.domContext || '[]');
+                            const targetText = (action.text || action.reasoning || '').toLowerCase();
+                            const match = dom.find((el: any) =>
+                                el.text && el.text.toLowerCase().includes(targetText) && el.coordinates
+                            );
+                            if (match && match.coordinates) {
+                                clickCoords = {
+                                    x: Math.round(match.coordinates.x + match.coordinates.w / 2),
+                                    y: Math.round(match.coordinates.y + match.coordinates.h / 2),
+                                    w: match.coordinates.w,
+                                    h: match.coordinates.h
+                                };
+                                console.log(`🎯 Fallback resolved coords for "${targetText}":`, clickCoords);
+                            }
+                        } catch (e) { }
+                    }
+
                     this.updateLiveStatus(sessionId, `Acting: ${action.type} ${action.text || ''}`);
                     await this.browser.perform(action);
 
@@ -215,6 +249,19 @@ export class Orchestrator {
                     const localScreenshotPath = await this.saveScreenshotLocally(sessionId, stepNumber, postActionObservation.screenshot);
                     const isRageClick = (actionFrequency.get(currentActionKey) || 0) >= 3 && action.type === 'click';
 
+                    // Parse potential clicks from domContext
+                    let potentialClicks = [];
+                    try {
+                        potentialClicks = JSON.parse(observation.domContext || '[]')
+                            .filter((el: any) => el.coordinates)
+                            .map((el: any) => ({
+                                x: Math.round(el.coordinates.x + el.coordinates.w / 2),
+                                y: Math.round(el.coordinates.y + el.coordinates.h / 2),
+                                text: el.text,
+                                selector: el.selector
+                            }));
+                    } catch (e) { }
+
                     const { error: logError } = await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
@@ -226,6 +273,8 @@ export class Orchestrator {
                             : action.reasoning,
                         action_taken: {
                             ...action,
+                            coordinates: clickCoords,
+                            potential_clicks: potentialClicks,
                             local_screenshot_path: localScreenshotPath,
                             technical_metrics: {
                                 latency_ms: technicalMetrics.last_load_time,
