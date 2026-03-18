@@ -44,7 +44,14 @@ const HEAT_RGBA: Record<string, [number, number, number]> = {
     neutral: [100, 116, 139],
 };
 
-function HeatmapCanvas({ steps, width, height }: { steps: HeatmapStep[]; width: number; height: number }) {
+interface HeatmapCanvasProps {
+    steps: HeatmapStep[];
+    width: number;
+    height: number;
+    showPotential?: boolean;
+}
+
+function HeatmapCanvas({ steps, width, height, showPotential = false }: HeatmapCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -59,36 +66,97 @@ function HeatmapCanvas({ steps, width, height }: { steps: HeatmapStep[]; width: 
             s => s.action_taken?.type === 'click' || s.action_taken?.type === 'type'
         );
 
+        // Pass 1: Draw potential clicks (Ambient heat map layer)
+        if (showPotential) {
+            steps.forEach(step => {
+                const potentials = (step.action_taken as any)?.potential_clicks || [];
+                potentials.forEach((click: any) => {
+                    if (typeof click.x === 'number' && typeof click.y === 'number') {
+                        const scale = width / 1280;
+                        const px = Math.round(click.x * scale);
+                        const py = Math.round(click.y * scale);
+                        const radius = 20; // Ambient radius
+                        const alphaWeight = 0.06; // Highly blendable
+
+                        const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
+                        grad.addColorStop(0, `rgba(0,0,0,${alphaWeight})`);
+                        grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+                        ctx.beginPath();
+                        ctx.arc(px, py, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = grad;
+                        ctx.fill();
+                    }
+                });
+            });
+        }
+
+        // Pass 2: Draw actual clicks
         clickSteps.forEach((step, i) => {
             const selector = step.action_taken?.selector || `step-${step.step_number}`;
-            const pos = selectorToPos(selector, i, width, height);
-            const rgb = HEAT_RGBA[step.emotion_tag] || HEAT_RGBA.neutral;
-            const radius = step.emotion_tag === 'frustration' ? 55 : step.emotion_tag === 'confusion' ? 45 : 35;
+            const coords = (step.action_taken as any)?.coordinates;
 
-            // Draw Gaussian radial gradient blob
+            let pos;
+            if (coords && typeof coords.x === 'number' && typeof coords.y === 'number') {
+                const scale = width / 1280;
+                pos = { x: Math.round(coords.x * scale), y: Math.round(coords.y * scale) };
+            } else {
+                pos = selectorToPos(selector, i, width, height);
+            }
+
+            // Frustration triggers bigger radius & higher weight
+            const radius = step.emotion_tag === 'frustration' ? 65 : step.emotion_tag === 'confusion' ? 50 : 40;
+            const alphaWeight = step.emotion_tag === 'frustration' ? 0.6 : step.emotion_tag === 'confusion' ? 0.45 : 0.35;
+
             const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
-            grad.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.55)`);
-            grad.addColorStop(0.4, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.25)`);
-            grad.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+            grad.addColorStop(0, `rgba(0,0,0,${alphaWeight})`);
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
 
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
             ctx.fillStyle = grad;
             ctx.fill();
-
-            // Step number label
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 9, 0, Math.PI * 2);
-            ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
-            ctx.fill();
-
-            ctx.font = 'bold 8px monospace';
-            ctx.fillStyle = '#fff';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(String(step.step_number), pos.x, pos.y);
         });
-    }, [steps, width, height]);
+
+        // Pass 3: Colorize pixels based on total alpha accumulation
+        const imgData = ctx.getImageData(0, 0, width, height);
+        const pixels = imgData.data;
+
+        for (let i = 0; i < pixels.length; i += 4) {
+            const alpha = pixels[i + 3]; // Alpha accumulation
+            if (alpha > 0) {
+                let r = 0, g = 0, b = 0;
+                if (alpha <= 64) {
+                    b = 255; g = alpha * 4; r = 0;
+                } else if (alpha <= 128) {
+                    b = 255 - (alpha - 64) * 4; g = 255; r = 0;
+                } else if (alpha <= 192) {
+                    b = 0; g = 255; r = (alpha - 128) * 4;
+                } else {
+                    b = 0; g = 255 - (alpha - 192) * 4; r = 255;
+                }
+
+                pixels[i] = r;
+                pixels[i + 1] = g;
+                pixels[i + 2] = b;
+                pixels[i + 3] = Math.min(220, alpha * 1.5); // Visual density scale
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        // Optional step markers
+        ctx.font = 'bold 7px monospace';
+        clickSteps.forEach((step, i) => {
+            const coords = (step.action_taken as any)?.coordinates;
+            const scale = width / 1280;
+            const pos = coords?.x && typeof coords.x === 'number' ? { x: Math.round(coords.x * scale), y: Math.round(coords.y * scale) } : selectorToPos(step.action_taken?.selector || `step-${step.step_number}`, i, width, height);
+
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+        });
+    }, [steps, width, height, showPotential]);
 
     return <canvas ref={canvasRef} width={width} height={height} className="absolute inset-0 w-full h-full" />;
 }
@@ -103,6 +171,7 @@ interface PageGroup {
 
 export function WebsiteHeatmap({ steps, dropOffStats = {}, totalSessions = 1 }: WebsiteHeatmapProps) {
     const [expandedPage, setExpandedPage] = useState<string | null>(null);
+    const [showPotential, setShowPotential] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const [canvasSize, setCanvasSize] = useState({ w: 800, h: 450 });
 
@@ -204,13 +273,27 @@ export function WebsiteHeatmap({ steps, dropOffStats = {}, totalSessions = 1 }: 
                         {isOpen && (
                             <div ref={containerRef} className="border-t border-white/5 p-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
 
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
-                                    <Flame className="h-3 w-3 text-orange-400" />
-                                    Heat visualization — dot size and color reflect interaction intensity and emotion
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                                        <Flame className="h-3 w-3 text-orange-400" />
+                                        Heat visualization — dot size and color reflect interaction intensity and emotion
+                                    </div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowPotential(!showPotential);
+                                        }}
+                                        className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${showPotential
+                                                ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.15)]'
+                                                : 'bg-white/5 border-white/10 text-slate-500 hover:bg-white/10 hover:text-slate-300'
+                                            }`}
+                                    >
+                                        {showPotential ? 'Hide Potential' : 'Show Potential Clicks'}
+                                    </button>
                                 </div>
 
                                 <div
-                                    className="relative w-full rounded-2xl overflow-hidden border border-white/5"
+                                    className="relative w-full rounded-2xl overflow-hidden border border-white/5 bg-[#080808] shadow-inner"
                                     style={{ height: canvasSize.h || 450 }}
                                 >
                                     {/* Screenshot under-layer */}
@@ -219,32 +302,40 @@ export function WebsiteHeatmap({ steps, dropOffStats = {}, totalSessions = 1 }: 
                                         <img
                                             src={group.screenshot}
                                             alt=""
-                                            className="absolute inset-0 w-full h-full object-cover object-top opacity-25"
+                                            className="absolute inset-0 w-full h-full object-cover object-top opacity-90 transition-opacity"
                                         />
                                     ) : (
                                         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-black" />
                                     )}
 
-                                    {/* Dark gradient overlay so canvas is readable */}
-                                    <div className="absolute inset-0 bg-gradient-to-b from-black/30 to-black/50" />
+                                    {/* Dark gradient overlay to raise contrast if needed */}
+                                    <div className="absolute inset-0 bg-black/10 mix-blend-multiply" />
 
                                     {/* Heatmap canvas */}
                                     <HeatmapCanvas
                                         steps={group.steps}
                                         width={canvasSize.w}
                                         height={canvasSize.h}
+                                        showPotential={showPotential}
                                     />
                                 </div>
 
                                 {/* Legend */}
-                                <div className="flex flex-wrap gap-3">
-                                    {Object.entries(HEAT_RGBA).map(([tag, rgb]) => (
-                                        <div key={tag} className="flex items-center gap-1.5">
-                                            <div className="h-2.5 w-2.5 rounded-full" style={{ background: `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` }} />
-                                            <span className="text-[9px] font-bold text-slate-600 capitalize">{tag}</span>
-                                        </div>
-                                    ))}
-                                    <span className="text-[9px] text-slate-700 ml-2">Blob size = frustration intensity. Number = step.</span>
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[9px] font-bold text-slate-600">Density</span>
+                                        <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-blue-500 via-green-500 via-yellow-400 to-red-500 max-w-[200px]" />
+                                        <span className="text-[9px] font-bold text-slate-600">High</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-3">
+                                        {Object.entries(HEAT_RGBA).map(([tag, rgb]) => (
+                                            <div key={tag} className="flex items-center gap-1.5 opacity-60">
+                                                <div className="h-2 w-2 rounded-full" style={{ background: `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` }} />
+                                                <span className="text-[9px] font-bold text-slate-500 capitalize">{tag.slice(0, 3)}</span>
+                                            </div>
+                                        ))}
+                                        <span className="text-[9px] text-slate-700 ml-2 border-l border-white/5 pl-2">White dots = step actions.</span>
+                                    </div>
                                 </div>
                             </div>
                         )}

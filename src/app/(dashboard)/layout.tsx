@@ -18,7 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <UserMenu />
         </header>
 
-        <div className="mx-auto max-w-[1400px] p-12 lg:p-16">
+        <div className="mx-auto max-w-[1400px] p-1 lg:p-16">
           {children}
         </div>
       </main>

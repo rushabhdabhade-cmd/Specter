@@ -203,7 +203,11 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
         const matchingLogs = logs.filter(l => l.emotion_tag === emo);
         const count = matchingLogs.length;
         const avgIntensity = count > 0
-            ? matchingLogs.reduce((acc, l) => acc + (l.action_taken?.emotional_intensity ?? 0.5), 0) / count
+            ? matchingLogs.reduce((acc, l) => {
+                const i = l.action_taken?.emotional_intensity;
+                const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+                return acc + intensity;
+            }, 0) / count
             : 0;
         return {
             subject: emo.charAt(0).toUpperCase() + emo.slice(1),
@@ -218,8 +222,10 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     const waterfallData = [...logs]
         .sort((a, b) => a.step_number - b.step_number)
         .map(l => {
-            const weight = EMOTION_WEIGHTS[l.emotion_tag] || 0;
-            const intensity = l.action_taken?.emotional_intensity ?? 0.5;
+            const w = EMOTION_WEIGHTS[l.emotion_tag];
+            const weight = typeof w === 'number' ? w : 0;
+            const i = l.action_taken?.emotional_intensity;
+            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
             const delta = weight * intensity;
             const prev = waterfallScore;
             waterfallScore = Math.max(0, Math.min(100, waterfallScore + delta));
@@ -239,9 +245,12 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     const healthData = [...logs]
         .sort((a, b) => a.step_number - b.step_number)
         .map(l => {
-            const weight = EMOTION_WEIGHTS[l.emotion_tag] || 0;
-            const intensity = l.action_taken?.emotional_intensity ?? 0.5;
-            currentHealth = Math.max(0, Math.min(100, currentHealth + (weight * intensity)));
+            const w = EMOTION_WEIGHTS[l.emotion_tag];
+            const weight = typeof w === 'number' ? w : 0;
+            const i = l.action_taken?.emotional_intensity;
+            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+            const delta = weight * intensity;
+            currentHealth = Math.max(0, Math.min(100, currentHealth + delta));
             return { step: l.step_number, health: Math.round(currentHealth), emotion: l.emotion_tag };
         });
 
@@ -250,7 +259,8 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     const delightEmotions = ['delight', 'satisfaction', 'curiosity', 'surprise'];
 
     const scatterData = logs.map(l => {
-        const intensity = l.action_taken?.emotional_intensity ?? 0.5;
+        const i = l.action_taken?.emotional_intensity;
+        const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
         const isFriction = frictionEmotions.includes(l.emotion_tag);
         const isDelight = delightEmotions.includes(l.emotion_tag);
 
@@ -297,7 +307,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                         <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Emotional intensity mapping</p>
                     </div>
                     <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
                                 <PolarGrid stroke="rgba(255,255,255,0.08)" />
                                 <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 7, fontWeight: 800 }} />
@@ -327,7 +337,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                         <div className="absolute top-0 right-0 text-[8px] font-black text-emerald-500/40 uppercase p-2 tracking-tighter">Sweet Spots</div>
                         <div className="absolute bottom-0 left-0 text-[8px] font-black text-red-500/40 uppercase p-2 tracking-tighter">Pain Points</div>
 
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                                 <XAxis type="number" dataKey="x" name="Friction" domain={[0, 100]} hide />
@@ -353,7 +363,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                         <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Step-by-step score contribution</p>
                     </div>
                     <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <BarChart data={waterfallData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                                 <XAxis dataKey="step" tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
@@ -378,7 +388,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                     </div>
 
                     <div className="h-52">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <AreaChart data={healthData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="healthColor" x1="0" y1="0" x2="0" y2="1">
@@ -418,7 +428,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                     {[
                         { label: 'Initial Health', value: '100', color: '#6366f1', sub: 'Baseline start' },
                         { label: 'Current Level', value: String(healthData[healthData.length - 1]?.health ?? 100), color: (healthData[healthData.length - 1]?.health ?? 100) > 70 ? '#10b981' : '#f59e0b', sub: 'Calculated Perception' },
-                        { label: 'Worst Point', value: String(Math.min(...healthData.map(d => d.health))), color: '#ef4444', sub: 'The "Peak" Friction' },
+                        { label: 'Worst Point', value: healthData.length > 0 ? String(Math.min(...healthData.map(d => d.health))) : '100', color: '#ef4444', sub: 'The "Peak" Friction' },
                     ].map(({ label, value, color, sub }) => (
                         <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '40' }}>
                             <p className="text-[10px] text-slate-600 uppercase tracking-widest font-black leading-none">{label}</p>
@@ -438,7 +448,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                             <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Categorized Friction points</p>
                         </div>
                         <div className="h-48">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                 <Treemap
                                     data={treemapData}
                                     dataKey="size"

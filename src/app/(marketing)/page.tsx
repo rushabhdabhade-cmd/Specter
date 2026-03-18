@@ -42,7 +42,7 @@ export default function Home() {
               href="/docs"
               className="text-sm font-black uppercase tracking-[0.2em] text-slate-500 hover:text-white transition-all underline decoration-slate-800 underline-offset-[12px] decoration-2 hover:decoration-indigo-500"
             >
-              Explore Protocol
+              Explore Cohorts
             </Link>
           </div>
         </div>

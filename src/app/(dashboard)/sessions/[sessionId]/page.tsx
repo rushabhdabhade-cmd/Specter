@@ -64,19 +64,23 @@ export default function SessionPage() {
             const token = await getToken();
             const authenticatedSupabase = createClient(token || undefined);
 
-            // Fetch session with persona config
-            const { data: sessionData } = await authenticatedSupabase
-                .from('persona_sessions')
-                .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
-                .eq('id', sessionId)
-                .single();
+            // 1. Parallel Fetching
+            const [sessionRes, logsRes] = await Promise.all([
+                authenticatedSupabase
+                    .from('persona_sessions')
+                    .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
+                    .eq('id', sessionId)
+                    .single(),
 
-            // Fetch existing logs
-            const { data: logData } = await authenticatedSupabase
-                .from('session_logs')
-                .select('*')
-                .eq('session_id', sessionId)
-                .order('step_number', { ascending: true });
+                authenticatedSupabase
+                    .from('session_logs')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .order('step_number', { ascending: true })
+            ]);
+
+            const sessionData = sessionRes.data;
+            const logData = logsRes.data;
 
             setSession(sessionData);
             setLogs(logData || []);
@@ -160,6 +164,18 @@ export default function SessionPage() {
                             <Compass className="h-3.5 w-3.5 text-slate-600" />
                             <span>Navigating <span className="text-indigo-400/80 font-bold">{session?.test_runs?.projects?.name}</span></span>
                         </div>
+                        {session?.live_status && (
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                {session.live_status.split('|').map((part: string, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-1.5 rounded-2xl animate-pulse">
+                                        {idx === 0 && <Compass className="h-3.5 w-3.5 text-emerald-400" />}
+                                        {idx === 1 && <Activity className="h-3.5 w-3.5 text-emerald-400" />}
+                                        {idx === 2 && <Globe className="h-3.5 w-3.5 text-emerald-400" />}
+                                        <span className="truncate max-w-[200px]">{part.trim()}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -194,10 +210,15 @@ export default function SessionPage() {
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Mission Mirror v1.0</span>
                             </div>
                             {latestLog?.current_url && (
-                                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] text-slate-400 font-mono">
+                                <a 
+                                    href={latestLog.current_url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] text-slate-400 font-mono hover:bg-white/10 hover:border-white/10 hover:text-white transition-all cursor-pointer"
+                                >
                                     <Globe className="h-3 w-3 text-indigo-500/50" />
                                     <span className="max-w-[300px] truncate">{latestLog.current_url}</span>
-                                </div>
+                                </a>
                             )}
                         </div>
 
@@ -330,6 +351,7 @@ export default function SessionPage() {
                         isPaused={!!session?.is_paused}
                         status={session?.status || 'queued'}
                         liveStatus={session?.live_status}
+                        innerMonologue={latestLog?.inner_monologue}
                     />
 
                     <div className="flex flex-col rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden max-h-[600px] shadow-2xl">
@@ -386,13 +408,15 @@ export default function SessionPage() {
                                                     </div>
                                                 )}
 
-                                                {!isSystem && action?.possible_paths && action.possible_paths.length > 0 && (
+                                                {!isSystem && action?.possible_paths && Array.isArray(action.possible_paths) && action.possible_paths.length > 0 && (
                                                     <div className="mb-3 space-y-1.5">
                                                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Possible Navigational Paths</span>
                                                         <div className="flex flex-wrap gap-1.5">
-                                                            {action.possible_paths.map((path: string, idx: number) => (
+                                                            {action.possible_paths.map((path: any, idx: number) => (
                                                                 <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-slate-500 font-mono">
-                                                                    {path}
+                                                                    {typeof path === 'object'
+                                                                        ? (path.path_name || path.description || JSON.stringify(path))
+                                                                        : String(path)}
                                                                 </span>
                                                             ))}
                                                         </div>

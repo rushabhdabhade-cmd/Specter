@@ -2,10 +2,15 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Observation, Action, PersonaProfile, LLMProvider, Archetype } from './types';
+import {
+    Observation, Action, PersonaProfile, LLMProvider,
+    Archetype, ObservationSection, PageScanAnalysis
+} from './types';
+
+// ─── Zod schemas ──────────────────────────────────────────────────────────────
 
 const ActionSchema = z.object({
-    type: z.enum(['click', 'type', 'scroll', 'wait', 'complete', 'fail']),
+    type: z.enum(['click', 'type', 'scroll', 'wait', 'complete', 'fail', 'skip_node']),
     selector: z.string().optional(),
     text: z.string().optional(),
     reasoning: z.string(),
@@ -14,14 +19,22 @@ const ActionSchema = z.object({
     specific_emotion: z.string().optional(),
     ux_feedback: z.string(),
     proposed_solution: z.string().optional(),
-    possible_paths: z.array(z.string())
+    possible_paths: z.array(z.string()).default([])
 });
 
-const SectionAnalysisSchema = z.object({
+const SectionResultSchema = z.object({
+    label: z.string(),
     ux_feedback: z.string(),
     emotional_state: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
     emotional_intensity: z.number().min(0).max(1),
     proposed_solution: z.string().optional()
+});
+
+const PageScanSchema = z.object({
+    sections: z.array(SectionResultSchema),
+    overall_emotion: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
+    overall_intensity: z.number().min(0).max(1),
+    page_summary: z.string()
 });
 
 const PersonaSchema = z.object({
@@ -33,153 +46,116 @@ const PersonaSchema = z.object({
     goal_prompt: z.string()
 });
 
-const PersonaCohortSchema = z.array(PersonaSchema);
-
 const ArchetypeSchema = z.object({
     id: z.string(),
     icon_type: z.enum(['users', 'zap', 'user', 'check', 'globe', 'x', 'shopping-cart', 'home', 'settings']),
     desc: z.string()
 });
 
-const ArchetypeCohortSchema = z.array(ArchetypeSchema);
+// ─── Shared prompt builders ───────────────────────────────────────────────────
 
-// ─── Token-saving helpers ─────────────────────────────────────────────────────
-
-/** Trim history to only the essential fields to save tokens. */
 function trimHistory(history: Action[]): string {
     return JSON.stringify(
-        history.slice(-10).map(a => ({
+        history.slice(-4).map(a => ({
             t: a.type,
-            s: a.selector,
-            url: a.current_url,
-            r: a.reasoning?.slice(0, 60)
+            s: (a.selector || a.text || '').slice(0, 40),
+            url: (a.current_url || '').slice(-35),
+            r: (a.reasoning || '').slice(0, 50)
         }))
     );
 }
 
-/** Truncate DOM context to a max number of elements and chars. */
-function truncateDom(domContext: string | undefined, maxElements = 60, maxChars = 3000): string {
+function trimDom(domContext: string | undefined, max = 28): string {
     if (!domContext) return '[]';
     try {
-        const elements = JSON.parse(domContext);
-        const capped = elements.slice(0, maxElements);
-        const str = JSON.stringify(capped);
-        return str.length > maxChars ? str.slice(0, maxChars) + '…]' : str;
+        const els = JSON.parse(domContext);
+        // Prefer interactive elements (links, buttons, inputs) over generic elements
+        const interactive = els.filter((e: any) =>
+            ['link', 'button', 'textbox', 'searchbox', 'input'].includes((e.role || '').toLowerCase())
+        );
+        const rest = els.filter((e: any) =>
+            !['link', 'button', 'textbox', 'searchbox', 'input'].includes((e.role || '').toLowerCase())
+        );
+        const merged = [...interactive, ...rest].slice(0, max);
+        return JSON.stringify(merged.map((e: any) => ({ role: e.role, text: e.text, sel: e.selector })));
     } catch {
-        return domContext.slice(0, maxChars);
+        return '[]';
     }
 }
 
-/** Compact persona/action prompt shared by all providers. */
 function buildActionPrompt(
     observation: Observation,
     persona: PersonaProfile,
     history: Action[],
-    blockedPaths: string[] = [],
+    blacklist: string[] = [],
     triedElements: string[] = []
 ): string {
-    const lastAction = history[history.length - 1];
-    const isStuck = lastAction &&
-        (lastAction.type === 'click' || lastAction.type === 'type') &&
-        lastAction.current_url === observation.url;
-    const stuckNote = isStuck
-        ? `⚠️ STUCK: Last ${lastAction.type} on ${lastAction.selector || '?'} did not change the page. 
-Suggestions:
-- Try a DIFFERENT element (e.g. a link in the footer or a mobile menu icon).
-- SCROLL down to see if the page content changed below the fold.
-- Check if you need to click a parent container instead.\n`
-        : '';
+    const uniquePages = new Set(history.map(a => a.current_url?.split('?')[0])).size;
+    return `You are ${persona.name} (${persona.tech_literacy} tech literacy, goal: ${persona.goal_prompt}).
+URL: ${observation.url} | Pages explored: ${uniquePages}
 
-    const triedNote = triedElements.length > 0
-        ? `[CRITICAL] TRIED ELEMENTS ON THIS URL (FAILURES):
-The following elements were ALREADY CLICKED but did NOT lead to a new page. 
-DO NOT CLICK THEM AGAIN. DO NOT CLICK VARIATIONS OF THEM. 
-CLICKING THESE AGAIN WILL CAUSE AN INFINITE LOOP REDUCING YOUR SCORE.
-TRIED ELEMENTS:
-${triedElements.map(e => `- "${e}"`).join('\n')}
+INTERACTIVE ELEMENTS:
+${trimDom(observation.domContext)}
 
-Actionable Advice: 
-- If you've tried the main CTAs, look for sub-links, footer links, or social icons.
-- If you're stuck, SCROLL to find new sections.
-- Do NOT express "delight" if you decide to click a tried element; instead, express FRUSTRATION.\n`
-        : '';
-
-    const uniquePagesVisited = new Set(history.map(a => a.current_url?.split('#')[0])).size;
-
-    let visualGuidance = '';
-    let elementsContext = '';
-
-    if (observation.sections && observation.sections.length > 0) {
-        visualGuidance = `I have provided ${observation.sections.length} sections of the page (captured while scrolling Top -> Mid -> Bottom). 
-Each section consists of a screenshot followed by its specific INTERACTIVE ELEMENTS (JSON).
-[CRITICAL] Use the JSON immediate following a screenshot to identify elements labeled [0], [1], etc. in that specific image.`;
-
-        elementsContext = observation.sections.map((s, idx) => {
-            const label = idx === 0 ? 'TOP' : idx === 1 ? 'MIDDLE' : 'BOTTOM';
-            return `--- SECTION: ${label} ---\n(Context for the image above)\n${truncateDom(s.domContext)}\n`;
-        }).join('\n');
-    } else {
-        visualGuidance = `The provided image has indigo labels like [0], [1], etc. these correspond EXACTLY to the "index" in the JSON below.`;
-        elementsContext = `INTERACTIVE ELEMENTS (JSON):\n${truncateDom(observation.domContext)}`;
-    }
-
-    return `You are ${persona.name}, a synthetic UX Auditor (tech literacy: ${persona.tech_literacy}).
-Goal: ${persona.goal_prompt}
-Current URL: ${observation.url}
-Unique Pages Visited: ${uniquePagesVisited}/3 (Goal: Explore at least 3 unique sub-pages before completing)
-${stuckNote}
-${triedNote}
-
-UX AUDIT DIRECTIVE:
-Your primary objective is to evaluate the website's quality. Provide detailed, critical observations in 'ux_feedback' regarding:
-- Visual Hierarchy: Is the most important content emphasized? 
-- Content Quality: Is the messaging clear and relevant?
-- Navigation Friction: Are there confusing menus, broken links, or repetitive steps?
-- Responsiveness: Does the layout feel cramped or poorly spaced?
-
-VISUAL GUIDANCE:
-${visualGuidance}
-
-${elementsContext}
-
-HISTORY (Last 10):
+RECENT HISTORY:
 ${trimHistory(history)}
 
-TASK:
-1) Analyze ALL provided screenshots and their corresponding semantic elements.
-2) Decide the NEXT action to move toward your goal AND increase page variety.
-3) If you've already explored a page, favor finding NEW links/buttons to other sections.
-4) Provide a DETAILED UX observation in 'ux_feedback'.
+BLOCKED: ${[...blacklist, ...triedElements].slice(0, 10).join(', ') || 'none'}
 
-Rules:
-- [CRITICAL] Instead of using precise coordinates or indices, describe the target element in the 'text' field (e.g., "the login button", "the pricing link").
-- The engine now uses AI to find the element based on your description.
-- Never repeat an action that didn't change the state.
-- [CRITICAL] Be critical. If something is generic or misplaced, say so.
+INSTRUCTIONS:
+- Behave as this persona. Explore the page as they would.
+- 'reasoning': first-person internal monologue (why you're choosing this action).
+- 'ux_feedback': honest critique of what is visually confusing, missing, or well-designed RIGHT NOW on this screen.
+- 'proposed_solution': specific, actionable fix for the designer (required if friction found).
+- Use 'skip_node' if the page is a 404, completely irrelevant to your goal, or has no useful content.
+- Use 'complete' only when you have fully explored your goal path.
 
-EMOTIONAL STATE:
-You must select a granular emotion and an intensity (0.0 to 1.0) that best reflects your current experience:
-- Delight: High satisfaction/joy from a successful task or great discovery.
-- Satisfaction: Contentment; things are working as expected.
-- Curiosity: Interest in a section or link; wanting to explore further.
-- Surprise: Unexpected but interesting/positive revelation.
-- Neutral: Standard interaction with no specific pulse.
-- Confusion: UI is ambiguous, you're unsure where to go, or something feels slightly "off".
-- Boredom: Content is generic, layout is repetitive, or goal progress feels slow.
-- Frustration: Direct friction (broken links, loops, complex forms, missing info).
-- Disappointment: Goal progress failed or content didn't meet expectations.
-- specific_emotion: A short 2-3 word string providing more nuance (e.g., "Cautious Optimism", "Brief Annoyance", "Discovery Spark").
-- proposed_solution: [MANDATORY IF FRICTION DETECTED] If you express Confusion, Boredom, Frustration, or Disappointment, you MUST provide a concrete, technical recommendation on how to fix the issue (e.g., "Move the 'Skip' button to the top-right", "Increase contrast on the secondary CTA", "Simplify the 4-step onboarding into a single page").
+⚠️ AUTH FORMS — STRICT RULE (highest priority):
+If the current page contains a login form, sign-up form, registration form, or any page that asks for credentials (email/password, phone/OTP, social login buttons), you MUST:
+1. Set 'type' to 'skip_node'.
+2. Write 'ux_feedback' about the design of the auth form itself (clarity, trust signals, friction).
+3. Do NOT attempt to type into any field. Do NOT click login/signup/submit buttons.
+This applies to: /login, /signin, /signup, /register, /auth, /account/create, and any page whose primary content is an authentication form.
 
-[SCORING DIRECTIVE]
-- High Intensity (0.8+) for Frustration/Disappointment significantly drains the UX score.
-- High Intensity (0.8+) for Delight/Satisfaction provides a positive boost.
-- If you state that a discovery is "good", "useful", or "helpful" in your reasoning, you MUST return a positive emotion (Delight/Satisfaction/Curiosity) with appropriate intensity.
-
-Return JSON: { "type","selector"?, "text", "reasoning","emotional_state","emotional_intensity","specific_emotion"?, "ux_feedback", "proposed_solution"?, "possible_paths" }`;
+Return JSON: { type, text, reasoning, emotional_state, emotional_intensity, specific_emotion, ux_feedback, proposed_solution, possible_paths }`;
 }
 
-// ─── Providers ────────────────────────────────────────────────────────────────
+function buildPageScanPrompt(
+    sections: ObservationSection[],
+    pageUrl: string,
+    pageTitle: string,
+    persona: PersonaProfile
+): string {
+    const sectionLabels = sections.map(s => s.label || 'Section').join(', ');
+    return `You are a UX auditor evaluating a webpage as the persona: ${persona.name}.
+Persona goal: ${persona.goal_prompt}
+Page: ${pageTitle} (${pageUrl})
+Sections captured: ${sectionLabels}
+
+For EACH section screenshot (provided as images in order), analyze:
+1. Visual hierarchy — is the most important content prominent?
+2. Content clarity — is the messaging clear for this persona?
+3. Friction — any confusing UI, missing CTAs, broken layouts, or trust issues?
+4. Emotional response — how would this persona feel seeing this section?
+
+Be specific and critical. Generic feedback like "looks clean" is not acceptable.
+Point to exact elements: headlines, CTAs, images, forms, navigation items.
+
+Return JSON matching this structure:
+{
+  "sections": [
+    { "label": "Top", "ux_feedback": "...", "emotional_state": "...", "emotional_intensity": 0.0-1.0, "proposed_solution": "..." },
+    ...
+  ],
+  "overall_emotion": "...",
+  "overall_intensity": 0.0-1.0,
+  "page_summary": "2-3 sentence summary of overall UX quality for this persona"
+}`;
+}
+
+// ─── OpenAI Provider ──────────────────────────────────────────────────────────
+// Uses gpt-4o for vision tasks (decideNextAction, analyzePageSections)
+// Uses gpt-4o-mini for text-only tasks (summaries, personas, archetypes) — ~15x cheaper
 
 export class OpenAIProvider implements LLMProvider {
     private client: OpenAI;
@@ -188,340 +164,218 @@ export class OpenAIProvider implements LLMProvider {
         this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
         const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
+        const response = await this.client.chat.completions.create({
+            model: 'gpt-4o',
+            max_tokens: 600,
+            messages: [
+                { role: 'system', content: 'Synthetic UX persona. JSON only.' },
+                {
+                    role: 'user', content: [
+                        { type: 'text', text: prompt },
+                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}`, detail: 'low' } }
+                    ]
+                }
+            ],
+            response_format: zodResponseFormat(ActionSchema, 'action')
+        });
+        return JSON.parse(response.choices[0].message.content || '{}');
+    }
+
+    // Single API call for ALL page sections — replaces N separate analyzeSection() calls
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
 
         const content: any[] = [{ type: 'text', text: prompt }];
-
-        if (observation.sections && observation.sections.length > 0) {
-            observation.sections.forEach((s, idx) => {
-                const label = idx === 0 ? 'TOP' : idx === 1 ? 'MIDDLE' : 'BOTTOM';
-                content.push({ type: 'text', text: `IMAGE: ${label} SECTION` });
-                content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${s.screenshot}` } });
+        for (const section of sections) {
+            content.push({
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' }
             });
-        } else {
-            content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}` } });
         }
 
         const response = await this.client.chat.completions.create({
             model: 'gpt-4o',
+            max_tokens: 1000,
             messages: [
-                { role: 'system', content: 'You are a synthetic UX persona navigating a website. Always return valid JSON.' },
+                { role: 'system', content: 'UX auditor. JSON only. Be specific and critical.' },
                 { role: 'user', content }
             ],
-            response_format: zodResponseFormat(ActionSchema, 'action')
+            response_format: zodResponseFormat(PageScanSchema, 'page_scan')
         });
 
-        const choice = response.choices[0].message.content;
-        if (!choice) throw new Error('No response from OpenAI');
-        return JSON.parse(choice) as Action;
+        return JSON.parse(response.choices[0].message.content || '{}');
     }
 
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{
-        ux_feedback: string,
-        emotional_state: string,
-        emotional_intensity: number,
-        proposed_solution?: string
-    }> {
-        const prompt = `You are evaluating a specific section of a webpage (${sectionLabel}).
-Goal: ${persona.goal_prompt}
-Current URL: ${observation.url}
-
-Analyze the provided screenshot and semantic elements for this section. Focus purely on UX observations and value proposition.
-Identify any friction and propose a solution if necessary.
-Provide your findings including an emotional tag (delight, satisfaction, curiosity, surprise, neutral, confusion, boredom, frustration, disappointment) and intensity (0.0-1.0).
-Provide your findings in the requested JSON format.`;
-
-        const response = await this.client.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a world-class UX Auditor. Your goal is to provide granular, objective feedback. Always return valid JSON."
-                },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: prompt },
-                        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${observation.screenshot}` } },
-                    ],
-                },
-            ],
-            response_format: zodResponseFormat(SectionAnalysisSchema, "feedback"),
-        });
-
-        const res = JSON.parse(response.choices[0].message.content || '{}');
-        return {
-            ux_feedback: typeof res.ux_feedback === 'string' ? res.ux_feedback : JSON.stringify(res.ux_feedback || 'No feedback provided'),
-            emotional_state: res.emotional_state || 'neutral',
-            emotional_intensity: res.emotional_intensity ?? 0.3,
-            proposed_solution: res.proposed_solution
-        };
-    }
-
+    // text-only: use mini model
     async generateSummary(prompt: string): Promise<string> {
-        const response = await this.client.chat.completions.create({
-            model: 'gpt-4o',
+        const res = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 500,
             messages: [{ role: 'user', content: prompt }]
         });
-        return response.choices[0].message.content || '';
+        return res.choices[0].message.content || '';
     }
 
     async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
-        const prompt = `You are a world-class UX Researcher and Behavioral Psychologist. 
-Based on the website context provided below, generate 5 distinct user persona CATEGORIES (e.g., "Skeptical Enterprise Buyer", "First-time Direct Consumer") that represent the core audience segments.
-
-CRITICAL REQUIREMENTS:
-1. NAME: Use a descriptive category/segment name. DO NOT use human names like "John" or "Sarah".
-2. GOAL PROMPT: This is the mindset for an AI agent. Make it highly detailed and instructional.
-   - Describe their mental model and what they value.
-   - Specify exactly what they are looking for on this specific site.
-   - Define their behavioral triggers (e.g., "Ignores marketing fluff, looks immediately for documentation/pricing").
-   - Include their level of technical scrutiny and patience.
-
-Archetypes to focus on: ${archetypes.join(', ')}
-User Preferences for this project: ${userPrompt}
-
-Site Context:
-${siteContext}
-
-Return a JSON array of personas following the PersonaProfile schema.`;
-
-        const response = await this.client.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" }
+        const res = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 800,
+            messages: [{
+                role: 'user',
+                content: `UX Researcher. Generate 5 user persona categories for: ${siteContext}.
+Constraints: ${userPrompt || 'none'}. Archetypes: ${archetypes.join(', ')}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }
+Use role names not human names (e.g. "Budget Traveler", not "John Doe").`
+            }],
+            response_format: { type: 'json_object' }
         });
-
-        const content = response.choices[0].message.content || '{"personas": []}';
-        const parsed = JSON.parse(content);
-        const result = PersonaCohortSchema.safeParse(parsed.personas || parsed);
-        return result.success ? result.data : [];
+        const parsed = JSON.parse(res.choices[0].message.content || '{"personas":[]}');
+        return parsed.personas || [];
     }
 
     async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
-        const prompt = `Analyze this website context and suggest 6 diverse user archetypes that would likely visit this site.
-For each archetype, provide:
-- id: A short, descriptive name (e.g., "Bargain Hunter", "Enterprise Buyer")
-- icon_type: Choose from [users, zap, user, check, globe, x, shopping-cart, home, settings]
-- desc: A one-sentence description of their goals.
-
-Site Context:
-${siteContext}
-
-Return a JSON array of archetypes.`;
-
-        const response = await this.client.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" }
+        const res = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 400,
+            messages: [{
+                role: 'user',
+                content: `Suggest 6 user archetypes for this site. Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }
+icon_type must be one of: users, zap, user, check, globe, x, shopping-cart, home, settings
+Site: ${siteContext}`
+            }],
+            response_format: { type: 'json_object' }
         });
-
-        const content = response.choices[0].message.content || '{"archetypes": []}';
-        const parsed = JSON.parse(content);
-        const result = ArchetypeCohortSchema.safeParse(parsed.archetypes || parsed);
-        return result.success ? result.data : [];
+        const parsed = JSON.parse(res.choices[0].message.content || '{"archetypes":[]}');
+        return parsed.archetypes || [];
     }
 }
+
+// ─── Gemini Provider ──────────────────────────────────────────────────────────
+// Uses gemini-2.0-flash for everything — free tier available, fast, vision-capable
 
 export class GeminiProvider implements LLMProvider {
     private genAI: GoogleGenerativeAI;
 
     constructor(apiKey?: string) {
-        const key = apiKey || process.env.GEMINI_API_KEY || '';
-        this.genAI = new GoogleGenerativeAI(key);
+        this.genAI = new GoogleGenerativeAI(apiKey || process.env.GEMINI_API_KEY || '');
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
+    private get flashModel() {
+        return this.genAI.getGenerativeModel({
+            model: 'gemini-2.0-flash',
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+    }
+
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
         const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
+        const result = await this.flashModel.generateContent([
+            prompt,
+            { inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } }
+        ]);
+        const action = JSON.parse(result.response.text());
 
-        const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-        let lastError: any = null;
+        // Normalize possible_paths
+        if (!Array.isArray(action.possible_paths)) {
+            action.possible_paths = typeof action.possible_paths === 'string' ? [action.possible_paths] : [];
+        }
+        action.possible_paths = action.possible_paths.map((p: any) =>
+            typeof p === 'object' ? (p.path_name || p.description || JSON.stringify(p)) : String(p)
+        );
+        return action;
+    }
 
-        for (const modelName of modelsToTry) {
-            try {
-                const model = this.genAI.getGenerativeModel({
-                    model: modelName,
-                    generationConfig: { responseMimeType: 'application/json' }
-                });
+    // Single call with all section images
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
 
-                const content: any[] = [prompt];
-                if (observation.sections && observation.sections.length > 0) {
-                    observation.sections.forEach((s, idx) => {
-                        const label = idx === 0 ? 'TOP' : idx === 1 ? 'MIDDLE' : 'BOTTOM';
-                        content.push(`IMAGE: ${label} SECTION`);
-                        content.push({ inlineData: { data: s.screenshot, mimeType: 'image/jpeg' } });
-                    });
-                } else if (observation.screenshot.length > 100) {
-                    content.push({ inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } });
-                }
-
-                const result = await model.generateContent(content);
-                const response = await result.response;
-                if (response) {
-                    const result = JSON.parse(response.text()) as Action;
-                    // Harden: Ensure ux_feedback is a string
-                    if (result.ux_feedback && typeof result.ux_feedback === 'object') {
-                        result.ux_feedback = JSON.stringify(result.ux_feedback);
-                    }
-                    return result;
-                }
-            } catch (err: any) {
-                lastError = err;
-                console.error(`❌ Gemini ${modelName} failed: `, err.message);
-            }
+        const parts: any[] = [prompt];
+        for (const section of sections) {
+            parts.push({ inlineData: { data: section.screenshot, mimeType: 'image/jpeg' } });
         }
 
-        throw lastError || new Error('All Gemini models failed');
-    }
-
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
-        const prompt = `You are evaluating a specific section of a webpage(${sectionLabel}).
-    Goal: ${persona.goal_prompt}
-Current URL: ${observation.url}
-
-Analyze the provided screenshot and semantic elements for this section.Focus purely on UX observations and value proposition.
-Identify any friction and propose a solution if necessary.
-Provide your findings including an emotional tag(delight, satisfaction, curiosity, surprise, neutral, confusion, boredom, frustration, disappointment) and intensity(0.0 - 1.0).
-Return JSON: { "ux_feedback", "emotional_state", "emotional_intensity", "proposed_solution" ? } `;
-
-        const model = this.genAI.getGenerativeModel({
-            model: "gemini-2.0-flash",
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        const result = await model.generateContent([
-            prompt,
-            {
-                inlineData: {
-                    data: observation.screenshot,
-                    mimeType: "image/jpeg"
-                }
-            }
-        ]);
-
-        const text = result.response.text();
+        const result = await this.flashModel.generateContent(parts);
         try {
-            const parsed = JSON.parse(text);
+            return JSON.parse(result.response.text());
+        } catch {
             return {
-                ux_feedback: typeof parsed.ux_feedback === 'string' ? parsed.ux_feedback : JSON.stringify(parsed.ux_feedback || parsed),
-                emotional_state: parsed.emotional_state || 'neutral',
-                emotional_intensity: parsed.emotional_intensity ?? 0.3,
-                proposed_solution: parsed.proposed_solution
+                sections: sections.map(s => ({
+                    label: s.label || 'Section',
+                    ux_feedback: 'Analysis unavailable',
+                    emotional_state: 'neutral',
+                    emotional_intensity: 0.3
+                })),
+                overall_emotion: 'neutral',
+                overall_intensity: 0.3,
+                page_summary: 'Analysis unavailable'
             };
-        } catch (e) {
-            return { ux_feedback: text, emotional_state: 'neutral', emotional_intensity: 0.3 };
         }
     }
 
     async generateSummary(prompt: string): Promise<string> {
-        const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-        let lastError: any = null;
-
-        for (const modelName of modelsToTry) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: modelName });
-                const result = await model.generateContent(prompt);
-                const response = await result.response;
-                return response.text();
-            } catch (err: any) {
-                lastError = err;
-                console.error(`❌ Gemini summary ${modelName} failed: `, err.message);
-            }
-        }
-        throw lastError || new Error('All Gemini models failed for summary');
+        const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const res = await model.generateContent(prompt);
+        return res.response.text();
     }
 
     async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
-        const model = this.genAI.getGenerativeModel({
-            model: "gemini-2.0-flash",
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: "object",
-                    properties: {
-                        personas: {
-                            type: "array",
-                            items: {
-                                type: "object",
-                                properties: {
-                                    name: { type: "string" },
-                                    geolocation: { type: "string" },
-                                    age_range: { type: "string" },
-                                    tech_literacy: { type: "string", enum: ["low", "medium", "high"] },
-                                    domain_familiarity: { type: "string" },
-                                    goal_prompt: { type: "string" }
-                                },
-                                required: ["name", "geolocation", "age_range", "tech_literacy", "domain_familiarity", "goal_prompt"]
-                            }
-                        }
-                    }
-                } as any
-            }
-        });
-
-        const prompt = `You are a world-class UX Researcher and Behavioral Psychologist. Build a cohort of 5 realistic user segment categories to audit this website.
-
-CRITICAL REQUIREMENTS:
-1. NAME: Use a descriptive category name (e.g., "Price-Sensitive Explorer", "Technical Integration Lead"). NO human names.
-2. GOAL PROMPT: Provide a deeply specific mindset and behavioral guide.
-   - Detail what they expect to find and what will frustrate them.
-   - Define their navigation strategy (e.g., "Uses search immediately", "Scrolls to footer for trust signals").
-   - Explain their emotional state and technical literacy in the context of their goal.
-
-Target Archetypes: ${archetypes.join(', ')}
-Additional Project Context: ${userPrompt}
-
-Site Content & Context:
-${siteContext}
-
-Focus on diversity in technical literacy and domain familiarity. Return a JSON array of 5 personas.`;
-
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const text = response.text();
-        const parsed = JSON.parse(text);
-        return parsed.personas || parsed;
+        const prompt = `UX Researcher. Generate 5 user persona categories for: ${siteContext}.
+Archetypes: ${archetypes.join(', ')}. Constraints: ${userPrompt || 'none'}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }
+Use role names not human names.`;
+        const res = await this.flashModel.generateContent(prompt);
+        try {
+            const parsed = JSON.parse(res.response.text());
+            return parsed.personas || (Array.isArray(parsed) ? parsed : []);
+        } catch {
+            return [];
+        }
     }
 
     async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
-        const model = this.genAI.getGenerativeModel({
-            model: "gemini-2.0-flash",
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: "object",
-                    properties: {
-                        archetypes: {
-                            type: "array",
-                            items: {
-                                type: "object",
-                                properties: {
-                                    id: { type: "string" },
-                                    icon_type: { type: "string", enum: ["users", "zap", "user", "check", "globe", "x", "shopping-cart", "home", "settings"] },
-                                    desc: { type: "string" }
-                                },
-                                required: ["id", "icon_type", "desc"]
-                            }
-                        }
-                    }
-                } as any
-            }
-        });
-
-        const prompt = `Analyze this website context and suggest 6 diverse user archetypes that would likely visit this site.
-Site Context:
-${siteContext}
-
-Return a JSON array of archetypes with a short id, a descriptive icon_type, and a one-sentence goal description.`;
-
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const text = response.text();
-        const parsed = JSON.parse(text);
-        return parsed.archetypes || parsed;
+        const prompt = `Suggest 6 user archetypes for this site.
+Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }
+icon_type must be one of: users, zap, user, check, globe, x, shopping-cart, home, settings
+Site: ${siteContext}`;
+        const res = await this.flashModel.generateContent(prompt);
+        try {
+            const parsed = JSON.parse(res.response.text());
+            return (parsed.archetypes || []).map((a: any, i: number) => ({
+                id: a.id || `Archetype-${i}`,
+                icon_type: a.icon_type || 'users',
+                desc: a.desc || 'No description'
+            }));
+        } catch {
+            return [];
+        }
     }
 }
+
+// ─── Ollama Provider (local / free) ──────────────────────────────────────────
 
 export class OllamaProvider implements LLMProvider {
     private host: string;
@@ -529,243 +383,123 @@ export class OllamaProvider implements LLMProvider {
 
     constructor() {
         this.host = process.env.OLLAMA_HOST || 'http://localhost:11434';
-        const modelStr = process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL || 'llava';
+        const modelStr = process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL || 'llama3.2-vision';
         this.models = modelStr.split(',').map(m => m.trim());
     }
 
-    private async fetchWithRetry(model: string, prompt: string, screenshots: string[], signal: AbortSignal, retries = 2): Promise<any> {
-        for (let i = 0; i <= retries; i++) {
-            try {
-                const response = await fetch(`${this.host}/api/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model,
-                        prompt,
-                        images: screenshots || [],
-                        stream: false,
-                        format: 'json'
-                    }),
-                    signal
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text().catch(() => 'No error body');
-                    throw new Error(`Ollama error(${response.status}): ${errorText} `);
-                }
-
-                return await response.json();
-            } catch (err: any) {
-                if (i === retries || err.name === 'AbortError') throw err;
-                const delay = Math.pow(2, i) * 1000;
-                console.warn(`⚠️ ${model} attempt ${i + 1}/${retries + 1} failed. Retrying in ${delay}ms...`);
-                await new Promise(res => setTimeout(res, delay));
-            }
-        }
-    }
-
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
-        console.log(`🤖 Ollama inference (${this.models.join(', ')})...`);
-        console.time('inference_total');
-
-        let validResults: { model: string, action: Action }[] = [];
-
-        try {
-            const results = await Promise.all(this.models.map(async (model) => {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 300000);
-                try {
-                    const screenshots = observation.sections && observation.sections.length > 0
-                        ? observation.sections.map(s => s.screenshot)
-                        : [observation.screenshot];
-                    const data = await this.fetchWithRetry(model, prompt, screenshots, controller.signal);
-                    clearTimeout(timeoutId);
-                    const action = JSON.parse(data.response) as Action;
-                    // Harden: Ensure ux_feedback is a string
-                    if (action.ux_feedback && typeof action.ux_feedback === 'object') {
-                        action.ux_feedback = JSON.stringify(action.ux_feedback);
-                    }
-                    return { model, action };
-                } catch (err: any) {
-                    console.error(`❌ ${model} failed:`, err.message);
-                    return null;
-                }
-            }));
-            validResults = results.filter((r): r is { model: string, action: Action } => r !== null);
-        } catch (err) {
-            console.warn('Critical inference failure, falling back to sequential...');
-        }
-
-        if (validResults.length === 0) {
-            for (const model of this.models) {
-                const controller = new AbortController();
-                setTimeout(() => controller.abort(), 600000);
-                try {
-                    const screenshots = observation.sections && observation.sections.length > 0
-                        ? observation.sections.map(s => s.screenshot)
-                        : [observation.screenshot];
-                    const data = await this.fetchWithRetry(model, prompt, screenshots, controller.signal);
-                    validResults.push({ model, action: JSON.parse(data.response) as Action });
-                    break;
-                } catch (err: any) {
-                    console.error(`❌ Backup ${model} failed:`, err.message);
-                }
-            }
-        }
-
-        console.timeEnd('inference_total');
-        if (validResults.length === 0) throw new Error('Ollama provider unavailable');
-
-        return this.synthesize(validResults);
-    }
-
-    async generateSummary(prompt: string): Promise<string> {
+    private async call(model: string, prompt: string, images: string[]): Promise<any> {
         const controller = new AbortController();
-        setTimeout(() => controller.abort(), 60000);
+        const timeout = setTimeout(() => controller.abort(), 120_000);
         try {
-            const response = await fetch(`${this.host}/api/generate`, {
+            const res = await fetch(`${this.host}/api/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: this.models[0], prompt, stream: false }),
+                body: JSON.stringify({ model, prompt, images, stream: false, format: 'json' }),
                 signal: controller.signal
             });
-            const data = await response.json();
-            return data.response;
-        } catch (err: any) {
-            console.error('❌ Ollama summary failed:', err.message);
-            return 'AI summary unavailable.';
-        }
-    }
-
-    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
-        const prompt = `Generate 5 diverse user category personas for website testing.
-DO NOT use individual human names. Use category names (e.g., "Mobile-First Teenager", "Cautious Elderly Investor").
-
-Mindset Requirements:
-Provide a detailed 'goal_prompt' for each. Explain exactly how this user category interacts with the site, what they look for, and their specific pain points.
-
-Context: ${siteContext}
-Archetypes: ${archetypes.join(', ')}
-User Preferences: ${userPrompt}
-
-Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }`;
-
-        try {
-            const result = await this.fetchWithRetry(
-                this.models[0],
-                prompt,
-                [],
-                new AbortController().signal
-            );
-            const parsed = JSON.parse(result.response);
-            return parsed.personas || [];
-        } catch (e) {
-            console.error('Ollama persona generation failed:', e);
-            return [];
-        }
-    }
-
-    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
-        const prompt = `Analyze this website context and suggest 6 diverse user archetypes in JSON format.\nContext:\n${siteContext}
-Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }`;
-
-        try {
-            const result = await this.fetchWithRetry(
-                this.models[0],
-                prompt,
-                [],
-                new AbortController().signal
-            );
-            const parsed = JSON.parse(result.response);
-            return parsed.archetypes || [];
-        } catch (e) {
-            console.error('Ollama archetype suggestion failed:', e);
-            return [];
-        }
-    }
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
-        const prompt = `[UX SPECIALIST AUDIT: ${sectionLabel.toUpperCase()}]
-Goal: ${persona.goal_prompt}
-URL: ${observation.url}
-
-Task: Analyze this specific section and provide qualitative UX feedback.
-Focus: Visual hierarchy, clarity of purpose, and potential friction.
-Identify any friction and propose a solution if necessary.
-Provide emotional tag (delight, satisfaction, curiosity, surprise, neutral, confusion, boredom, frustration, disappointment) and intensity (0.0-1.0).
-
-Return strictly JSON: { "ux_feedback", "emotional_state", "emotional_intensity", "proposed_solution"? }`;
-
-        const abortController = new AbortController();
-        const timeout = setTimeout(() => abortController.abort(), 60000);
-
-        try {
-            const result = await this.fetchWithRetry(
-                this.models[0], // Use first available vision model
-                prompt,
-                [observation.screenshot],
-                abortController.signal
-            );
-            const parsed = JSON.parse(result.message?.content || result.response || '{}');
-            return {
-                ux_feedback: typeof parsed.ux_feedback === 'string' ? parsed.ux_feedback : JSON.stringify(parsed.ux_feedback || parsed),
-                emotional_state: parsed.emotional_state || 'neutral',
-                emotional_intensity: parsed.emotional_intensity ?? 0.3,
-                proposed_solution: parsed.proposed_solution
-            };
-        } catch (e) {
-            console.error(`Ollama analysis failed:`, e);
-            return { ux_feedback: "Local analysis timed out.", emotional_state: 'neutral', emotional_intensity: 0.3 };
+            if (!res.ok) throw new Error(`Ollama ${res.status}`);
+            return await res.json();
         } finally {
             clearTimeout(timeout);
         }
     }
 
-    private synthesize(results: { model: string, action: Action }[]): Action {
-        if (results.length === 1) return results[0].action;
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
+        try {
+            const data = await this.call(this.models[0], prompt, [observation.screenshot]);
+            return JSON.parse(data.response) as Action;
+        } catch {
+            if (this.models.length > 1) {
+                const data = await this.call(this.models[1], prompt, [observation.screenshot]);
+                return JSON.parse(data.response) as Action;
+            }
+            throw new Error('All Ollama models failed');
+        }
+    }
 
-        const primary = results[0].action;
-        const reasoning = results.map(r => `[${r.model}] ${r.action.reasoning}`).join('\n\n');
-        const ux = results.map(r => `[${r.model}] ${r.action.ux_feedback}`).join('\n\n');
-        const paths = Array.from(new Set(results.flatMap(r => r.action.possible_paths || [])));
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        // Ollama: send only the primary (first) section screenshot to keep inference fast
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
+        const primaryImage = sections[0]?.screenshot || '';
+        try {
+            const data = await this.call(this.models[0], prompt, [primaryImage]);
+            return JSON.parse(data.response);
+        } catch {
+            return {
+                sections: sections.map(s => ({
+                    label: s.label || 'Section',
+                    ux_feedback: 'Analysis unavailable',
+                    emotional_state: 'neutral',
+                    emotional_intensity: 0.3
+                })),
+                overall_emotion: 'neutral',
+                overall_intensity: 0.3,
+                page_summary: 'Analysis unavailable'
+            };
+        }
+    }
 
-        return { ...primary, reasoning, ux_feedback: ux, possible_paths: paths };
+    async generateSummary(prompt: string): Promise<string> {
+        const data = await this.call(this.models[0], prompt, []);
+        return data.response;
+    }
+
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const prompt = `Generate 5 user persona categories for: ${siteContext}. Constraints: ${userPrompt}. Archetypes: ${archetypes.join(', ')}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }`;
+        const data = await this.call(this.models[0], prompt, []);
+        const parsed = JSON.parse(data.response);
+        return parsed.personas || [];
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const data = await this.call(this.models[0], `Suggest 6 archetypes for: ${siteContext}. Return JSON: { "archetypes": [...] }`, []);
+        const parsed = JSON.parse(data.response);
+        return parsed.archetypes || [];
     }
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+// ─── LLMService facade ────────────────────────────────────────────────────────
 
 export class LLMService {
     private provider: LLMProvider;
 
-    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai', apiKey?: string }) {
-        const providerType = config?.provider || 'ollama';
-        if (providerType === 'gemini') {
-            this.provider = new GeminiProvider(config?.apiKey);
-        } else if (providerType === 'openai') {
-            this.provider = new OpenAIProvider();
-        } else {
-            this.provider = new OllamaProvider();
-        }
+    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai'; apiKey?: string }) {
+        const type = config?.provider || 'gemini'; // Default to Gemini (free tier)
+        if (type === 'openai') this.provider = new OpenAIProvider();
+        else if (type === 'gemini') this.provider = new GeminiProvider(config?.apiKey);
+        else this.provider = new OllamaProvider();
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = [], triedElements: string[] = []): Promise<Action> {
-        return this.provider.decideNextAction(observation, persona, history, blacklist, triedElements);
+    decideNextAction(obs: Observation, p: PersonaProfile, h: Action[], b: string[] = [], t: string[] = []): Promise<Action> {
+        return this.provider.decideNextAction(obs, p, h, b, t);
     }
 
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
-        return this.provider.analyzeSection(observation, persona, sectionLabel);
+    analyzePageSections(sections: ObservationSection[], url: string, title: string, p: PersonaProfile): Promise<PageScanAnalysis> {
+        return this.provider.analyzePageSections(sections, url, title, p);
     }
 
-    async generateSummary(prompt: string): Promise<string> {
+    generateSummary(prompt: string): Promise<string> {
         return this.provider.generateSummary(prompt);
     }
 
-    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
-        return this.provider.generatePersonas(siteContext, userPrompt, archetypes);
+    generatePersonas(s: string, u: string, a: string[]): Promise<PersonaProfile[]> {
+        return this.provider.generatePersonas(s, u, a);
     }
 
-    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
-        return this.provider.suggestArchetypes(siteContext);
+    suggestArchetypes(s: string): Promise<Archetype[]> {
+        return this.provider.suggestArchetypes(s);
     }
 }

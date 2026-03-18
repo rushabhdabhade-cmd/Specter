@@ -10,41 +10,47 @@ export default async function DashboardPage() {
 
   const supabase = await createClient();
 
-  // Fetch Stats (Filtered by userId)
-  const { count: projectsCount } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId);
+  // 1. Parallel Fetching (Filtered by userId)
+  const [projectsRes, runsRes, personasRes, recentRunsRes] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId),
 
-  const { count: runsCount } = await supabase
-    .from('test_runs')
-    .select('*, projects!inner(*)', { count: 'exact', head: true })
-    .eq('projects.user_id', userId);
+    supabase
+      .from('test_runs')
+      .select('*, projects!inner(*)', { count: 'exact', head: true })
+      .eq('projects.user_id', userId),
 
-  const { count: personasCount } = await supabase
-    .from('persona_sessions')
-    .select('*, test_runs!inner(*, projects!inner(*))', { count: 'exact', head: true })
-    .eq('test_runs.projects.user_id', userId);
+    supabase
+      .from('persona_sessions')
+      .select('*, test_runs!inner(*, projects!inner(*))', { count: 'exact', head: true })
+      .eq('test_runs.projects.user_id', userId),
 
-  // Fetch Recent Runs with Project URL
-  const { data: recentRunsRaw } = await supabase
-    .from('test_runs')
-    .select(`
-      id,
-      status,
-      created_at,
-      projects!inner (
-        target_url,
-        user_id
-      ),
-      persona_sessions (
+    supabase
+      .from('test_runs')
+      .select(`
         id,
-        status
-      )
-    `)
-    .eq('projects.user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(5);
+        status,
+        created_at,
+        projects!inner (
+          target_url,
+          user_id
+        ),
+        persona_sessions (
+          id,
+          status
+        )
+      `)
+      .eq('projects.user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+  ]);
+
+  const projectsCount = projectsRes.count;
+  const runsCount = runsRes.count;
+  const personasCount = personasRes.count;
+  const recentRunsRaw = recentRunsRes.data;
 
   const recentRuns = (recentRunsRaw || []).map((run: any) => {
     const totalSessions = run.persona_sessions?.length || 0;
@@ -66,13 +72,10 @@ export default async function DashboardPage() {
       {/* ── COMMAND HEADER ─────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
         <div className="space-y-4">
-          <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
-            <Cpu className="h-3.5 w-3.5" />
-            Engine Status: Optimal
-          </div>
+
           <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white">Command <br /> <span className="italic opacity-50">Center.</span></h1>
           <p className="max-w-md text-sm font-medium text-slate-500 italic leading-relaxed">
-            Orchestrating autonomous behavioral synthesis across your network protocol.
+            Discovering UX vulnerabilities through autonomous AI-driven personas.
           </p>
         </div>
         <Link
@@ -80,17 +83,13 @@ export default async function DashboardPage() {
           className="group flex items-center gap-4 rounded-2xl bg-white px-8 py-5 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
         >
           <Plus className="h-5 w-5" />
-          Initialize Protocol
+          Initialize Cohort
         </Link>
       </div>
 
       {/* ── LIVE ANALYTICS ─────────────────────────────────────────────── */}
       <section className="space-y-10">
-        <div className="flex items-center gap-4">
-          <div className="h-px flex-1 bg-white/5" />
-          <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-700">Live Analytics</span>
-          <div className="h-px flex-1 bg-white/5" />
-        </div>
+
         <LiveDashboardStats
           initialStats={{
             projectsCount: projectsCount || 0,

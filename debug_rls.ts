@@ -1,8 +1,23 @@
 import { createAdminClient } from './src/lib/supabase/admin';
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+// Manually load .env.local
+try {
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    const envConfig = fs.readFileSync(envPath, 'utf-8');
+    envConfig.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        const [key, ...valueParts] = trimmed.split('=');
+        if (key && valueParts.length > 0) {
+            const value = valueParts.join('=').replace(/^['"]|['"]$/g, '');
+            process.env[key.trim()] = value;
+        }
+    });
+} catch (e) {
+    console.error('Failed to load .env.local:', e);
+}
 
 async function debugReports() {
     const supabase = createAdminClient();
@@ -14,7 +29,7 @@ async function debugReports() {
 
     console.log('Total reports in DB:', allReports?.length || 0);
     if (allReports && allReports.length > 0) {
-        console.log('First report test_run_id:', allReports[0].test_run_id);
+        console.log('First report test_run_id:', (allReports[0] as any).test_run_id);
     }
 
     // 2. Check the specific test run
@@ -27,7 +42,7 @@ async function debugReports() {
 
     console.log('Test Run exists:', !!specificRun);
     if (specificRun) {
-        console.log('Project User ID:', specificRun.projects.user_id);
+        console.log('Project User ID:', (specificRun as any).projects?.user_id);
     }
 
     // 3. Check report for this run
