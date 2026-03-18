@@ -71,7 +71,7 @@ export default async function DashboardPage() {
 
   const recentRuns = (recentRunsRaw || []).map((run: any) => {
     const totalSessions = run.persona_sessions?.length || 0;
-    const completedSessions = run.persona_sessions?.filter((s: any) => s.status === 'completed').length || 0;
+    const completedSessions = run.persona_sessions?.filter((s: { status: string }) => s.status === 'completed').length || 0;
 
     return {
       id: run.id,
