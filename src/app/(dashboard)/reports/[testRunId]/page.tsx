@@ -26,35 +26,40 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
   const supabase = createAdminClient();
 
-  // 1. Fetch run with project ownership check
-  const { data: run, error: runError } = await supabase
-    .from('test_runs')
-    .select(`*, projects!inner(*)`)
-    .eq('id', testRunId)
-    .eq('projects.user_id', userId)
-    .single();
+  // 1. Parallel Fetching
+  const [runRes, reportRes, sessionsRes] = await Promise.all([
+    supabase
+      .from('test_runs')
+      .select(`*, projects!inner(*)`)
+      .eq('id', testRunId)
+      .eq('projects.user_id', userId)
+      .single(),
+
+    supabase
+      .from('reports')
+      .select('*')
+      .eq('test_run_id', testRunId)
+      .maybeSingle(),
+
+    supabase
+      .from('persona_sessions')
+      .select(`
+        *,
+        persona_configs(name, goal_prompt, tech_literacy),
+        session_logs(
+          id, step_number, emotion_tag, emotion_score,
+          inner_monologue, current_url, screenshot_url, action_taken, created_at
+        )
+      `)
+      .eq('test_run_id', testRunId)
+  ]);
+
+  const run = runRes.data as any;
+  const runError = runRes.error;
+  const report = reportRes.data as any;
+  const sessions = sessionsRes.data as any[] | null;
 
   if (runError || !run) redirect('/reports');
-
-  // 2. Fetch the report separately to avoid join ambiguity
-  const { data: report, error: reportError } = await supabase
-    .from('reports')
-    .select('*')
-    .eq('test_run_id', testRunId)
-    .maybeSingle();
-
-  // Expanded query — get full logs with screenshots and DOM data
-  const { data: sessions } = await supabase
-    .from('persona_sessions')
-    .select(`
-      *,
-      persona_configs(name, goal_prompt, tech_literacy),
-      session_logs(
-        id, step_number, emotion_tag, emotion_score,
-        inner_monologue, current_url, screenshot_url, action_taken, created_at
-      )
-    `)
-    .eq('test_run_id', testRunId);
 
   const totalLogs = sessions?.reduce((acc: number, s: any) => acc + (s.session_logs?.length || 0), 0) || 0;
 
@@ -190,7 +195,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
         {/* Synthesis Markdown */}
         {report?.executive_summary ? (
-          <div className="rounded-3xl md:rounded-[40px] border border-white/5 bg-[#0a0a0a] p-5 md:p-10 prose prose-invert max-w-none shadow-2xl">
+          <div className="rounded-3xl md:rounded-[40px] border border-white/5 bg-[#0a0a0a] p-5 md:p-10 prose prose-invert max-w-none shadow-2xl prose-pre:whitespace-pre-wrap break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {report.executive_summary.replace(/^#+\s*STRATEGIC\s*SUMMARY\s*\n+/i, '')}
             </ReactMarkdown>

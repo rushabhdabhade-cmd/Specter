@@ -23,7 +23,8 @@ export function ReportActions() {
             // @ts-ignore
             const html2pdf = (await import('html2pdf.js')).default;
             const element = document.querySelector('.report-container');
-
+            if (!(element instanceof HTMLElement)) return;
+            
             // Temporary styles for capture to ensure 100% fidelity
             if (element instanceof HTMLElement) {
                 element.style.background = '#050505';

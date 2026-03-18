@@ -46,7 +46,7 @@ export default function NewTestRunPage() {
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('ollama');
+  const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('gemini');
   const [geminiKey, setGeminiKey] = useState('');
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -74,16 +74,18 @@ export default function NewTestRunPage() {
   const [dynamicArchetypes, setDynamicArchetypes] = useState<DynamicArchetype[]>([]);
   const [selectedArchetypes, setSelectedArchetypes] = useState<string[]>([]);
   const [customPrompt, setCustomPrompt] = useState('');
+  const [fetchedUrl, setFetchedUrl] = useState('');
 
   // Analyze audience when entering Step 2
   useEffect(() => {
-    if (step === 2 && dynamicArchetypes.length === 0 && !isAnalyzing) {
+    if (step === 2 && (dynamicArchetypes.length === 0 || fetchedUrl !== url) && !isAnalyzing) {
       handleAnalyzeAudience();
     }
-  }, [step]);
+  }, [step, url, fetchedUrl]);
 
   const handleAnalyzeAudience = async () => {
     setIsAnalyzing(true);
+    setFetchedUrl(url);
     setError(null);
     try {
       const suggested = await suggestAudienceArchetypes({
@@ -186,10 +188,6 @@ export default function NewTestRunPage() {
   };
 
   const handleLaunch = async () => {
-    if (llmProvider === 'gemini' && !geminiKey.trim()) {
-      setError('Gemini API Key is required.');
-      return;
-    }
     setIsLaunching(true);
     setError(null);
     try {
@@ -204,6 +202,9 @@ export default function NewTestRunPage() {
         personas
       });
     } catch (err: any) {
+      if (err.message === 'NEXT_REDIRECT' || err.digest?.startsWith('NEXT_REDIRECT')) {
+        throw err;
+      }
       setError(err.message || 'Failed to launch test run. Please check your Supabase connection.');
       setIsLaunching(false);
     }
@@ -261,11 +262,6 @@ export default function NewTestRunPage() {
         </div>
       </div>
 
-      {error && step === 1 && (
-        <div className="w-full max-w-2xl p-4 mb-6 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium animate-in fade-in slide-in-from-top-2">
-          {error}
-        </div>
-      )}
 
       {step === 1 && (
         <div className="flex w-full max-w-2xl flex-col items-center space-y-10 text-center">
@@ -286,11 +282,16 @@ export default function NewTestRunPage() {
                 </div>
                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">Primary Domain URL <span className="text-red-500/50 ml-1 font-bold">*</span></span>
               </div>
+              {error && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-medium animate-in fade-in slide-in-from-top-1">
+                  {error}
+                </div>
+              )}
               <input
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-[#111111]/50 backdrop-blur-md border border-white/5 rounded-3xl p-6 text-xl text-white placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/30 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+                className="w-full bg-[#111111] backdrop-blur-md border border-white/10 rounded-3xl p-6 text-xl text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/30 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
                 placeholder="https://yourapp.build"
               />
             </div>
@@ -306,13 +307,13 @@ export default function NewTestRunPage() {
                 rows={4}
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="w-full bg-[#111111]/50 backdrop-blur-md border border-white/5 rounded-3xl p-6 text-lg text-white placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/30 transition-all resize-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+                className="w-full bg-[#111111] backdrop-blur-md border border-white/10 rounded-3xl p-6 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/30 transition-all resize-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
                 placeholder="e.g. Focus on user onboarding and payment flows, ignore the help center."
               />
             </div>
 
             {/* Credentials Section */}
-            <div className="space-y-6 text-left pt-2 border-t border-white/5">
+            {/* <div className="space-y-6 text-left pt-2 border-t border-white/5">
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-slate-400">
                   <UserIcon className="h-4 w-4" />
@@ -377,69 +378,8 @@ export default function NewTestRunPage() {
                   </div>
                 </div>
               )}
-            </div>
+            </div> */}
 
-            {/* LLM Engine Selection */}
-            <div className="space-y-6 text-left pt-6 border-t border-white/5">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <Globe className="h-4 w-4" />
-                  <span className="text-xs font-bold uppercase tracking-widest">LLM Engine</span>
-                </div>
-                <p className="text-sm text-slate-500">
-                  Select the underlying intelligence for this test run.
-                </p>
-              </div>
-
-              {llmProvider === 'gemini' && !geminiKey.trim() && (
-                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[11px] font-bold uppercase tracking-wider animate-in fade-in slide-in-from-top-2">
-                  ⚠️ Gemini API Key is required to use the cloud engine.
-                </div>
-              )}
-
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => setLlmProvider('ollama')}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${llmProvider === 'ollama'
-                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
-                    }`}
-                >
-                  <span className="text-sm font-bold text-center">Open Source (Local)</span>
-                  <span className="text-[10px] uppercase opacity-60 text-center">Ollama / privacy-first</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLlmProvider('gemini')}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${llmProvider === 'gemini'
-                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
-                    }`}
-                >
-                  <span className="text-sm font-bold text-center">Gemini (Cloud)</span>
-                  <span className="text-[10px] uppercase opacity-60 text-center">Google 1.5 Pro</span>
-                </button>
-              </div>
-
-              {llmProvider === 'gemini' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Gemini API Key <span className="text-red-500 lowercase normal-case italic opacity-70 ml-1 font-medium">(Required)</span></label>
-                    <input
-                      type="password"
-                      value={geminiKey}
-                      onChange={(e) => setGeminiKey(e.target.value)}
-                      className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all shadow-inner"
-                      placeholder="Enter your Gemini API key"
-                    />
-                    <p className="text-[10px] text-slate-600 px-1">
-                      Key is encrypted and stored securely in our vault.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
 
             <button
               onClick={() => {
@@ -467,11 +407,6 @@ export default function NewTestRunPage() {
                   return;
                 }
 
-                if (llmProvider === 'gemini' && !geminiKey.trim()) {
-                  setError('Gemini API Key is required to use the cloud engine.');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                  return;
-                }
                 setStep(2);
               }}
               className="relative w-full py-8 mt-4 rounded-[32px] bg-white text-black font-black uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all active:scale-[0.98] shadow-[0_20px_40px_-12px_rgba(255,255,255,0.3)] group overflow-hidden"
@@ -498,7 +433,7 @@ export default function NewTestRunPage() {
           </div>
 
           {aiStep === 'selection' ? (
-            <div className="w-full max-w-3xl space-y-10 bg-[#0a0a0a] border border-white/5 rounded-[32px] p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+            <div className="w-full max-w-3xl space-y-10 bg-[#0a0a0a] border border-white/10 rounded-[32px] p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center justify-center py-20 space-y-6">
                   <div className="relative">
@@ -513,7 +448,7 @@ export default function NewTestRunPage() {
               ) : (
                 <>
                   <div className="space-y-4">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Suggested Archetypes</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Suggested Archetypes</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {dynamicArchetypes.map((arch, idx) => {
                         const Icon = ICON_MAP[arch.icon_type] || Users;
@@ -531,10 +466,10 @@ export default function NewTestRunPage() {
                             }}
                             className={`flex flex-col items-start gap-4 p-5 rounded-2xl border transition-all text-left group ${isSelected
                               ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                              : 'bg-transparent border-white/5 text-slate-400 hover:border-white/10 hover:text-slate-300'
+                              : 'bg-transparent border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300'
                               }`}
                           >
-                            <div className={`p-3 rounded-xl transition-colors ${isSelected ? 'bg-white text-black' : 'bg-white/5 text-slate-500 group-hover:text-slate-300'}`}>
+                            <div className={`p-3 rounded-xl transition-colors ${isSelected ? 'bg-white text-black' : 'bg-white/10 text-slate-400 group-hover:text-slate-300'}`}>
                               <Icon className="h-5 w-5" />
                             </div>
                             <div className="space-y-1">
@@ -554,14 +489,14 @@ export default function NewTestRunPage() {
 
                   <div className="space-y-4 pt-6 border-t border-white/5 text-left">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Custom Context (Optional)</label>
-                      <span className="text-[10px] text-slate-600 font-medium">Adds specific nuance to all personas</span>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Custom Context (Optional)</label>
+                      <span className="text-[10px] text-slate-500 font-medium">Adds specific nuance to all personas</span>
                     </div>
                     <textarea
                       rows={4}
                       value={customPrompt}
                       onChange={(e) => setCustomPrompt(e.target.value)}
-                      className="w-full bg-[#111111] border border-white/5 rounded-2xl p-5 text-lg text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all resize-none shadow-inner"
+                      className="w-full bg-[#111111] border border-white/10 rounded-2xl p-5 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-white/20 transition-all resize-none shadow-inner"
                       placeholder="e.g. Focus on users who are hesitant about privacy, or users looking for a budget-friendly option."
                     />
                   </div>
@@ -576,7 +511,7 @@ export default function NewTestRunPage() {
                       <button
                         type="button"
                         onClick={() => { setAiStep('editor'); setShowLibrary(true); }}
-                        className="flex-1 py-6 rounded-2xl bg-[#0a0a0a] border border-white/5 text-slate-500 font-bold hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2 group"
+                        className="flex-1 py-6 rounded-2xl bg-[#0a0a0a] border border-white/10 text-slate-400 font-bold hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2 group"
                       >
                         <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
                         Manual Start
@@ -615,20 +550,20 @@ export default function NewTestRunPage() {
               <div className="w-full flex gap-8 items-start">
                 {/* Sidebar List */}
                 <div className="w-72 flex flex-col gap-4 sticky top-8">
-                  <div className="text-xs font-bold uppercase tracking-widest text-slate-500 px-1">Your Cohort</div>
+                  <div className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">Your Cohort</div>
                   <div className="space-y-2">
-                    {personas.map((p) => (
+                    {personas.map((p, idx) => (
                       <div key={p.id} className="group relative">
                         <button
                           onClick={() => setSelectedPersonaId(p.id)}
                           className={`w-full text-left p-4 rounded-xl border flex items-center gap-4 transition-all ${selectedPersonaId === p.id
                             ? 'bg-[#1a1a1a] border-white/10 text-white shadow-lg'
-                            : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300'
+                            : 'bg-transparent border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300'
                             }`}
                         >
                           <span className={`min-w-[24px] h-6 px-1 rounded flex items-center justify-center text-[10px] font-bold shrink-0 ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-[#151515] text-slate-600'
                             }`}>
-                            {p.id}
+                            {idx + 1}
                           </span>
                           <span className="font-semibold text-sm truncate">{p.name}</span>
                         </button>
@@ -658,7 +593,7 @@ export default function NewTestRunPage() {
                       {personas.length < 5 && (
                         <button
                           onClick={addPersona}
-                          className="w-full p-4 rounded-xl border border-dashed border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300 flex flex-col items-center justify-center gap-2 group transition-all"
+                          className="w-full p-4 rounded-xl border border-dashed border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300 flex flex-col items-center justify-center gap-2 group transition-all"
                         >
                           <Plus className="h-4 w-4 group-hover:scale-110 transition-transform" />
                           <span className="text-[10px] font-bold uppercase tracking-tighter">Add Persona</span>
@@ -680,7 +615,7 @@ export default function NewTestRunPage() {
                   <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
                     <div className="space-y-1">
                       <h2 className="text-xl font-bold text-white">Refine Category</h2>
-                      <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Mindset & Attributes</p>
+                      <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Mindset & Attributes</p>
                     </div>
                     <div className="bg-white/5 px-2 py-1 rounded text-[10px] font-bold text-slate-500 border border-white/5 uppercase">
                       ID: {selectedPersona.id}
@@ -689,40 +624,40 @@ export default function NewTestRunPage() {
 
                   <div className="grid grid-cols-2 gap-6 text-left">
                     <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Category Name</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Category Name</label>
                       <input
                         type="text"
                         value={selectedPersona.name}
                         onChange={(e) => updatePersona(selectedPersona.id, 'name', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
                       />
                     </div>
                     <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Geolocation</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Geolocation</label>
                       <input
                         type="text"
                         value={selectedPersona.geolocation}
                         placeholder="e.g. United States / Region"
                         onChange={(e) => updatePersona(selectedPersona.id, 'geolocation', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
                       />
                     </div>
                     <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Age Range</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Age Range</label>
                       <input
                         type="text"
                         value={selectedPersona.ageRange}
                         placeholder="e.g. 22-35"
                         onChange={(e) => updatePersona(selectedPersona.id, 'ageRange', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
                       />
                     </div>
                     <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Technical Literacy</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Technical Literacy</label>
                       <select
                         value={selectedPersona.techLiteracy}
                         onChange={(e) => updatePersona(selectedPersona.id, 'techLiteracy', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner appearance-none"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner appearance-none"
                       >
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
@@ -731,7 +666,7 @@ export default function NewTestRunPage() {
                     </div>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Cohort Size</label>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cohort Size</label>
                         <span className="text-[8px] text-slate-600 font-bold uppercase">Parallel Explorers</span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -741,7 +676,7 @@ export default function NewTestRunPage() {
                           max="10"
                           value={selectedPersona.personaCount}
                           onChange={(e) => updatePersona(selectedPersona.id, 'personaCount', parseInt(e.target.value) || 1)}
-                          className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner"
+                          className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
                         />
                         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 border border-white/5">
                           <Users className="h-5 w-5 text-slate-400" />
@@ -749,23 +684,23 @@ export default function NewTestRunPage() {
                       </div>
                     </div>
                     <div className="col-span-2 space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Domain Familiarity</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Domain Familiarity</label>
                       <input
                         type="text"
                         value={selectedPersona.domainFamiliarity}
                         placeholder="e.g. Familiar with SaaS tools"
                         onChange={(e) => updatePersona(selectedPersona.id, 'domainFamiliarity', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all shadow-inner"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
                       />
                     </div>
                     <div className="col-span-2 space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Mindset / Prompt</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Mindset / Prompt</label>
                       <textarea
                         rows={5}
                         value={selectedPersona.prompt}
                         placeholder="e.g. Skeptical budget-cutter looking for pricing first"
                         onChange={(e) => updatePersona(selectedPersona.id, 'prompt', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white focus:outline-none focus:border-white/10 hover:border-white/10 transition-all resize-none shadow-inner"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all resize-none shadow-inner"
                       />
                     </div>
                   </div>
@@ -839,13 +774,13 @@ export default function NewTestRunPage() {
                 {SAMPLE_PERSONAS.map((sample) => (
                   <div
                     key={sample.id}
-                    className="group p-6 rounded-[28px] border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-indigo-500/30 transition-all cursor-pointer relative"
+                    className="group p-6 rounded-[28px] border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] hover:border-indigo-500/30 transition-all cursor-pointer relative"
                     onClick={() => addFromLibrary(sample)}
                   >
                     <div className="flex items-start justify-between mb-4">
                       <div className="space-y-1">
                         <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{sample.name}</h3>
-                        <p className="text-[10px] text-slate-500 font-medium">{sample.description}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{sample.description}</p>
                       </div>
                       <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border
                         ${sample.techLiteracy === 'High' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
@@ -863,7 +798,7 @@ export default function NewTestRunPage() {
                         <span className="text-[10px] text-slate-400 font-medium">{sample.ageRange} years</span>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-[11px] text-slate-300 leading-relaxed italic">
+                      <div className="p-3 rounded-xl bg-black/40 border border-white/10 text-[11px] text-slate-300 leading-relaxed italic">
                         &ldquo;{sample.prompt.slice(0, 120)}...&rdquo;
                       </div>
                     </div>

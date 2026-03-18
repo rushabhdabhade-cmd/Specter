@@ -127,8 +127,9 @@ export class Orchestrator {
                 const blacklistedActions = new Set<string>();
                 let lastActionKey = '';
                 let consecutiveSameActions = 0;
+                let actionCount = 0;
 
-                while (stepNumber <= maxSteps) {
+                while (actionCount < maxSteps) {
                     const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
                         .select('status').eq('id', sessionId).single();
 
@@ -167,6 +168,7 @@ export class Orchestrator {
                     // --- Cognition: Decide next action ---
                     const tried = Array.from(triedElementsOnUrl.get(normalizedUrl) || []);
                     const action = await this.llm.decideNextAction(observation, persona, history, Array.from(blacklistedActions), tried);
+                    actionCount++;
 
                     // --- Recovery & Loop Detection ---
                     const currentActionKey = `${action.type}-${action.text || action.selector || ''}`;
@@ -310,7 +312,7 @@ export class Orchestrator {
                 await (this.supabase.from('persona_sessions') as any).update({
                     status: 'completed',
                     completed_at: new Date().toISOString(),
-                    exit_reason: stepNumber > maxSteps ? 'Max steps reached' : 'Goals met'
+                    exit_reason: actionCount >= maxSteps ? 'Max steps reached' : 'Goals met'
                 }).eq('id', sessionId);
 
                 await (this.supabase.from('session_logs') as any).insert({

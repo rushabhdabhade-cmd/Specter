@@ -88,6 +88,35 @@ export async function rerunTestRun(runId: string) {
         });
     }
 
+    // 6. Delete Old Run Data (Clerical cleanup for reruns)
+    const sessionIdsToDelete = originalSessions.map((s: any) => s.id);
+
+    try {
+        // Delete logs first (FK depends on session_id)
+        await (adminSupabase.from('session_logs') as any)
+            .delete()
+            .in('session_id', sessionIdsToDelete);
+
+        // Delete reports and persona sessions
+        await Promise.all([
+            (adminSupabase.from('reports') as any)
+                .delete()
+                .eq('test_run_id', runId),
+            (adminSupabase.from('persona_sessions') as any)
+                .delete()
+                .eq('test_run_id', runId)
+        ]);
+
+        // Finally delete the Test Run itself
+        await (adminSupabase.from('test_runs') as any)
+            .delete()
+            .eq('id', runId);
+
+    } catch (err) {
+        console.error('Failed to clean up old test run:', err);
+        // Do not throw to avoid crashing the redirect for starting new sessions
+    }
+
     redirect(`/test-runs/${newRun.id}`);
 }
 

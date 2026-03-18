@@ -64,19 +64,23 @@ export default function SessionPage() {
             const token = await getToken();
             const authenticatedSupabase = createClient(token || undefined);
 
-            // Fetch session with persona config
-            const { data: sessionData } = await authenticatedSupabase
-                .from('persona_sessions')
-                .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
-                .eq('id', sessionId)
-                .single();
+            // 1. Parallel Fetching
+            const [sessionRes, logsRes] = await Promise.all([
+                authenticatedSupabase
+                    .from('persona_sessions')
+                    .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
+                    .eq('id', sessionId)
+                    .single(),
 
-            // Fetch existing logs
-            const { data: logData } = await authenticatedSupabase
-                .from('session_logs')
-                .select('*')
-                .eq('session_id', sessionId)
-                .order('step_number', { ascending: true });
+                authenticatedSupabase
+                    .from('session_logs')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .order('step_number', { ascending: true })
+            ]);
+
+            const sessionData = sessionRes.data;
+            const logData = logsRes.data;
 
             setSession(sessionData);
             setLogs(logData || []);
@@ -194,10 +198,15 @@ export default function SessionPage() {
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Mission Mirror v1.0</span>
                             </div>
                             {latestLog?.current_url && (
-                                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] text-slate-400 font-mono">
+                                <a 
+                                    href={latestLog.current_url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] text-slate-400 font-mono hover:bg-white/10 hover:border-white/10 hover:text-white transition-all cursor-pointer"
+                                >
                                     <Globe className="h-3 w-3 text-indigo-500/50" />
                                     <span className="max-w-[300px] truncate">{latestLog.current_url}</span>
-                                </div>
+                                </a>
                             )}
                         </div>
 
@@ -330,6 +339,7 @@ export default function SessionPage() {
                         isPaused={!!session?.is_paused}
                         status={session?.status || 'queued'}
                         liveStatus={session?.live_status}
+                        innerMonologue={latestLog?.inner_monologue}
                     />
 
                     <div className="flex flex-col rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden max-h-[600px] shadow-2xl">
