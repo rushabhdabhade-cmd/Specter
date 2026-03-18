@@ -48,7 +48,8 @@ export class Orchestrator {
 
             this.llm = new LLMService({ provider, apiKey });
 
-            // Update session status to running
+            // Speed up: Update session status to running
+            this.updateLiveStatus(sessionId, 'Initializing engine & preparing browser container...');
             await (this.supabase.from('persona_sessions') as any).update({
                 status: 'running',
                 started_at: new Date().toISOString(),
@@ -67,6 +68,7 @@ export class Orchestrator {
                 action_taken: { type: 'system', info: 'browser_init' } as any
             });
 
+            this.updateLiveStatus(sessionId, 'Starting Chromium instance...');
             await this.browser.init();
 
             // Log: Navigation
@@ -79,10 +81,20 @@ export class Orchestrator {
                 action_taken: { type: 'system', info: 'navigate' } as any
             });
 
+            this.updateLiveStatus(sessionId, `Navigating to ${url}...`);
+            const validatedUrl = new URL(url);
+            const forbiddenHostnames = ['localhost', '127.0.0.1', '169.254.169.254'];
+            if (forbiddenHostnames.includes(validatedUrl.hostname)) {
+                throw new Error('Invalid target URL: Access to internal resources is prohibited.');
+            }
             await this.browser.navigate(url);
 
             const history: Action[] = [];
             const maxSteps = 15;
+            let consecutiveSameActions = 0;
+            let lastActionKey = '';
+            const selectorAttempts = new Map<string, number>();
+            const blacklist = new Set<string>();
 
             while (stepNumber <= maxSteps) {
                 // Check if session has been stopped externally
@@ -93,10 +105,11 @@ export class Orchestrator {
 
                 if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') {
                     console.log(`🛑 Stop signal detected for session ${sessionId}. Exiting...`);
+                    this.updateLiveStatus(sessionId, 'Test run manually stopped by user.');
                     await (this.supabase.from('session_logs') as any).insert({
                         session_id: sessionId,
                         step_number: stepNumber,
-                        current_url: url,
+                        current_url: url, // Use the initial url here
                         emotion_tag: 'neutral',
                         inner_monologue: 'Session stop signal received. Gracefully shutting down...',
                         action_taken: { type: 'system', info: 'manual_stop' } as any
@@ -104,29 +117,83 @@ export class Orchestrator {
                     break;
                 }
 
-                // If in manual mode, wait for the user to click "Next Step"
+                // If in manual mode, write/wait for step signal...
                 if (executionMode === 'manual') {
+                    this.updateLiveStatus(sessionId, 'Waiting for your command (Manual Mode)...');
                     console.log(`⏸️ Session ${sessionId} paused. Waiting for step signal...`);
                     await this.waitForStepSignal(sessionId);
                 }
 
+                // Perception Phase
+                this.updateLiveStatus(sessionId, `Step ${stepNumber}: Step 1 - Capturing Visual State...`);
                 console.log(`📸 Observing step ${stepNumber}...`);
-                console.time('observation');
-                const observation = await this.browser.observe();
-                console.timeEnd('observation');
-                console.log(`Screenshot size: ${(observation.screenshot.length / 1024).toFixed(2)} KB`);
+                const observation = await this.browser.observe(Array.from(blacklist));
+                // Cognition Phase
+                this.updateLiveStatus(sessionId, `Step ${stepNumber}: Step 2 - Multi-Model Consensus Analysis...`);
+                console.log(`🧠 Deciding next action (Multi-Model)...`);
 
-                console.log(`🧠 Deciding next action...`);
-                console.time('llm_decision');
-                const action = await this.llm.decideNextAction(observation, persona, history);
-                console.timeEnd('llm_decision');
+                // Filter DOM Context to remove blacklisted items
+                let filteredDomContext = observation.domContext || '[]';
+                if (blacklist.size > 0 && observation.domContext) {
+                    try {
+                        const elements = JSON.parse(observation.domContext);
+                        const filtered = elements.filter((el: any) => {
+                            const selector = `[${el.index}]`;
+                            return !blacklist.has(selector);
+                        });
+                        filteredDomContext = JSON.stringify(filtered);
+                        console.log(`🛡️ Blacklist active: Hiding ${elements.length - filtered.length} elements from AI.`);
+                    } catch (e) {
+                        console.error('Failed to filter blacklisted elements:', e);
+                    }
+                }
+
+                const filteredObservation = { ...observation, domContext: filteredDomContext };
+                let action = await this.llm.decideNextAction(filteredObservation, persona, history);
+
+                const currentActionKey = action.type === 'wait' || action.type === 'scroll'
+                    ? action.type
+                    : `${action.type}-${action.selector || ''}`;
+
+                if (currentActionKey === lastActionKey && (['click', 'type', 'wait', 'scroll'].includes(action.type))) {
+                    consecutiveSameActions++;
+                } else {
+                    consecutiveSameActions = 0;
+                    lastActionKey = currentActionKey;
+                }
+
+                // Cycle Detection (V8 Enhancement)
+                const actionHistory = history.map(h => h.type === 'wait' || h.type === 'scroll' ? h.type : `${h.type}-${h.selector || ''}`);
+                const isCycle = actionHistory.length >= 4 &&
+                    actionHistory[actionHistory.length - 1] === actionHistory[actionHistory.length - 3] &&
+                    actionHistory[actionHistory.length - 2] === currentActionKey;
+
+                const loopThreshold = action.type === 'wait' ? 2 : 3;
+                if (consecutiveSameActions >= loopThreshold || isCycle) {
+                    const reason = isCycle ? 'Cycle detected (A-B-A-B)' : 'Repetitive action detected';
+                    this.updateLiveStatus(sessionId, `Engine detected loop (${reason})! Forcing recovery scroll...`);
+                    console.log(`🔄 Loop detected (${reason}) for session ${sessionId}! Forcing manual recovery action...`);
+                    action = {
+                        type: 'scroll',
+                        reasoning: `I've detected a ${isCycle ? 'repetitive cycle' : 'loop'}. I'll scroll to see if new context appears and break the pattern.`,
+                        emotional_state: 'frustrated'
+                    };
+                    consecutiveSameActions = 0; // reset
+                    (this.supabase.from('session_logs') as any).insert({
+                        session_id: sessionId,
+                        step_number: stepNumber,
+                        current_url: observation.url,
+                        emotion_tag: 'frustration',
+                        inner_monologue: 'Loop detected. Forcing a scroll to break cycle.',
+                        action_taken: { type: 'system', info: 'loop_breaker_scroll' } as any
+                    }).then(() => { });
+                }
 
                 console.log(`🎭 Action: ${action.type} ${action.selector || ''} (${action.emotional_state})`);
+                this.updateLiveStatus(sessionId, `Intent: ${action.reasoning.slice(0, 80)}...`);
 
-                // Log step to Supabase
-                console.log(`📡 Logging step ${stepNumber} to Supabase...`);
-                console.time('supabase_log');
-                const { error: logError } = await (this.supabase.from('session_logs') as any).insert({
+                // Log step to Supabase (Non-blocking)
+                (this.supabase.from('session_logs') as any).insert({
                     session_id: sessionId,
                     step_number: stepNumber,
                     current_url: observation.url,
@@ -135,24 +202,9 @@ export class Orchestrator {
                     emotion_score: 5,
                     inner_monologue: action.reasoning,
                     action_taken: action as any
+                }).then(({ error: logError }: { error: any }) => {
+                    if (logError) console.error(`❌ Failed to log step ${stepNumber}:`, logError);
                 });
-                console.timeEnd('supabase_log');
-
-                if (logError) {
-                    console.error(`❌ Failed to log step ${stepNumber}:`, logError);
-                    // Try logging without screenshot if it failed
-                    console.log('🔄 Attempting to log without screenshot...');
-                    await (this.supabase.from('session_logs') as any).insert({
-                        session_id: sessionId,
-                        step_number: stepNumber,
-                        current_url: observation.url,
-                        screenshot_url: null,
-                        emotion_tag: this.mapEmotion(action.emotional_state),
-                        emotion_score: 5,
-                        inner_monologue: action.reasoning + " (Screenshot omitted due to logging failure)",
-                        action_taken: action as any
-                    });
-                }
 
                 if (action.type === 'complete' || action.type === 'fail') {
                     await (this.supabase.from('persona_sessions') as any).update({
@@ -164,11 +216,26 @@ export class Orchestrator {
                     break;
                 }
 
+                // Execution Phase
+                this.updateLiveStatus(sessionId, `Performing: ${action.type} ${action.selector || ''}`);
                 await this.browser.perform(action);
+
+                // Track selector attempts for blacklisting (V5 Hardening)
+                if (action.type === 'click' && action.selector) {
+                    const attemptKey = `${observation.url}:${action.selector}`;
+                    const attempts = (selectorAttempts.get(attemptKey) || 0) + 1;
+                    selectorAttempts.set(attemptKey, attempts);
+
+                    if (attempts >= 3) {
+                        console.warn(`🚫 Selector ${action.selector} blacklisted on ${observation.url} after 3 attempts.`);
+                        blacklist.add(action.selector);
+                    }
+                }
+
+                action.current_url = observation.url; // Save context for next step
                 history.push(action);
                 stepNumber++;
 
-                // Pause again for the next step if in manual mode
                 if (executionMode === 'manual') {
                     await (this.supabase.from('persona_sessions') as any).update({
                         is_paused: true,
@@ -185,21 +252,24 @@ export class Orchestrator {
                 }).eq('id', sessionId);
             }
 
-        } catch (error: any) {
-            console.error(`❌ Session ${sessionId} failed:`, error);
-            await (this.supabase.from('persona_sessions') as any).update({
-                status: 'error',
-                exit_reason: error.message
-            }).eq('id', sessionId);
+        } catch (err: any) {
+            console.error(`❌ Session ${sessionId} failed:`, err.message);
 
-            await (this.supabase.from('session_logs') as any).insert({
+            // Log specific error to session logs
+            (this.supabase.from('session_logs') as any).insert({
                 session_id: sessionId,
                 step_number: 999,
-                current_url: url,
+                action_type: 'error',
+                inner_monologue: `Critical engine failure: ${err.message}`,
                 emotion_tag: 'frustration',
-                inner_monologue: `Critical engine failure: ${error.message}`,
-                action_taken: { type: 'error', message: error.message } as any
-            });
+                metadata: { error_stack: err.stack }
+            }).then(() => { });
+
+            this.updateLiveStatus(sessionId, `Critical Failure: ${err.message.slice(0, 50)}...`);
+            await (this.supabase.from('persona_sessions') as any).update({
+                status: 'error',
+                error_message: err.message
+            }).eq('id', sessionId);
         } finally {
             await this.browser.close();
             if (testRunId) {
@@ -208,6 +278,13 @@ export class Orchestrator {
                 });
             }
         }
+    }
+
+    private async updateLiveStatus(sessionId: string, status: string) {
+        (this.supabase.from('persona_sessions') as any)
+            .update({ live_status: status })
+            .eq('id', sessionId)
+            .then(() => { });
     }
 
     private async waitForStepSignal(sessionId: string): Promise<void> {

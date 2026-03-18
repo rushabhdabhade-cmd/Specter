@@ -196,8 +196,18 @@ export default function SessionPage() {
                                 />
                             ) : (
                                 <div className="flex flex-col items-center gap-4 text-slate-700">
-                                    <Activity className="h-12 w-12 animate-pulse" />
-                                    <p className="text-xs font-bold uppercase tracking-widest">Waiting for first observation...</p>
+                                    <div className="relative">
+                                        <Activity className="h-12 w-12 animate-pulse text-indigo-500/50" />
+                                        <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full animate-pulse" />
+                                    </div>
+                                    <div className="text-center space-y-2">
+                                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                            {session?.live_status || 'Initializing engine...'}
+                                        </p>
+                                        <p className="text-[10px] text-slate-600 animate-pulse font-medium">
+                                            Specter AI is currently analyzing the visual state of your application.
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -264,6 +274,7 @@ export default function SessionPage() {
                         sessionId={sessionId}
                         isPaused={!!session?.is_paused}
                         status={session?.status || 'queued'}
+                        liveStatus={session?.live_status}
                     />
 
                     <div className="flex flex-col rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden max-h-[600px] shadow-2xl">
@@ -272,32 +283,89 @@ export default function SessionPage() {
                             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Navigation History</span>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                            {logs.map((log, i) => (
-                                <div key={log.id} className="relative pl-6 pb-4 last:pb-0 border-l border-white/10">
-                                    <div className="absolute left-[-5px] top-1.5 h-2.5 w-2.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                                    <div className="space-y-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[9px] font-black uppercase tracking-tighter text-slate-600">Step {log.step_number}</span>
-                                            <span className="text-[9px] text-slate-700">{new Date(log.created_at).toLocaleTimeString()}</span>
-                                        </div>
-                                        {log.action_taken && (
-                                            <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-2">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+                            {logs.map((log, i) => {
+                                const action = log.action_taken as any;
+                                const isSystem = action?.type === 'system';
+
+                                return (
+                                    <div key={log.id} className="relative pl-6 pb-2 last:pb-0 border-l border-white/5">
+                                        <div className={`absolute left-[-5px] top-1.5 h-2.5 w-2.5 rounded-full ${isSystem ? 'bg-slate-700' : 'bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]'
+                                            }`} />
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px] font-bold uppercase text-indigo-400">{(log.action_taken as any).type}</span>
-                                                    <span className="text-[10px] text-slate-500 truncate">{(log.action_taken as any).selector}</span>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Step {log.step_number}</span>
+                                                    {isSystem ? (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-500 font-bold uppercase tracking-widest">
+                                                            {action.info?.replace('_', ' ')}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-bold uppercase tracking-widest">
+                                                            {action?.type}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                {log.emotion_tag && (
-                                                    <div className="flex items-center gap-1.5">
-                                                        {emotionIcons[log.emotion_tag as keyof typeof emotionIcons] || emotionIcons.neutral}
-                                                        <span className="text-[9px] font-bold uppercase text-slate-500">Feeling {log.emotion_tag}</span>
+                                                <span className="text-[9px] text-slate-700 font-medium">{new Date(log.created_at).toLocaleTimeString()}</span>
+                                            </div>
+
+                                            <div className={`p-4 rounded-2xl border transition-all ${isSystem
+                                                ? 'bg-transparent border-white/5 opacity-60'
+                                                : 'bg-white/[0.02] border-white/10 hover:border-white/20'
+                                                }`}>
+                                                {log.inner_monologue && (
+                                                    <p className="text-xs text-slate-300 leading-relaxed font-medium mb-3">
+                                                        {log.inner_monologue}
+                                                    </p>
+                                                )}
+
+                                                {!isSystem && action?.ux_feedback && (
+                                                    <div className="p-3 mb-3 rounded-xl bg-indigo-500/5 border border-indigo-500/10 space-y-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <Activity className="h-3 w-3 text-indigo-400" />
+                                                            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400">Persona UX Insights</span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-400 leading-relaxed italic">
+                                                            "{action.ux_feedback}"
+                                                        </p>
                                                     </div>
                                                 )}
+
+                                                {!isSystem && action?.possible_paths && action.possible_paths.length > 0 && (
+                                                    <div className="mb-3 space-y-1.5">
+                                                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Possible Navigational Paths</span>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {action.possible_paths.map((path: string, idx: number) => (
+                                                                <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-slate-500 font-mono">
+                                                                    {path}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {!isSystem && action?.selector && (
+                                                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/5">
+                                                        <span className="text-[10px] text-slate-500 font-mono bg-black/40 px-2 py-0.5 rounded">
+                                                            Decision: {action.selector}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center gap-3">
+                                                    {log.emotion_tag && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            {emotionIcons[log.emotion_tag as keyof typeof emotionIcons] || emotionIcons.neutral}
+                                                            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 pt-0.5">
+                                                                {log.emotion_tag}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                             {logs.length === 0 && (
                                 <div className="text-center py-10 space-y-2">
                                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700">No history yet</p>
