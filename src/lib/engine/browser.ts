@@ -28,7 +28,7 @@ export class BrowserService {
             document.querySelectorAll('.specter-label').forEach(el => el.remove());
 
             const interactables = document.querySelectorAll('button, a, input, select, textarea, [role="button"]');
-            const info: any[] = [];
+            const info: { index: number; type: string; text: string; role: string; }[] = [];
 
             interactables.forEach((el, index) => {
                 const htmlEl = el as HTMLElement;
