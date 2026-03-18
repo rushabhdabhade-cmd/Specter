@@ -164,6 +164,18 @@ export default function SessionPage() {
                             <Compass className="h-3.5 w-3.5 text-slate-600" />
                             <span>Navigating <span className="text-indigo-400/80 font-bold">{session?.test_runs?.projects?.name}</span></span>
                         </div>
+                        {session?.live_status && (
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                {session.live_status.split('|').map((part: string, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-1.5 rounded-2xl animate-pulse">
+                                        {idx === 0 && <Compass className="h-3.5 w-3.5 text-emerald-400" />}
+                                        {idx === 1 && <Activity className="h-3.5 w-3.5 text-emerald-400" />}
+                                        {idx === 2 && <Globe className="h-3.5 w-3.5 text-emerald-400" />}
+                                        <span className="truncate max-w-[200px]">{part.trim()}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 

@@ -1,5 +1,12 @@
 import { Stagehand } from '@browserbasehq/stagehand';
-import { Observation, Action, ObservationSection, HeuristicMetrics } from './types';
+import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
+
+// Interactive roles worth sending to the LLM — everything else is structural noise
+const INTERACTIVE_ROLES = new Set([
+    'link', 'button', 'textbox', 'searchbox', 'combobox', 'listbox',
+    'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'spinbutton',
+    'slider', 'option', 'treeitem', 'menuitemcheckbox', 'menuitemradio'
+]);
 
 export class BrowserService {
     private stagehand: Stagehand | null = null;
@@ -12,15 +19,17 @@ export class BrowserService {
         last_load_time: 0
     };
 
-    async init(modelName: string = "google/gemini-2.0-flash", apiKey?: string) {
+    // ─── Init ───────────────────────────────────────────────────────────────────
+
+    async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
             this.stagehand = new Stagehand({
-                env: "LOCAL",
+                env: 'LOCAL',
                 apiKey: process.env.BROWSERBASE_API_KEY,
-                verbose: 2,
+                verbose: 0,               // quiet — we log our own events
                 disableAPI: true,
                 model: {
-                    modelName: modelName,
+                    modelName,
                     apiKey: (modelName.includes('google') || modelName.includes('gemini'))
                         ? (apiKey || process.env.GEMINI_API_KEY)
                         : (apiKey || process.env.OPENAI_API_KEY),
@@ -35,9 +44,7 @@ export class BrowserService {
             await this.stagehand.init();
 
             const context = (this.stagehand as any).context;
-            if (!context) {
-                throw new Error('Stagehand failure: Context not found after init.');
-            }
+            if (!context) throw new Error('Stagehand failure: Context not found after init.');
 
             const allPages = context.pages ? context.pages() : [];
             this.page = (context.activePage ? context.activePage() : null) || allPages[0];
@@ -47,38 +54,31 @@ export class BrowserService {
                 this.page = await context.newPage();
             }
 
-            // Listen for new pages globally in this context
+            // Listen for new tabs
             const pwContext = this.page?.context ? this.page.context() : context;
             if (pwContext && typeof pwContext.on === 'function') {
                 this.attachNetworkListeners(pwContext);
-
                 pwContext.on('page', async (newPage: any) => {
-                    console.log(`✨ New tab detected: ${newPage.url()}. Switching...`);
+                    console.log(`✨ New tab: ${newPage.url()}. Switching...`);
                     this.page = newPage;
                     await newPage.bringToFront().catch(() => { });
-                    if (typeof newPage.setViewportSize === 'function') {
-                        await newPage.setViewportSize({ width: 1280, height: 800 }).catch(() => { });
-                    }
+                    await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
                 });
             }
 
-            if (this.page) {
-                console.log('✅ Stagehand page ready.');
-                if (typeof this.page.setViewportSize === 'function') {
-                    await this.page.setViewportSize({ width: 1280, height: 800 }).catch(() => { });
-                }
-            } else {
-                throw new Error('Stagehand failure: Page object not found.');
-            }
+            if (!this.page) throw new Error('Stagehand failure: Page object not found.');
+            await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+            console.log('✅ Stagehand ready.');
         } catch (err: any) {
-            console.error(`❌ Stagehand init failed:`, err.message);
+            console.error('❌ Stagehand init failed:', err.message);
             throw err;
         }
     }
 
+    // ─── Network ────────────────────────────────────────────────────────────────
+
     private attachNetworkListeners(target: any) {
         if (!target || typeof target.on !== 'function') return;
-
         try {
             target.on('response', (response: any) => {
                 try {
@@ -86,23 +86,23 @@ export class BrowserService {
                     if (status >= 400) {
                         const url = typeof response.url === 'function' ? response.url() : 'unknown';
                         if (!this.metrics.broken_links.includes(url)) {
-                            console.warn(`🚦 Broken link/error detected: ${status} - ${url}`);
                             this.metrics.broken_links.push(`${status}: ${url}`);
                         }
                     }
-                } catch (e) { }
+                } catch (_) { }
             });
-
             target.on('requestfailed', (request: any) => {
                 this.metrics.request_failures++;
                 try {
                     const url = typeof request.url === 'function' ? request.url() : 'unknown';
-                    const error = typeof request.failure === 'function' ? request.failure()?.errorText : 'unknown';
-                    console.warn(`🚦 Request failed: ${url} - ${error}`);
-                } catch (e) { }
+                    const err = typeof request.failure === 'function' ? request.failure()?.errorText : 'unknown';
+                    console.warn(`🚦 Request failed: ${url} — ${err}`);
+                } catch (_) { }
             });
-        } catch (err: any) { }
+        } catch (_) { }
     }
+
+    // ─── Navigation ─────────────────────────────────────────────────────────────
 
     async navigate(url: string) {
         if (!this.page) return;
@@ -118,153 +118,223 @@ export class BrowserService {
         }
     }
 
-    async captureSection(label: string, lightweight: boolean = false): Promise<ObservationSection> {
-        if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
+    // ─── DOM extraction ─────────────────────────────────────────────────────────
 
-        // Fast settling for fragments
-        await this.page.waitForLoadState('domcontentloaded', { timeout: 2000 }).catch(() => { });
-        await this.page.waitForTimeout(lightweight ? 200 : 500);
+    /**
+     * Returns only interactive elements visible in the current viewport.
+     * Deduplicates by text+role so the LLM sees a clean, compact list.
+     * Max 30 elements — enough for decision-making, not so many it blows the context.
+     */
+    private async extractInteractiveElements(): Promise<any[]> {
+        if (!this.page || !this.stagehand) return [];
+        try {
+            const observations: any[] = await this.stagehand.observe({ page: this.page }).catch(() => []);
 
-        let mappedElements: any[] = [];
-        if (!lightweight) {
-            console.log(`🧠 Performing semantic discovery for ${label}...`);
-            const observations = await this.stagehand.observe({ page: this.page }).catch(() => []);
+            const seen = new Set<string>();
+            const elements: any[] = [];
 
-            const selectorsToQuery = observations
-                .filter((ob: any) => ob.selector)
-                .map((ob: any) => ob.selector);
+            for (const ob of observations) {
+                if (!ob.selector) continue;
 
-            const boxes = await this.page.evaluate((sels: string[]) => {
-                return sels.map(sel => {
-                    try {
+                const text = (ob.description || ob.label || '').trim().slice(0, 80);
+                const role = (ob.method || 'element').toLowerCase();
+                const key = `${role}::${text}`;
+
+                // Skip structural noise and duplicates
+                if (!text || seen.has(key)) continue;
+                if (text.length < 2) continue;
+                seen.add(key);
+
+                // Resolve coordinates
+                let coords: any = null;
+                try {
+                    coords = await this.page.evaluate((sel: string) => {
                         const el = sel.startsWith('xpath=')
-                            ? document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement
+                            ? (document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement)
                             : document.querySelector(sel) as HTMLElement;
-                        if (el) {
-                            const rect = el.getBoundingClientRect();
-                            return {
-                                x: Math.round(rect.left + window.scrollX),
-                                y: Math.round(rect.top + window.scrollY),
-                                w: Math.round(rect.width),
-                                h: Math.round(rect.height)
-                            };
-                        }
-                    } catch (e) { }
-                    return null;
-                });
-            }, selectorsToQuery).catch(() => []);
+                        if (!el) return null;
+                        const r = el.getBoundingClientRect();
+                        // Exclude off-screen elements
+                        if (r.width === 0 || r.height === 0) return null;
+                        if (r.bottom < 0 || r.top > window.innerHeight) return null;
+                        return {
+                            x: Math.round(r.left + window.scrollX),
+                            y: Math.round(r.top + window.scrollY),
+                            w: Math.round(r.width),
+                            h: Math.round(r.height)
+                        };
+                    }, ob.selector).catch(() => null);
+                } catch (_) { }
 
-            let boxIndex = 0;
-            mappedElements = observations.map((ob: any, i: number) => {
-                const coords = ob.selector ? boxes[boxIndex++] : null;
-                return {
-                    index: i,
-                    type: ob.selector ? 'element' : 'unknown',
-                    text: (ob.description || ob.label || '').slice(0, 100), // Slightly longer text is fine
+                elements.push({
+                    index: elements.length,
+                    role,
+                    text,
                     selector: ob.selector,
-                    role: ob.method || 'element',
                     coordinates: coords
-                };
-            });
-        }
+                });
 
-        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 25 }); // Low quality for speed
+                if (elements.length >= 30) break;
+            }
+
+            return elements;
+        } catch (_) {
+            return [];
+        }
+    }
+
+    // ─── Capture a single viewport slice ────────────────────────────────────────
+
+    /**
+     * Captures screenshot + interactive elements at the current scroll position.
+     * Uses quality=40 for section scans (good enough for vision analysis)
+     * and quality=60 for the primary decision-making screenshot.
+     */
+    private async captureSlice(label: string, highQuality = false): Promise<ObservationSection> {
+        if (!this.page) throw new Error('Browser not initialized');
+
+        await this.page.waitForLoadState('domcontentloaded', { timeout: 2000 }).catch(() => { });
+        await this.page.waitForTimeout(highQuality ? 400 : 200);
+
+        const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
+        const screenshot = await this.page.screenshot({
+            type: 'jpeg',
+            quality: highQuality ? 60 : 40  // 40% is plenty for multi-section visual analysis
+        });
+
+        // Only extract DOM on the primary (high-quality) slice to avoid redundant Stagehand calls
+        const domContext = highQuality
+            ? JSON.stringify(await this.extractInteractiveElements())
+            : '[]';
+
         return {
             screenshot: screenshot.toString('base64'),
-            domContext: JSON.stringify(mappedElements.slice(0, 45)) // Slightly more elements
+            domContext,
+            label,
+            scrollY
         };
     }
 
-    async observe(blacklist: string[] = [], fullPageScan: boolean = false): Promise<Observation> {
+    // ─── Full-page scan: Top / Mid / Bottom + primary view ──────────────────────
+
+    /**
+     * Captures up to 3 viewport slices across the full page height,
+     * then returns to the top for a primary high-quality capture.
+     *
+     * Returns an Observation where:
+     *  - screenshot / domContext = primary top-view (for LLM decision)
+     *  - sections = [Top, Mid?, Bottom?] — all passed to analyzePageSections() in ONE call
+     */
+    async observeFullPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) {
-            return { screenshot: '', url: '', title: '', domContext: '[]', dimensions: { width: 1280, height: 800 } };
+            return this.emptyObservation();
         }
 
         const sections: ObservationSection[] = [];
-        let mainObservation: ObservationSection;
 
-        if (fullPageScan) {
-            console.log('📸 Starting unified visual scan...');
-            // Step 1: Top (Lightweight)
-            await this.page.evaluate(() => window.scrollTo(0, 0));
+        // Top
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+        await this.page.waitForTimeout(300);
+        sections.push(await this.captureSlice('Top'));
+
+        // Mid and Bottom (only if page is tall enough to warrant it)
+        const { vh, dh } = await this.page.evaluate(() => ({
+            vh: window.innerHeight,
+            dh: document.documentElement.scrollHeight
+        }));
+
+        if (dh > vh * 1.5) {
+            await this.page.evaluate((y: number) => window.scrollTo(0, y), Math.round(vh * 0.85));
             await this.page.waitForTimeout(300);
-            sections.push(await this.captureSection('Top', true));
-
-            // Step 2: Scroll & Fragments
-            const heights = await this.page.evaluate(() => ({
-                vh: window.innerHeight,
-                dh: document.documentElement.scrollHeight
-            }));
-
-            if (heights.dh > heights.vh) {
-                await this.page.evaluate((vh: number) => window.scrollTo(0, vh), heights.vh);
-                await this.page.waitForTimeout(500);
-                sections.push(await this.captureSection('Mid', true));
-
-                if (heights.dh > heights.vh * 1.5) {
-                    await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-                    await this.page.waitForTimeout(500);
-                    sections.push(await this.captureSection('Bottom', true));
-                }
-            }
-
-            // Final Step: Return to top and do a RICH observation for the agent's decision making
-            await this.page.evaluate(() => window.scrollTo(0, 0));
-            await this.page.waitForTimeout(300);
-            mainObservation = await this.captureSection('Primary View', false);
-            sections[0] = mainObservation;
-        } else {
-            mainObservation = await this.captureSection('Current View', false);
-            sections.push(mainObservation);
+            sections.push(await this.captureSlice('Mid'));
         }
 
+        if (dh > vh * 2.2) {
+            await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+            await this.page.waitForTimeout(300);
+            sections.push(await this.captureSlice('Bottom'));
+        }
+
+        // Return to top and do the primary rich capture (with DOM)
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+        await this.page.waitForTimeout(300);
+        const primary = await this.captureSlice('Primary', true);
+
+        // Replace the low-quality Top screenshot with the high-quality primary
+        if (sections.length > 0) sections[0] = { ...primary, label: 'Top' };
+
         return {
-            screenshot: mainObservation.screenshot,
+            screenshot: primary.screenshot,
+            domContext: primary.domContext,
             url: this.page.url(),
             title: await this.page.title(),
-            domContext: mainObservation.domContext,
             dimensions: { width: 1280, height: 800 },
             sections
         };
     }
 
+    // ─── Light observe: current viewport only (post-action checks) ──────────────
+
+    async observe(): Promise<Observation> {
+        if (!this.page || !this.stagehand) return this.emptyObservation();
+
+        const slice = await this.captureSlice('Current', true);
+        return {
+            screenshot: slice.screenshot,
+            domContext: slice.domContext,
+            url: this.page.url(),
+            title: await this.page.title(),
+            dimensions: { width: 1280, height: 800 },
+            sections: [slice]
+        };
+    }
+
+    private emptyObservation(): Observation {
+        return {
+            screenshot: '',
+            url: '',
+            title: '',
+            domContext: '[]',
+            dimensions: { width: 1280, height: 800 }
+        };
+    }
+
+    // ─── Actions ────────────────────────────────────────────────────────────────
+
     async perform(action: Action) {
         if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
 
         const oldUrl = this.page.url();
-        const oldPageCount = (this.stagehand as any).context?.pages ? (this.stagehand as any).context.pages().length : 1;
+        const oldPageCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
 
         try {
             switch (action.type) {
                 case 'click':
-                case 'type':
+                case 'type': {
                     const instruction = action.type === 'click'
-                        ? `Click on the ${action.text || action.reasoning}`
-                        : `Type "${action.text}" into the appropriate field for ${action.reasoning}`;
+                        ? `Click on: ${action.text || action.reasoning}`
+                        : `Type "${action.text}" into the field for: ${action.reasoning}`;
 
-                    console.log(`🤖 Stagehand acting: ${instruction}`);
+                    console.log(`🤖 Stagehand: ${instruction}`);
+                    const t0 = Date.now();
                     await this.stagehand.act(instruction, { page: this.page });
+                    this.metrics.action_latency.push(Date.now() - t0);
 
-                    let settled = false;
+                    // Wait for navigation or new tab
                     for (let i = 0; i < 5; i++) {
-                        await this.page.waitForTimeout(1000);
-                        const newPageCount = (this.stagehand as any).context?.pages ? (this.stagehand as any).context.pages().length : 1;
-                        if (newPageCount > oldPageCount) {
+                        await this.page.waitForTimeout(800);
+                        const newCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
+                        if (newCount > oldPageCount) {
                             const pages = (this.stagehand as any).context.pages();
                             this.page = pages[pages.length - 1];
-                            await this.page.bringToFront().catch(() => { });
-                            settled = true;
+                            await this.page.bringToFront?.().catch(() => { });
                             break;
                         }
-                        if (this.page.url() !== oldUrl) {
-                            settled = true;
-                            break;
-                        }
+                        if (this.page.url() !== oldUrl) break;
                     }
-                    if (settled) {
-                        await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
-                    }
+                    await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
                     break;
+                }
 
                 case 'scroll':
                     if (action.text === 'top') {
@@ -272,32 +342,89 @@ export class BrowserService {
                     } else if (action.text === 'bottom') {
                         await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
                     } else {
-                        await this.page.evaluate(() => window.scrollBy(0, 800));
+                        await this.page.evaluate(() => window.scrollBy(0, 700));
                     }
                     break;
+
                 case 'wait':
                     await this.page.waitForTimeout(2000);
                     break;
             }
         } catch (err) {
-            console.warn(`Stagehand action ${action.type} failed:`, err);
-            if (action.selector) {
+            console.warn(`Stagehand action "${action.type}" failed:`, err);
+            // Fallback: direct selector click
+            if (action.type === 'click' && action.selector) {
                 await this.page.click(action.selector, { timeout: 5000 }).catch(() => { });
             }
         }
 
         const newUrl = this.page.url();
-        const newPageCount = (this.stagehand as any).context?.pages().length || 1;
-
+        const newPageCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
             await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
         }
         await this.page.waitForTimeout(300);
     }
 
+    // ─── Link harvesting ────────────────────────────────────────────────────────
+
+    /**
+     * Returns same-origin links that look like meaningful page content.
+     * Filters out: assets, auth paths, pagination query params, hash links,
+     * and known utility paths that add no UX value.
+     */
+    async getContentLinks(maxLinks = 20): Promise<string[]> {
+        if (!this.page) return [];
+        const origin = new URL(this.page.url()).origin;
+
+        const SKIP_PATTERNS = [
+            /\.(jpg|jpeg|png|gif|webp|svg|ico|pdf|zip|css|js|woff|ttf)(\?|$)/i,
+            /\/(login|logout|signup|register|auth|oauth|callback|admin|api)\//i,
+            /\?.*page=\d+/i,
+            /\?.*sort=/i,
+            /\?.*filter=/i,
+            /#/
+        ];
+
+        try {
+            const links: string[] = await this.page.evaluate((originStr: string) => {
+                return Array.from(document.querySelectorAll('a[href]'))
+                    .map((a: any) => a.href)
+                    .filter((href: string) => {
+                        try {
+                            const u = new URL(href);
+                            return u.origin === originStr && u.pathname !== '/';
+                        } catch (_) { return false; }
+                    });
+            }, origin);
+
+            // Apply server-side filters and deduplicate by pathname (strip query params)
+            const seenPaths = new Set<string>();
+            const filtered: string[] = [];
+
+            for (const link of links) {
+                if (SKIP_PATTERNS.some(p => p.test(link))) continue;
+                try {
+                    const u = new URL(link);
+                    const path = u.pathname.replace(/\/$/, '').toLowerCase();
+                    if (seenPaths.has(path)) continue;
+                    seenPaths.add(path);
+                    filtered.push(`${u.origin}${u.pathname}`); // strip query params for dedup
+                    if (filtered.length >= maxLinks) break;
+                } catch (_) { }
+            }
+
+            return filtered;
+        } catch (_) {
+            return [];
+        }
+    }
+
+    // ─── Utilities ──────────────────────────────────────────────────────────────
+
     async evaluate<T>(fn: (...args: any[]) => T | Promise<T>, ...args: any[]): Promise<T> {
         if (!this.page) throw new Error('Browser not initialized');
-        return await this.page.evaluate(fn, ...args);
+        return this.page.evaluate(fn, ...args);
     }
 
     async waitForTimeout(ms: number) {
