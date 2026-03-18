@@ -28,7 +28,7 @@ Specter follows a **Perception-Cognition-Execution** (PCE) loop, orchestrated by
 
 ### 1. The PCE Loop
 The engine operates in distinct steps (default max 15):
-1.  **Perception ([BrowserService](file:///Users/rushabhdabhade/Desktop/Specter/src/lib/engine/browser.ts))**: Captures the current visual and structural state of the webpage (screenshot + DOM).
+1.  **Perception ([BrowserService](src/lib/engine/browser.ts))**: Captures the current visual and structural state of the webpage (screenshot + DOM).
 2.  **Cognition ([LLMService](file:///Users/rushabhdabhade/Desktop/Specter/src/lib/engine/llm.ts))**: Processes the perception via multimodal LLMs to decide the next action based on a persona profile.
 3.  **Execution ([BrowserService](file:///Users/rushabhdabhade/Desktop/Specter/src/lib/engine/browser.ts))**: Performs the decided action (click, type, scroll, wait) on the live browser.
 
