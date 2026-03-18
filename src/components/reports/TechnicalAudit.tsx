@@ -61,7 +61,7 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Friction Points List */}
-                <div className="rounded-[40px] border border-white/5 bg-[#0a0a0a] p-8 shadow-2xl space-y-6">
+                <div className={`rounded-[40px] border border-white/5 bg-[#0a0a0a] shadow-2xl ${(data.frictionPoints?.length || 0) > 0 ? 'p-8 space-y-6' : 'p-6 space-y-3'}`}>
                     <div className="flex items-center gap-3 mb-2">
                         <MousePointerClick className="h-4 w-4 text-amber-400" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Behavioral Friction Log</span>
@@ -77,16 +77,16 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
                                 </div>
                             </div>
                         )) : (
-                            <div className="flex flex-col items-center justify-center py-10 text-center space-y-3 opacity-40">
-                                <CheckCircle2 className="h-8 w-8 text-emerald-500/50" />
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">No behavioral friction detected</p>
+                            <div className="flex items-center justify-center py-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl gap-2 mt-1">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">No behavioral friction detected</p>
                             </div>
                         )}
                     </div>
                 </div>
 
                 {/* Slow Pages List Overlay */}
-                <div className="rounded-[40px] border border-white/5 bg-[#0a0a0a] p-8 shadow-2xl space-y-6">
+                <div className={`rounded-[40px] border border-white/5 bg-[#0a0a0a] shadow-2xl ${(data.slowPages?.length || 0) > 0 ? 'p-8 space-y-6' : 'p-6 space-y-3'}`}>
                     <div className="flex items-center gap-3 mb-2">
                         <Zap className="h-4 w-4 text-indigo-400" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Performance Bottlenecks</span>
@@ -108,16 +108,16 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
                                 </div>
                             );
                         }) : (
-                            <div className="flex flex-col items-center justify-center py-10 text-center space-y-3 opacity-40">
-                                <CheckCircle2 className="h-8 w-8 text-emerald-500/50" />
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">All pages meeting speed benchmarks</p>
+                            <div className="flex items-center justify-center py-3.5 bg-indigo-500/5 border border-indigo-500/10 rounded-xl gap-2 mt-1">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-indigo-400" />
+                                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">All pages meeting speed benchmarks</p>
                             </div>
                         )}
                     </div>
                 </div>
 
                 {/* Broken Links List */}
-                <div className="rounded-[40px] border border-white/5 bg-[#0a0a0a] p-8 shadow-2xl lg:col-span-2 space-y-6">
+                <div className={`rounded-[40px] border border-white/5 bg-[#0a0a0a] shadow-2xl lg:col-span-2 ${(data.brokenLinks?.length || 0) > 0 ? 'p-8 space-y-6' : 'p-6 space-y-3'}`}>
                     <div className="flex items-center gap-3 mb-2">
                         <Link2Off className="h-4 w-4 text-red-400" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Network Resource Audit</span>
@@ -136,9 +136,9 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
                                 </div>
                             );
                         }) : (
-                            <div className="flex flex-col items-center justify-center py-10 text-center space-y-3 opacity-40 col-span-2">
-                                <CheckCircle2 className="h-8 w-8 text-emerald-500/50" />
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">All network resources resolving</p>
+                            <div className="flex items-center justify-center py-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl gap-2 col-span-2 mt-1">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">All network resources resolving</p>
                             </div>
                         )}
                     </div>

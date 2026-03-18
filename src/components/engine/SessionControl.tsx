@@ -8,10 +8,11 @@ interface SessionControlProps {
     isPaused: boolean;
     status: string;
     liveStatus?: string;
+    innerMonologue?: string;
     onStep?: () => void;
 }
 
-export function SessionControl({ sessionId, isPaused, status, liveStatus, onStep }: SessionControlProps) {
+export function SessionControl({ sessionId, isPaused, status, liveStatus, innerMonologue, onStep }: SessionControlProps) {
     const [loading, setLoading] = useState(false);
 
     const handleNextStep = async () => {
@@ -85,22 +86,21 @@ export function SessionControl({ sessionId, isPaused, status, liveStatus, onStep
                             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-300 animate-pulse mb-1">
                                 {liveStatus || (status === 'queued' ? 'Waiting in queue...' : 'AI is thinking...')}
                             </p>
-                            <p className="text-[9px] text-slate-600 font-medium">
-                                Real-time intent stream enabled.
-                            </p>
+                            {innerMonologue ? (
+                                <p className="text-xs text-indigo-100/90 italic font-bold mt-2 border-t border-white/5 pt-2 max-w-[220px] text-center leading-relaxed">
+                                    &ldquo;{innerMonologue}&rdquo;
+                                </p>
+                            ) : (
+                                <p className="text-[9px] text-slate-600 font-medium">
+
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
             </div>
 
-            <div className="pt-4 border-t border-white/5">
-                <div className="flex items-center gap-2 text-slate-500">
-                    <AlertCircle className="h-3 w-3" />
-                    <span className="text-[10px] font-medium italic">
-                        Manual mode ensures 100% human oversight.
-                    </span>
-                </div>
-            </div>
+
         </div>
     );
 }

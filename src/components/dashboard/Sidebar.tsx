@@ -63,25 +63,6 @@ export default function Sidebar() {
           })}
         </div>
       </nav>
-
-      {/* ── FOOTER ──────────────────────────────────────────────────────── */}
-      <div className="p-8 space-y-4">
-        <div className="rounded-2xl bg-indigo-500/5 border border-indigo-500/10 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Activity className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300">Hybrid System Live</span>
-          </div>
-          <p className="text-[9px] font-medium text-slate-500 italic leading-relaxed">
-            Syncing 124ms behavioral lag across 4 regions.
-          </p>
-        </div>
-        <div className="px-2 flex items-center justify-between">
-          <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-800">
-            © Specter 2026
-          </p>
-          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-        </div>
-      </div>
     </div>
   );
 }

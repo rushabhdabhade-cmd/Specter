@@ -1,4 +1,4 @@
-import { createAdminClient } from './lib/supabase/admin.ts';
+import { createAdminClient } from './lib/supabase/admin';
 
 async function checkLogs() {
     const supabase = createAdminClient();
