@@ -82,6 +82,11 @@ export class Orchestrator {
             });
 
             this.updateLiveStatus(sessionId, `Navigating to ${url}...`);
+            const validatedUrl = new URL(url);
+            const forbiddenHostnames = ['localhost', '127.0.0.1', '169.254.169.254'];
+            if (forbiddenHostnames.includes(validatedUrl.hostname)) {
+                throw new Error('Invalid target URL: Access to internal resources is prohibited.');
+            }
             await this.browser.navigate(url);
 
             const history: Action[] = [];
