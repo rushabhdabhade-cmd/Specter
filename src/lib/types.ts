@@ -182,7 +182,7 @@ export interface Database {
                     step_number: number
                     current_url: string
                     screenshot_url: string | null
-                    emotion_tag: 'neutral' | 'confusion' | 'frustration' | 'delight' | null
+                    emotion_tag: 'neutral' | 'confusion' | 'frustration' | 'delight' | 'satisfaction' | 'curiosity' | 'surprise' | 'boredom' | 'disappointment' | null
                     emotion_score: number | null
                     inner_monologue: string | null
                     action_taken: Json | null
@@ -194,7 +194,7 @@ export interface Database {
                     step_number: number
                     current_url: string
                     screenshot_url?: string | null
-                    emotion_tag?: 'neutral' | 'confusion' | 'frustration' | 'delight' | null
+                    emotion_tag?: 'neutral' | 'confusion' | 'frustration' | 'delight' | 'satisfaction' | 'curiosity' | 'surprise' | 'boredom' | 'disappointment' | null
                     emotion_score?: number | null
                     inner_monologue?: string | null
                     action_taken?: Json | null
@@ -206,7 +206,7 @@ export interface Database {
                     step_number?: number
                     current_url?: string
                     screenshot_url?: string | null
-                    emotion_tag?: 'neutral' | 'confusion' | 'frustration' | 'delight' | null
+                    emotion_tag?: 'neutral' | 'confusion' | 'frustration' | 'delight' | 'satisfaction' | 'curiosity' | 'surprise' | 'boredom' | 'disappointment' | null
                     emotion_score?: number | null
                     inner_monologue?: string | null
                     action_taken?: Json | null
