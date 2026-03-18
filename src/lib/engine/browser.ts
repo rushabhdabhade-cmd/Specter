@@ -30,7 +30,9 @@ export class BrowserService {
             const interactables = document.querySelectorAll('button, a, input, select, textarea, [role="button"]');
             const info: { index: number; type: string; text: string; role: string; }[] = [];
 
+            // Limit to top 100 interactables to prevent payload bloat
             interactables.forEach((el, index) => {
+                if (index > 100) return;
                 const htmlEl = el as HTMLElement;
                 const rect = htmlEl.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
@@ -54,15 +56,22 @@ export class BrowserService {
                     info.push({
                         index,
                         type: el.tagName.toLowerCase(),
-                        text: htmlEl.innerText?.trim() || (el as HTMLInputElement).value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '',
+                        text: (htmlEl.innerText?.trim() || (el as HTMLInputElement).value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').slice(0, 100),
                         role: el.getAttribute('role') || ''
                     });
                 }
             });
             return info;
+        }).catch(err => {
+            console.warn('DOM labeling failed or timed out:', err);
+            return [];
         });
 
-        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 60 });
+        const screenshot = await this.page.screenshot({
+            type: 'jpeg',
+            quality: 40, // Optimized for local LLM processing
+            timeout: 15000
+        });
         const url = this.page.url();
         const title = await this.page.title();
 
@@ -78,45 +87,50 @@ export class BrowserService {
     async perform(action: Action) {
         if (!this.page) throw new Error('Browser not initialized');
 
-        switch (action.type) {
-            case 'click':
-                if (action.selector) {
-                    // LLM will provide index in selector field usually like "[15]"
-                    const indexMatch = action.selector.match(/\[(\d+)\]/);
-                    if (indexMatch) {
-                        const index = indexMatch[1];
-                        const interactables = await this.page.$$('button, a, input, select, textarea, [role="button"]');
-                        if (interactables[parseInt(index)]) {
-                            await interactables[parseInt(index)].click();
+        try {
+            switch (action.type) {
+                case 'click':
+                    if (action.selector) {
+                        const indexMatch = action.selector.match(/\[(\d+)\]/);
+                        if (indexMatch) {
+                            const index = indexMatch[1];
+                            const interactables = await this.page.$$('button, a, input, select, textarea, [role="button"]');
+                            if (interactables[parseInt(index)]) {
+                                await interactables[parseInt(index)].click({ timeout: 10000 });
+                            }
+                        } else {
+                            await this.page.click(action.selector, { timeout: 10000 });
                         }
-                    } else {
-                        await this.page.click(action.selector);
                     }
-                }
-                break;
-            case 'type':
-                if (action.selector && action.text) {
-                    const indexMatch = action.selector.match(/\[(\d+)\]/);
-                    if (indexMatch) {
-                        const index = indexMatch[1];
-                        const interactables = await this.page.$$('button, a, input, select, textarea, [role="button"]');
-                        if (interactables[parseInt(index)]) {
-                            await interactables[parseInt(index)].fill(action.text);
+                    break;
+                case 'type':
+                    if (action.selector && action.text) {
+                        const indexMatch = action.selector.match(/\[(\d+)\]/);
+                        if (indexMatch) {
+                            const index = indexMatch[1];
+                            const interactables = await this.page.$$('button, a, input, select, textarea, [role="button"]');
+                            if (interactables[parseInt(index)]) {
+                                await interactables[parseInt(index)].fill(action.text, { timeout: 10000 });
+                            }
+                        } else {
+                            await this.page.fill(action.selector, action.text, { timeout: 10000 });
                         }
-                    } else {
-                        await this.page.fill(action.selector, action.text);
                     }
-                }
-                break;
-            case 'scroll':
-                await this.page.evaluate(() => window.scrollBy(0, 500));
-                break;
-            case 'wait':
-                await this.page.waitForTimeout(2000);
-                break;
+                    break;
+                case 'scroll':
+                    await this.page.evaluate(() => window.scrollBy(0, 500));
+                    break;
+                case 'wait':
+                    await this.page.waitForTimeout(2000);
+                    break;
+            }
+        } catch (err) {
+            console.warn(`Action ${action.type} failed or timed out, continuing...`, err);
         }
 
-        await this.page.waitForLoadState('networkidle');
+        await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+            console.log('Network idle timed out, proceeding anyway...');
+        });
     }
 
     async close() {

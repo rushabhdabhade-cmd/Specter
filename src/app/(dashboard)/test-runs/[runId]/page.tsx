@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronRight, Cpu, User, Play, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { SessionLogAccordion } from '@/components/engine/SessionLogAccordion';
+import { RerunButton } from '@/components/engine/RerunButton';
+import { StopButton } from '@/components/engine/StopButton';
 
 export default async function TestRunPage({ params }: { params: Promise<{ runId: string }> }) {
     const { runId } = await params;
@@ -74,11 +76,15 @@ export default async function TestRunPage({ params }: { params: Promise<{ runId:
                             Target: <span className="text-indigo-400 select-all">{run.projects?.target_url}</span>
                         </p>
                     </div>
-                    <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
-                        <Cpu className="h-4 w-4 text-emerald-400" />
-                        <span className="text-xs font-bold uppercase tracking-widest text-white">
-                            Engine: {run.projects?.llm_provider || 'Ollama'}
-                        </span>
+                    <div className="flex items-center gap-4">
+                        <StopButton runId={run.id} status={run.status} />
+                        <RerunButton runId={run.id} />
+                        <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+                            <Cpu className="h-4 w-4 text-emerald-400" />
+                            <span className="text-xs font-bold uppercase tracking-widest text-white">
+                                Engine: {run.projects?.llm_provider || 'Ollama'}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>

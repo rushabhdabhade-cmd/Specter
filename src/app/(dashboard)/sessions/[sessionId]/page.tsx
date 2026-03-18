@@ -18,16 +18,38 @@ import {
     AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 
 export default function SessionPage() {
     const params = useParams();
+    const router = useRouter();
     const sessionId = params.sessionId as string;
     const [session, setSession] = useState<any>(null);
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
     const logsEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-redirect to report when completed
+    useEffect(() => {
+        if (session?.status === 'completed') {
+            const checkReport = async () => {
+                const { data: run } = await supabase
+                    .from('test_runs')
+                    .select('status')
+                    .eq('id', session.test_run_id)
+                    .single();
+
+                if (run?.status === 'completed') {
+                    // Give user a moment to see the success state
+                    setTimeout(() => {
+                        router.push(`/reports/${session.test_run_id}`);
+                    }, 3000);
+                }
+            };
+            checkReport();
+        }
+    }, [session?.status, session?.test_run_id, router, supabase]);
 
     useEffect(() => {
         async function fetchData() {
@@ -209,14 +231,28 @@ export default function SessionPage() {
                             <UserIcon className="h-5 w-5 text-indigo-400" />
                             <h3 className="text-sm font-bold uppercase tracking-widest text-white">Synthetic Persona</h3>
                         </div>
-                        <div className="grid grid-cols-2 gap-8">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
                             <div className="space-y-1">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Primary Goal</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Goal</p>
                                 <p className="text-sm text-slate-300 leading-relaxed font-medium">{session?.persona_configs?.goal_prompt}</p>
                             </div>
                             <div className="space-y-1">
                                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Tech Literacy</p>
                                 <p className="text-sm text-slate-300 font-bold uppercase tracking-widest">{session?.persona_configs?.tech_literacy}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Age Range</p>
+                                <p className="text-sm text-slate-300 font-bold uppercase tracking-widest">{session?.persona_configs?.age_range || 'N/A'}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Geolocation</p>
+                                <p className="text-sm text-slate-300 font-bold uppercase tracking-widest">{session?.persona_configs?.geolocation || 'N/A'}</p>
+                            </div>
+                            <div className="col-span-full space-y-1 mt-4 pt-4 border-t border-white/5">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Domain Familiarity</p>
+                                <p className="text-sm text-slate-300 leading-relaxed font-medium italic">
+                                    {session?.persona_configs?.domain_familiarity || "General user with standard industry knowledge."}
+                                </p>
                             </div>
                         </div>
                     </div>
