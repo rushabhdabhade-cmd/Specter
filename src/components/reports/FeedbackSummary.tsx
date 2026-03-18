@@ -307,7 +307,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                         <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Emotional intensity mapping</p>
                     </div>
                     <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
                                 <PolarGrid stroke="rgba(255,255,255,0.08)" />
                                 <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 7, fontWeight: 800 }} />
@@ -337,7 +337,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                         <div className="absolute top-0 right-0 text-[8px] font-black text-emerald-500/40 uppercase p-2 tracking-tighter">Sweet Spots</div>
                         <div className="absolute bottom-0 left-0 text-[8px] font-black text-red-500/40 uppercase p-2 tracking-tighter">Pain Points</div>
 
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                                 <XAxis type="number" dataKey="x" name="Friction" domain={[0, 100]} hide />
@@ -363,7 +363,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                         <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Step-by-step score contribution</p>
                     </div>
                     <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <BarChart data={waterfallData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                                 <XAxis dataKey="step" tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
@@ -388,7 +388,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                     </div>
 
                     <div className="h-52">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <AreaChart data={healthData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="healthColor" x1="0" y1="0" x2="0" y2="1">
@@ -448,7 +448,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                             <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Categorized Friction points</p>
                         </div>
                         <div className="h-48">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                 <Treemap
                                     data={treemapData}
                                     dataKey="size"

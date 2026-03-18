@@ -35,83 +35,65 @@ export const EMOTION_WEIGHTS: Record<string, number> = {
     disappointment: -12,
 };
 
+export interface DetailedScore {
+    mainScore: number;
+    emotionScores: Record<string, number>;
+}
+
 /**
  * Calculates a robust UX health score (0-100).
  * Implements Recovery Bonuses, Stagnation Penalties, and Intensity-Weighted Impact.
  */
-export function calculateSessionScore(session: ScoringSession): number {
-    let currentScore = 100;
-    let minScore = 100;
-    let lowPointsInRow = 0;
-
+export function calculateSessionScore(session: ScoringSession): DetailedScore {
     const logs = session.session_logs || [];
-    if (logs.length === 0) return 100;
+    if (logs.length === 0) {
+        return { mainScore: 100, emotionScores: {} };
+    }
 
-    const literacyMultiplier = session.persona?.tech_literacy === 'low' ? 1.4 : session.persona?.tech_literacy === 'high' ? 0.8 : 1.0;
+    let totalWeight = 0;
+    const counts: Record<string, number> = {};
 
-    logs.forEach((log, i) => {
-        const weight = EMOTION_WEIGHTS[log.emotion_tag] || 0;
+    logs.forEach(log => {
+        const emotion = log.emotion_tag || 'neutral';
+        const weight = EMOTION_WEIGHTS[emotion] || 0;
+        
         const i_val = log.action_taken?.emotional_intensity;
-        // Handle cases where LLM returns numbers like 700 instead of 0.7, or NaN
         const intensity = typeof i_val === 'number' && !isNaN(i_val)
             ? (i_val > 1 ? i_val / 1000 : Math.max(0, Math.min(1, i_val)))
             : 0.5;
 
-        // Base Impact
-        let impact = weight * intensity * literacyMultiplier;
-
-        // Recovery Bonus: If the user was frustrated but is now curious/delighted, give an extra lift.
-        const prevLog = logs[i - 1];
-        if (prevLog && impact > 0) {
-            const prevWeight = EMOTION_WEIGHTS[prevLog.emotion_tag] || 0;
-            if (prevWeight < 0) {
-                impact *= 1.5; // 50% recovery bonus
-            }
-        }
-
-        currentScore = Math.max(0, Math.min(100, currentScore + impact));
-
-        // Stagnation Penalty: If score stays below 40 for too long, accelerate decay.
-        if (currentScore < 40) {
-            lowPointsInRow++;
-            if (lowPointsInRow > 2) {
-                currentScore = Math.max(0, currentScore - (lowPointsInRow * 2));
-            }
-        } else {
-            lowPointsInRow = 0;
-        }
-
-        if (currentScore < minScore) minScore = currentScore;
-
-        // --- Heuristic/Technical Penalties ---
-        const tech = log.action_taken?.technical_metrics;
-        const finding = log.action_taken?.heuristic_finding;
-
-        // 1. Broken Link / Technical Error Penalty
-        if (tech?.has_errors) {
-            currentScore = Math.max(0, currentScore - 15);
-        }
-
-        // 2. High Latency Penalty (> 3s)
-        if (tech?.latency_ms && tech.latency_ms > 3000) {
-            const delayPenalty = Math.min(10, (tech.latency_ms - 3000) / 1000); // Max 10 points
-            currentScore = Math.max(0, currentScore - delayPenalty);
-        }
-
-        // 3. Behavioral Friction (Rage Click)
-        if (finding?.includes('Rage click')) {
-            currentScore = Math.max(0, currentScore - 20);
-        }
+        totalWeight += weight * intensity;
+        counts[emotion] = (counts[emotion] || 0) + 1;
     });
 
-    if (session.status === 'abandoned' || session.status === 'error') {
-        currentScore = Math.max(0, currentScore - 25);
-        if (currentScore < minScore) minScore = currentScore;
+    const totalSteps = logs.length;
+    const averageWeight = totalSteps > 0 ? totalWeight / totalSteps : 0;
+
+    // Map AverageWeight to 0-100 score
+    // MinWeight = -20 (frustration), MaxWeight = 15 (delight)
+    // Neutral (0) -> 80
+    let mainScore = 80;
+    if (averageWeight >= 0) {
+        // 0 -> 80, 15 -> 100
+        mainScore = 80 + (averageWeight / 15) * 20;
+    } else {
+        // 0 -> 80, -20 -> 0
+        // averageWeight is negative, so (averageWeight / 20) is negative
+        mainScore = 80 + (averageWeight / 20) * 80;
     }
 
-    // Perceived score is the average of the "Peak" (lowest) and "End" (current)
-    const finalScore = (minScore + currentScore) / 2;
-    return Math.round(finalScore);
+    mainScore = Math.max(0, Math.min(100, Math.round(mainScore)));
+
+    // Calculate percentage-of-steps for each emotion for UI display
+    const emotionScores: Record<string, number> = {};
+    for (const [emotion, count] of Object.entries(counts)) {
+        emotionScores[emotion] = Math.round((count / totalSteps) * 100);
+    }
+
+    return {
+        mainScore,
+        emotionScores
+    };
 }
 
 /**
@@ -120,6 +102,6 @@ export function calculateSessionScore(session: ScoringSession): number {
 export function calculateAverageScore(sessions: ScoringSession[]): number {
     if (!sessions || sessions.length === 0) return 0;
 
-    const total = sessions.reduce((acc, s) => acc + calculateSessionScore(s), 0);
+    const total = sessions.reduce((acc, s) => acc + calculateSessionScore(s).mainScore, 0);
     return Math.round(total / sessions.length);
 }

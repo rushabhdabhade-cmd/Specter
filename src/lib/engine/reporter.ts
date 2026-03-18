@@ -89,12 +89,13 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         const goal = session.persona_configs?.goal_prompt || '';
         const logs = (session.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number);
 
-        const sessionScore = calculateSessionScore({
+        const scoreResult = calculateSessionScore({
             ...session,
             persona: {
                 tech_literacy: session.persona_configs?.tech_literacy
             }
         });
+        const sessionScore = scoreResult.mainScore;
         totalScore += sessionScore;
         sessionScores.push(sessionScore);
 
