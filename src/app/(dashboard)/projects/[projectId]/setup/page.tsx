@@ -80,7 +80,7 @@ export default function NewTestRunPage() {
     }
   }, [step]);
 
-  const autoGenerateCohort = async (bypassCache = false) => {
+  const autoGenerateCohort = async () => {
     setIsAnalyzing(true);
     setIsGenerating(false);
     setError(null);
@@ -94,7 +94,7 @@ export default function NewTestRunPage() {
       });
       const archetypeIds = (archetypes as any[]).map((a: any) => a.id);
 
-      // Phase 2: generate personas (bypassCache=true on regenerate to get fresh results)
+      // Phase 2: generate personas
       setIsAnalyzing(false);
       setIsGenerating(true);
       const generated = await generateAIPersonas({
@@ -104,7 +104,6 @@ export default function NewTestRunPage() {
         llmProvider,
         llmApiKey: llmApiKey || undefined,
         llmModelName: llmModelName || undefined,
-        bypassCache,
       });
       setPersonas(generated as any);
       setSelectedPersonaId((generated as any)[0]?.id || 1);
