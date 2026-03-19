@@ -585,7 +585,7 @@ export default function NewTestRunPage() {
                   </div>
 
                   <button
-                    onClick={() => { setAiStep('pending'); autoGenerateCohort(true); }}
+                    onClick={() => { setAiStep('pending'); autoGenerateCohort(); }}
                     className="w-full py-4 text-indigo-500/60 text-[10px] font-bold uppercase tracking-widest hover:text-indigo-400 transition-colors"
                   >
                     ↺ Regenerate Cohort
