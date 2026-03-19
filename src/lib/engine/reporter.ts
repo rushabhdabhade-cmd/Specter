@@ -1,7 +1,7 @@
 import { createAdminClient } from '../supabase/admin';
 import { LLMService } from './llm';
 import { decrypt } from '../utils/vault';
-import { calculateSessionScore } from '../utils/scoring';
+import { calculateSessionScore, ALL_EMOTIONS } from '../utils/scoring';
 
 export interface ReportSummary {
     personaName: string;
@@ -20,222 +20,236 @@ export interface ReportSummary {
 
 export async function generateAndStoreReport(testRunId: string, force = false) {
     const supabase = createAdminClient();
-    console.log(`📊 Generating report for Test Run: ${testRunId}... (force=${force})`);
+    console.log(`📊 Generating report for Test Run: ${testRunId} (force=${force})`);
 
-    // ── Pre-check: if report already has an AI summary and force=false, skip synthesis ──
+    // ── Skip if a valid summary already exists ──────────────────────────────
     const { data: existingReport } = await (supabase.from('reports') as any)
         .select('executive_summary')
         .eq('test_run_id', testRunId)
         .maybeSingle();
 
-    console.log(`🔍 Checking if summary exists for run ${testRunId}...`);
-    if (existingReport?.executive_summary) {
-        console.log(`🔍 Existing summary length: ${existingReport.executive_summary.length}`);
-        console.log(`🔍 Existing summary snippet: "${existingReport.executive_summary.substring(0, 50)}..."`);
-    }
+    const PLACEHOLDER_MARKERS = [
+        '*AI synthesis unavailable*',
+        '*AI synthesis failed',
+        'Synthesis in progress'
+    ];
 
     const summaryAlreadyExists = !force &&
         existingReport?.executive_summary &&
         existingReport.executive_summary.trim().length > 10 &&
-        !existingReport.executive_summary.includes('*AI synthesis unavailable*') &&
-        !existingReport.executive_summary.includes('*AI synthesis failed') &&
-        !existingReport.executive_summary.includes('Synthesis in progress');
+        !PLACEHOLDER_MARKERS.some(m => existingReport.executive_summary.includes(m));
 
     if (summaryAlreadyExists) {
-        console.log('✅ AI summary already exists — skipping synthesis. Use force=true to regenerate.');
-    } else if (existingReport?.executive_summary) {
-        console.log('⚠️ Existing summary is empty, too short, or a placeholder — triggering synthesis...');
+        console.log('✅ Summary already exists — skipping. Pass force=true to regenerate.');
+        return;
     }
 
-    // 1. Fetch project config directly from test_run (reliable — no nested join needed)
+    // ── Fetch project config ─────────────────────────────────────────────────
     const { data: testRun } = await (supabase.from('test_runs') as any)
         .select('projects(id, llm_provider, encrypted_llm_key)')
         .eq('id', testRunId)
         .maybeSingle();
 
     const project = testRun?.projects;
-    console.log(`🔍 Project config for synthesis:`, project?.llm_provider ?? 'NOT FOUND');
 
-    // 2. Fetch all sessions with session logs
+    // ── Fetch sessions ───────────────────────────────────────────────────────
     const { data, error: sError } = await supabase
         .from('persona_sessions')
-        .select(`
-            id,
-            status,
-            persona_configs (name, goal_prompt),
-            session_logs (emotion_tag, inner_monologue, action_taken, step_number)
-        `)
+        .select('id, status, persona_configs(name, goal_prompt, tech_literacy), session_logs(emotion_tag, inner_monologue, action_taken, step_number, current_url)')
         .eq('test_run_id', testRunId);
 
     const sessions = data as any[];
-
-    if (sError || !sessions || sessions.length === 0) {
-        console.error('❌ Failed to fetch sessions for report:', sError);
+    if (sError || !sessions?.length) {
+        console.error('❌ Failed to fetch sessions:', sError);
         return;
     }
 
-    // 2. Aggregate Data and Qualitative Insights
+    // ── Aggregate ────────────────────────────────────────────────────────────
     let totalScore = 0;
     let completedCount = 0;
-    const qualitativeData: string[] = [];
-    const allUserFeedback = new Set<string>();
-    const emotionStats = { delight: 0, neutral: 0, confusion: 0, frustration: 0 };
     const sessionScores: number[] = [];
+    // Initialize counters for ALL 9 emotions — not just the original 4
+    const emotionStats: Record<string, number> = Object.fromEntries(ALL_EMOTIONS.map(e => [e, 0]));
+    const allFeedback = new Set<string>();
+    const qualitativeData: string[] = [];
+    const knownEmotions = new Set<string>(ALL_EMOTIONS);
 
-    sessions.forEach(session => {
+    for (const session of sessions) {
         if (session.status === 'completed') completedCount++;
 
         const personaName = session.persona_configs?.name || 'Unknown';
         const goal = session.persona_configs?.goal_prompt || '';
         const logs = (session.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number);
 
-        const sessionScore = calculateSessionScore(session);
-        totalScore += sessionScore;
-        sessionScores.push(sessionScore);
+        const { mainScore } = calculateSessionScore({ ...session, persona: { tech_literacy: session.persona_configs?.tech_literacy } });
+        totalScore += mainScore;
+        sessionScores.push(mainScore);
 
-        // Update emotion stats for the whole run
-        logs.forEach((log: any) => {
-            if (log.emotion_tag in emotionStats) {
-                emotionStats[log.emotion_tag as keyof typeof emotionStats]++;
+        // Emotion stats — count every known emotion tag
+        for (const log of logs) {
+            const tag = (log.emotion_tag || 'neutral').toLowerCase();
+            if (knownEmotions.has(tag)) {
+                emotionStats[tag] = (emotionStats[tag] || 0) + 1;
             }
-        });
-
-        // Collect all unique UX feedback for the global summary
-        logs.forEach((log: any) => {
-            const f = log.action_taken?.ux_feedback;
-            if (f && f !== 'undefined' && f.length > 5) {
-                allUserFeedback.add(f);
-            }
-        });
-
-        // ── Token-efficient log selection (for context) ────────────────────
-        // Only include: first 2 steps, last 2 steps, and ALL frustration/confusion steps.
-        const keyIndices = new Set<number>();
-        logs.forEach((_: any, i: number) => {
-            if (i < 2 || i >= logs.length - 2) keyIndices.add(i);
-        });
-        logs.forEach((log: any, i: number) => {
-            if (log.emotion_tag === 'frustration' || log.emotion_tag === 'confusion') keyIndices.add(i);
-        });
-
-        const keyLogs = logs.filter((_: any, i: number) => keyIndices.has(i));
-
-        qualitativeData.push(`\n### ${personaName} (${session.status})\nGoal: ${goal}`);
-        keyLogs.forEach((log: any) => {
-            const feedback = log.action_taken?.ux_feedback && log.action_taken.ux_feedback !== 'undefined'
-                ? ` | UX: ${String(log.action_taken.ux_feedback).slice(0, 120)}`
-                : '';
-            qualitativeData.push(`S${log.step_number}[${log.emotion_tag}]: ${String(log.inner_monologue || '').slice(0, 150)}${feedback}`);
-        });
-    });
-
-    const averageScore = Math.round(totalScore / sessions.length);
-    const funnelRate = (completedCount / sessions.length) * 100;
-
-    // 3. AI Synthesis — uses project fetched directly from test_run above
-    let aiSynthesis = `### 📋 Summary\n${sessions.length} personas tested. ${completedCount} completed. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis unavailable.*`;
-
-    try {
-        if (project?.llm_provider && !summaryAlreadyExists) {
-            let apiKey: string | undefined;
-            if (project.encrypted_llm_key) {
-                try { apiKey = decrypt(project.encrypted_llm_key); } catch (e) { console.warn('⚠️ Failed to decrypt LLM key:', e); }
-            }
-            const llm = new LLMService({ provider: project.llm_provider, apiKey });
-            console.log(`🤖 Synthesizing report with ${project.llm_provider} using ${allUserFeedback.size} feedback points...`);
-
-            const prompt = `UX Report Synthesis. 
-Goal: Provide a CONCISE, high-impact executive conclusion for stakeholders.
-
-Stats: ${sessions.length} personas, ${funnelRate.toFixed(1)}% success rate, usability score ${averageScore}/100.
-
-Raw qualitative feedback from all sessions:
-${Array.from(allUserFeedback).map(f => `- ${f}`).join('\n')}
-
-Key session logs detail:
-${qualitativeData.join('\n')}
-
-Write a professional UX report in Markdown with:
-# STRATEGIC SUMMARY
-(Write a high-impact, 3-5 sentence executive conclusion based on the full raw feedback. State clearly if the site worked or failed for the cohort and why. Do NOT use multiple headers or complex sections.)
-
-Finally, provide a SEPARATE section for automated parsing:
-[ACTION_ITEMS]
-- (Priority: High/Medium/Low) | Fix: [Short title] | Detail: [1 sentence]
-...
-(Max 5 items)
-[/ACTION_ITEMS]`;
-
-            try {
-                aiSynthesis = await llm.generateSummary(prompt);
-                console.log('✅ Main synthesis complete.');
-            } catch (e) {
-                console.error('❌ Synthesis LLM call failed:', e);
-                aiSynthesis = `### 📋 Summary\n${sessions.length} personas. ${completedCount} succeeded. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis failed. Raw data available in session logs.*`;
-            }
-
-            // ── Parse Action Items from Synthesis ────────────────────────────
-            const actionMatch = aiSynthesis.match(/\[?ACTION_ITEMS\]?([\s\S]*?)\[\/?ACTION_ITEMS\]?/i);
-            const rawActionItems = actionMatch ? actionMatch[1].trim().split('\n').filter(l => l.trim().startsWith('-')) : [];
-            const actionItems = rawActionItems.map(item => {
-                const cleanItem = item.replace(/^- /, '').trim();
-                const parts = cleanItem.split('|').map(p => p.trim());
-                return {
-                    priority: parts[0]?.replace(/^Priority:\s*/i, '') || 'Medium',
-                    title: parts[1]?.replace(/^Fix:\s*/i, '') || 'Improve Flow',
-                    detail: parts[2]?.replace(/^Detail:\s*/i, '') || cleanItem
-                };
-            }).slice(0, 5);
-
-            // Clean up the synthesis text: remove tags and redundant Strategic Summary headers
-            aiSynthesis = aiSynthesis
-                .replace(/\[?ACTION_ITEMS\]?[\s\S]*?\[\/?ACTION_ITEMS\]?/gi, '')
-                .replace(/^#+\s*STRATEGIC\s*SUMMARY\s*\n+/i, '')
-                .trim();
-
-            (emotionStats as any).actionItems = actionItems;
-
-            // ── Secondary Synthesis: Feedback Log Summary ──────────────────
-            console.log('🤖 Characterizing raw feedback log...');
-            const feedbackPrompt = `Summarize these raw UX feedback points in 2-3 concise sentences. Focus on the most frequent themes and the overall sentiment. Keep it very short and professional:
-            
-            ${Array.from(allUserFeedback).join('\n')}`;
-
-            try {
-                const feedbackSummary = await llm.generateSummary(feedbackPrompt);
-                (emotionStats as any).feedbackSummary = feedbackSummary;
-                console.log('✅ Feedback characterization complete.');
-            } catch (e) {
-                console.warn('⚠️ Feedback log characterization failed:', e);
-            }
-        } else if (!project?.llm_provider) {
-            console.warn('⚠️ No llm_provider found for this project — skipping AI synthesis.');
         }
-    } catch (e) {
-        console.error('❌ Report synthesis outer error:', e);
+
+        // Collect unique, meaningful UX feedback
+        for (const log of logs) {
+            const f = log.action_taken?.ux_feedback;
+            if (f && typeof f === 'string' && f.length > 10 && f !== 'undefined') {
+                allFeedback.add(f.slice(0, 200));
+            }
+        }
+
+        // Key logs for LLM context: first 2 + last 2 steps + all friction steps
+        const keyLogIndices = new Set<number>();
+        logs.forEach((_: any, i: number) => { if (i < 2 || i >= logs.length - 2) keyLogIndices.add(i); });
+        logs.forEach((log: any, i: number) => {
+            if (log.emotion_tag === 'frustration' || log.emotion_tag === 'confusion' || log.emotion_tag === 'disappointment') {
+                keyLogIndices.add(i);
+            }
+        });
+
+        qualitativeData.push(`\n### ${personaName} — ${session.status}\nGoal: ${goal}`);
+        logs.filter((_: any, i: number) => keyLogIndices.has(i)).forEach((log: any) => {
+            const uxNote = log.action_taken?.ux_feedback
+                ? ` | ${String(log.action_taken.ux_feedback).slice(0, 120)}`
+                : '';
+            qualitativeData.push(`  S${log.step_number}[${log.emotion_tag}] ${log.current_url}: ${String(log.inner_monologue || '').slice(0, 150)}${uxNote}`);
+        });
     }
 
-    // 4. Store in DB
+    const averageScore = sessions.length > 0 ? Math.round(totalScore / sessions.length) : 0;
+    const funnelRate = sessions.length > 0 ? (completedCount / sessions.length) * 100 : 0;
+
+    // ── AI synthesis ─────────────────────────────────────────────────────────
+    // Uses text-only model (mini/flash) — no vision needed for report synthesis
+    let aiSynthesis = `### Summary\n${sessions.length} personas tested. ${completedCount} completed. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis unavailable.*`;
+    let actionItems: any[] = [];
+    let feedbackSummary: string | null = null;
+
+    if (project?.llm_provider) {
+        let apiKey: string | undefined;
+        if (project.encrypted_llm_key) {
+            try { apiKey = decrypt(project.encrypted_llm_key); } catch (_) { }
+        }
+
+        // Always use Gemini flash or gpt-4o-mini for text synthesis (free/cheap)
+        const synthProvider = project.llm_provider === 'openai' ? 'openai' : 'gemini';
+        const llm = new LLMService({ provider: synthProvider, apiKey });
+
+        // Main synthesis
+        const synthesisPrompt = `You are a senior UX strategist. Write a professional executive UX audit report.
+
+Stats: ${sessions.length} personas tested | ${funnelRate.toFixed(1)}% completion | Usability score: ${averageScore}/100
+
+Unique UX feedback collected:
+${Array.from(allFeedback).map(f => `- ${f}`).join('\n')}
+
+Session details:
+${qualitativeData.join('\n')}
+
+Write in Markdown:
+# Strategic UX Audit
+(3–5 sentences. Cover: visual hierarchy, navigation friction, content clarity, trust signals. State clearly where the biggest drop-off risks are and what persona types are most affected.)
+
+Then output action items in EXACTLY this format:
+[ACTION_ITEMS]
+- (Priority: High/Medium/Low) | Fix: [title] | Detail: [specific recommendation]
+[/ACTION_ITEMS]
+Max 5 items.`;
+
+        try {
+            console.log(`🤖 Synthesizing report with ${synthProvider}...`);
+            aiSynthesis = await llm.generateSummary(synthesisPrompt);
+            console.log('✅ Synthesis complete.');
+        } catch (err) {
+            console.error('❌ Synthesis failed:', err);
+        }
+
+        // Parse action items
+        const actionMatch = aiSynthesis.match(/\[ACTION_ITEMS\]([\s\S]*?)\[\/ACTION_ITEMS\]/i);
+        if (actionMatch) {
+            actionItems = actionMatch[1].trim()
+                .split('\n')
+                .filter(l => l.trim().startsWith('-'))
+                .map(item => {
+                    const clean = item.replace(/^- /, '').trim();
+                    const parts = clean.split('|').map(p => p.trim());
+                    return {
+                        priority: parts[0]?.replace(/^Priority:\s*/i, '') || 'Medium',
+                        title: parts[1]?.replace(/^Fix:\s*/i, '') || 'Improve Flow',
+                        detail: parts[2]?.replace(/^Detail:\s*/i, '') || clean
+                    };
+                })
+                .slice(0, 5);
+        }
+
+        // Strip action items block from display text
+        aiSynthesis = aiSynthesis
+            .replace(/\[ACTION_ITEMS\][\s\S]*?\[\/ACTION_ITEMS\]/gi, '')
+            .replace(/^#+\s*STRATEGIC\s*SUMMARY\s*\n+/i, '')
+            .trim();
+
+        // Feedback summary (brief characterization — reuse the same cheap model)
+        if (allFeedback.size > 0) {
+            try {
+                feedbackSummary = await llm.generateSummary(
+                    `Summarize these UX feedback points in 2–3 concise professional sentences. Focus on recurring themes and overall sentiment:\n\n${Array.from(allFeedback).join('\n')}`
+                );
+                console.log('✅ Feedback summary complete.');
+            } catch (_) { }
+        }
+    }
+
+    // ── Drop-off and technical audit ─────────────────────────────────────────
+    const dropOffStats: Record<string, number> = {};
+    const brokenLinksMap = new Map<string, string>();
+    const slowPagesMap = new Map<string, number>();
+    const frictionPoints: any[] = [];
+
+    for (const session of sessions) {
+        if (session.status !== 'completed') {
+            const lastLog = (session.session_logs || [])
+                .sort((a: any, b: any) => b.step_number - a.step_number)[0];
+            if (lastLog?.current_url) {
+                dropOffStats[lastLog.current_url] = (dropOffStats[lastLog.current_url] || 0) + 1;
+            }
+        }
+
+        for (const log of session.session_logs || []) {
+            const tech = log.action_taken?.technical_metrics;
+            if (tech?.broken_links_count > 0 && log.current_url) {
+                brokenLinksMap.set(log.current_url, `${tech.broken_links_count} broken link(s)`);
+            }
+            if (tech?.latency_ms > 3000) {
+                const existing = slowPagesMap.get(log.current_url) || 0;
+                slowPagesMap.set(log.current_url, Math.max(existing, tech.latency_ms));
+            }
+            if (log.action_taken?.heuristic_finding?.includes('Rage click')) {
+                frictionPoints.push({ url: log.current_url, issue: log.action_taken.heuristic_finding });
+            }
+        }
+    }
+
+    // ── Persist report ───────────────────────────────────────────────────────
     const { error: rError } = await (supabase.from('reports') as any).upsert({
         test_run_id: testRunId,
         product_opportunity_score: averageScore,
-        // Only overwrite executive_summary if synthesis ran (avoids clobbering stored value)
-        executive_summary: summaryAlreadyExists ? existingReport!.executive_summary : aiSynthesis,
+        executive_summary: aiSynthesis,
         funnel_completion_rate: funnelRate,
         report_data: {
             emotionStats,
             sessionScores,
-            totalLogs: Array.from(allUserFeedback).length,
-            feedbackSummary: (emotionStats as any).feedbackSummary || null,
-            actionItems: (emotionStats as any).actionItems || [],
-            dropOffStats: sessions.reduce((acc: any, s: any) => {
-                if (s.status !== 'completed' && s.session_logs?.length > 0) {
-                    const lastLog = s.session_logs.sort((a: any, b: any) => b.step_number - a.step_number)[0];
-                    const url = lastLog.current_url;
-                    if (url) acc[url] = (acc[url] || 0) + 1;
-                }
-                return acc;
-            }, {})
+            actionItems,
+            feedbackSummary,
+            totalFeedbackPoints: allFeedback.size,
+            dropOffStats,
+            technicalAudit: {
+                brokenLinks: [...brokenLinksMap.entries()].map(([url, error]) => ({ url, error })),
+                slowPages: [...slowPagesMap.entries()].map(([url, latency]) => ({ url, latency })),
+                frictionPoints
+            }
         },
         heatmap_data_url: null,
         created_at: new Date().toISOString()
@@ -246,38 +260,55 @@ Finally, provide a SEPARATE section for automated parsing:
         return;
     }
 
-    // 5. Finalize Test Run
-    const wasManuallyStopped = sessions.some(s => s.exit_reason === 'Manually stopped by user');
-    const finalStatus = wasManuallyStopped ? 'stopped' : 'completed';
-
+    // ── Finalize test run ────────────────────────────────────────────────────
+    const wasManuallyStopped = sessions.some((s: any) => s.exit_reason === 'Manually stopped by user');
     await (supabase.from('test_runs') as any).update({
-        status: finalStatus,
+        status: wasManuallyStopped ? 'stopped' : 'completed',
         completed_at: new Date().toISOString()
     }).eq('id', testRunId);
 
-    console.log(`✅ Report successfully generated and persisted for Test Run ${testRunId}`);
+    console.log(`✅ Report stored for Test Run ${testRunId}`);
 }
 
 export async function checkAndFinalizeTestRun(testRunId: string) {
     const supabase = createAdminClient();
-
-    const { data, error } = await supabase
+    const { data: sessions, error } = await supabase
         .from('persona_sessions')
-        .select('status')
+        .select('id, status, created_at')
         .eq('test_run_id', testRunId);
 
-    if (error || !data) {
-        console.error('Error checking sessions for finalization:', error);
+    if (error || !sessions) {
+        console.error('❌ Error checking sessions:', error);
         return;
     }
 
-    const sessions = data as { status: string }[];
-    const activeSessions = sessions.filter(s => s.status === 'running' || s.status === 'queued');
+    const STALE_THRESHOLD_MS = 15 * 60 * 1000;
+    const now = Date.now();
 
-    if (activeSessions.length === 0) {
-        console.log(`🎯 Final session completed for Test Run ${testRunId}. Triggering final report...`);
+    let hasStale = false;
+    for (const session of sessions as any[]) {
+        if (session.status === 'running' || session.status === 'queued') {
+            const lastUpdate = new Date(session.updated_at || session.created_at).getTime();
+            if (now - lastUpdate > STALE_THRESHOLD_MS) {
+                console.warn(`⚠️ Session ${session.id} stale — abandoning.`);
+                await (supabase.from('persona_sessions') as any)
+                    .update({ status: 'abandoned', exit_reason: 'Stale — auto abandoned' })
+                    .eq('id', session.id);
+                hasStale = true;
+            }
+        }
+    }
+
+    const { data: refreshed } = hasStale
+        ? await supabase.from('persona_sessions').select('status').eq('test_run_id', testRunId)
+        : { data: sessions };
+
+    const active = (refreshed as any[]).filter(s => s.status === 'running' || s.status === 'queued');
+
+    if (active.length === 0) {
+        console.log(`🎯 All sessions done for ${testRunId}. Generating report...`);
         await generateAndStoreReport(testRunId);
     } else {
-        console.log(`⏳ ${activeSessions.length} sessions still active for Test Run ${testRunId}. Waiting...`);
+        console.log(`⏳ ${active.length} session(s) still active for ${testRunId}.`);
     }
 }

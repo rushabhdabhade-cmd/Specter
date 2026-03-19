@@ -1,0 +1,137 @@
+import { useState } from 'react';
+import Link from 'next/link';
+import {
+    BarChart3, ShieldCheck, ArrowRight, Share2, Download,
+    Check, Loader2, Globe, Calendar, Zap, Target, Activity
+} from 'lucide-react';
+
+interface ReportCardProps {
+    report: {
+        id: string;
+        projectName: string;
+        url: string;
+        completedAt: string;
+        usabilityScore: number;
+        frictionLevel: string;
+        funnelRate: number;
+        sessionCount: number;
+    };
+}
+
+export function ReportCard({ report }: ReportCardProps) {
+    const [copied, setCopied] = useState(false);
+
+    const handleShare = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            const reportUrl = `${window.location.origin}/reports/${report.id}`;
+            await navigator.clipboard.writeText(reportUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+        }
+    };
+
+    const scoreColor = report.usabilityScore >= 75 ? 'text-emerald-400' : report.usabilityScore >= 50 ? 'text-amber-400' : 'text-red-400';
+    const scoreBg = report.usabilityScore >= 75 ? 'bg-emerald-500/5' : report.usabilityScore >= 50 ? 'bg-amber-500/5' : 'bg-red-500/5';
+    const scoreBorder = report.usabilityScore >= 75 ? 'border-emerald-500/20' : report.usabilityScore >= 50 ? 'border-amber-500/20' : 'border-red-500/20';
+
+    // Determine how many persona bubbles to show (limit to 5)
+    const displayCount = Math.min(report.sessionCount, 5);
+    const remainingCount = report.sessionCount > 5 ? report.sessionCount - 5 : 0;
+
+    return (
+        <div className="group relative flex flex-col rounded-[48px] border border-white/5 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-y-[-4px] overflow-hidden">
+            {/* Ambient Glow */}
+            <div className={`absolute -right-20 -top-20 h-48 w-48 rounded-full blur-[100px] opacity-10 transition-opacity group-hover:opacity-20 ${report.usabilityScore >= 75 ? 'bg-emerald-500' : report.usabilityScore >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                }`} />
+
+            <div className="relative space-y-10 flex-1 flex flex-col z-10">
+                {/* Top Section */}
+                <div className="flex items-start justify-between">
+                    <div className="space-y-4">
+                        <h3 className="text-3xl font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors leading-tight">
+                            {report.projectName}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                                <Globe className="h-3.5 w-3.5" />
+                                <span className="truncate max-w-[150px] italic">{report.url.replace(/^https?:\/\//, '')}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                                <Calendar className="h-3.5 w-3.5 opacity-50" />
+                                <span>{report.completedAt}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-slate-500 group-hover:scale-110 group-hover:text-indigo-400 transition-all duration-500">
+                        <BarChart3 className="h-8 w-8" />
+                    </div>
+                </div>
+
+                {/* Metrics */}
+                <div className="grid grid-cols-2 gap-8 pt-4">
+                    <div className={`rounded-3xl border ${scoreBorder} ${scoreBg} p-8 space-y-4 relative overflow-hidden`}>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">UX Health Score</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className={`text-5xl font-black tracking-tighter ${scoreColor}`}>{report.usabilityScore}</span>
+                            <span className="text-[10px] font-black opacity-30 tracking-widest uppercase">Units</span>
+                        </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/5 bg-white/[0.01] p-8 space-y-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">Friction Level</p>
+                        <div className="flex items-center gap-3">
+                            <span className="text-3xl font-black text-white italic capitalize">{report.frictionLevel}</span>
+                            <div className={`h-2.5 w-2.5 rounded-full ${report.frictionLevel === 'Low' ? 'bg-emerald-500' : report.frictionLevel === 'Medium' ? 'bg-amber-500' : 'bg-red-500'} animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.2)]`} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bottom Section */}
+                <div className="mt-auto pt-10 border-t border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                        <div className="flex -space-x-4">
+                            {report.sessionCount > 0 ? (
+                                Array.from({ length: displayCount }).map((_, i) => (
+                                    <div key={i} className="h-10 w-10 rounded-2xl border-2 border-[#0a0a0a] bg-[#111111] border-white/5 flex items-center justify-center shadow-2xl transition-transform hover:-translate-y-2 hover:z-50 group/p">
+                                        <span className="text-[10px] font-black text-slate-700 group-hover/p:text-white transition-colors">P</span>
+                                    </div>
+                                ))
+                            ) : null}
+                            {remainingCount > 0 && (
+                                <div className="h-10 w-10 rounded-2xl border-2 border-[#0a0a0a] bg-white/5 flex items-center justify-center shadow-2xl z-20">
+                                    <span className="text-[10px] font-black text-slate-500">+{remainingCount}</span>
+                                </div>
+                            )}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-800 italic">
+                            {report.sessionCount} Synthetic Agents
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={handleShare}
+                            className={`p-4 rounded-2xl border transition-all active:scale-95 ${copied
+                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                : 'bg-white/5 border-white/5 text-slate-600 hover:text-white hover:bg-white/10 hover:border-white/10'
+                                }`}
+                        >
+                            {copied ? <Check className="h-5 w-5" /> : <Share2 className="h-5 w-5" />}
+                        </button>
+                        <Link
+                            href={`/reports/${report.id}`}
+                            className="flex items-center gap-4 h-14 px-8 rounded-2xl bg-white text-black text-[11px] font-black uppercase tracking-[0.2em] hover:bg-slate-200 transition-all active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
+                        >
+                            Review
+                            <ArrowRight className="h-4 w-4" />
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

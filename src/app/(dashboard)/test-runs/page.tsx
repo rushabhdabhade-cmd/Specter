@@ -2,7 +2,12 @@ import { createClient } from '@/lib/supabase/server';
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { Zap, ChevronRight, Clock, Globe, ArrowUpRight } from 'lucide-react';
+import {
+    Zap, ChevronRight, Clock,
+    Globe, ArrowUpRight, Cpu,
+    Plus, ArrowRight, Activity,
+    Layout
+} from 'lucide-react';
 
 export default async function TestRunsPage() {
     const { userId } = await auth();
@@ -52,106 +57,119 @@ export default async function TestRunsPage() {
     const getStatusStyle = (status: string) => {
         switch (status) {
             case 'completed':
-                return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]';
+                return 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5';
             case 'failed':
-                return 'text-red-500 bg-red-500/10 border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.1)]';
+                return 'text-red-400 border-red-500/20 bg-red-500/5';
             case 'running':
-                return 'text-blue-500 bg-blue-500/10 border-blue-500/20 animate-pulse-subtle';
+                return 'text-blue-400 border-blue-500/20 bg-blue-500/5';
             default:
-                return 'text-slate-500 bg-slate-500/10 border-slate-500/20';
+                return 'text-slate-500 border-white/5 bg-white/5';
         }
     };
 
     return (
-        <div className="animate-in fade-in space-y-10 duration-700">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                    <h1 className="text-3xl font-bold tracking-tight text-white">Test Runs</h1>
-                    <p className="font-medium text-slate-500">
-                        Monitor and review every synthetic user journey across your projects.
+        <div className="animate-in fade-in space-y-20 duration-1000">
+            {/* ── HEADER ────────────────────────────────────────────────────── */}
+            <div className="flex flex-col space-y-8 md:flex-row md:items-end md:justify-between md:space-y-0">
+                <div className="space-y-4">
+                    <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+                        <Zap className="h-3.5 w-3.5" />
+                        Execution Protocol Logs
+                    </div>
+                    <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white">Test <br /> <span className="italic opacity-50">Protocol.</span></h1>
+                    <p className="max-w-md text-sm font-medium text-slate-500 italic leading-relaxed">
+                        Complete historical record of every synthetic user journey deployed across your infrastructure.
                     </p>
                 </div>
+
                 <Link
                     href="/projects/new/setup"
-                    className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                    className="group flex items-center gap-4 rounded-2xl bg-white px-8 py-5 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
                 >
-                    <Zap className="h-4 w-4 fill-current" />
-                    Deploy New Cohort
+                    <Plus className="h-5 w-5" />
+                    New Execution
                 </Link>
             </div>
 
-            {/* Runs List */}
-            <div className="grid gap-4">
+            {/* ── LOGS GRID ─────────────────────────────────────────────────── */}
+            <div className="grid grid-cols-1 gap-6">
                 {testRuns.length > 0 ? (
                     testRuns.map((run) => (
                         <Link
                             key={run.id}
                             href={`/test-runs/${run.id}`}
-                            className="group relative flex items-center justify-between rounded-[24px] border border-white/5 bg-[#0d0d0d] p-7 transition-all hover:border-white/10 hover:bg-[#111111] hover:shadow-2xl hover:shadow-white/[0.02]"
+                            className="group relative flex flex-col md:flex-row md:items-center justify-between rounded-[48px] border border-white/5 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-x-1"
                         >
-                            <div className="flex items-center gap-6">
-                                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 transition-all group-hover:bg-white/10`}>
-                                    <Zap className={`h-5 w-5 ${run.status === 'running' ? 'text-blue-500 animate-pulse' : 'text-slate-500'}`} />
+                            <div className="flex items-center gap-10">
+                                <div className={`flex h-20 w-20 items-center justify-center rounded-[28px] border border-white/10 bg-white/5 transition-all group-hover:scale-110 group-hover:bg-white/[0.03]`}>
+                                    <Zap className={`h-8 w-8 ${run.status === 'running' ? 'text-blue-400 animate-pulse' : 'text-slate-600 group-hover:text-slate-400'}`} />
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center gap-3">
-                                        <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">
+                                <div className="space-y-4">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <h3 className="text-3xl font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">
                                             {run.projectName}
                                         </h3>
-                                        <div className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${getStatusStyle(run.status)}`}>
+                                        <div className={`px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest ${getStatusStyle(run.status)}`}>
                                             {run.status}
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-4 text-slate-500">
-                                        <div className="flex items-center gap-1.5">
+                                    <div className="flex flex-wrap items-center gap-6">
+                                        <div className="flex items-center gap-2 text-slate-500">
                                             <Globe className="h-3.5 w-3.5" />
-                                            <span className="text-xs font-medium max-w-[200px] truncate">{run.url}</span>
+                                            <span className="text-[10px] font-black uppercase tracking-widest italic">{run.url}</span>
                                         </div>
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-2 text-slate-500">
                                             <Clock className="h-3.5 w-3.5" />
-                                            <span className="text-xs font-medium tracking-tight whitespace-nowrap">{run.createdAt}</span>
+                                            <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{run.createdAt}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-slate-500">
+                                            <Activity className="h-3.5 w-3.5" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest opacity-60 italic">{run.id.slice(0, 8)}</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-6">
-                                <div className="hidden md:flex flex-col items-end gap-1 px-4 border-r border-white/5">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Cohort</span>
-                                    <span className="text-[11px] font-mono text-slate-400">
-                                        {run.completedSessions}/{run.totalSessions} Ready
+                            <div className="flex items-center gap-12 mt-10 md:mt-0 pt-10 md:pt-0 border-t md:border-t-0 md:border-l border-white/5">
+                                <div className="flex flex-col items-end gap-1 px-8">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-700">Cohort Ready</span>
+                                    <span className="text-lg font-mono font-bold text-slate-400">
+                                        {run.completedSessions} / {run.totalSessions}
                                     </span>
                                 </div>
-                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity border border-white/5">
-                                    <ArrowUpRight className="h-4 w-4" />
+                                <div className="h-14 w-14 flex items-center justify-center rounded-2xl bg-white/5 text-slate-600 opacity-30 group-hover:opacity-100 group-hover:text-indigo-400 transition-all border border-transparent group-hover:border-white/10">
+                                    <ArrowRight className="h-6 w-6" />
                                 </div>
                             </div>
 
-                            {/* Status Indicator Glow */}
-                            <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-12 rounded-r-full transition-all duration-500 ${run.status === 'completed' ? 'bg-emerald-500 shadow-[2px_0_15px_rgba(16,185,129,0.5)]' :
-                                run.status === 'failed' ? 'bg-red-500 shadow-[2px_0_15px_rgba(239,68,68,0.5)]' :
-                                    run.status === 'running' ? 'bg-blue-500 shadow-[2px_0_15px_rgba(59,130,246,0.5)]' :
-                                        'bg-slate-700 opacity-0'
+                            {/* Status Glow Bar */}
+                            <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-20 rounded-r-full transition-all duration-700 ${run.status === 'completed' ? 'bg-emerald-500 shadow-[2px_0_20px_rgba(16,185,129,0.5)]' :
+                                    run.status === 'failed' ? 'bg-red-500 shadow-[2px_0_20px_rgba(239,68,68,0.5)]' :
+                                        run.status === 'running' ? 'bg-blue-500 shadow-[2px_0_20px_rgba(59,130,246,0.5)]' :
+                                            'bg-slate-800 opacity-20'
                                 }`} />
                         </Link>
                     ))
                 ) : (
-                    <div className="flex flex-col items-center justify-center rounded-[32px] border border-dashed border-white/5 bg-white/[0.01] py-24 text-center">
-                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 text-slate-600 mb-6">
-                            <Zap className="h-8 w-8" />
+                    <div className="flex flex-col items-center justify-center rounded-[64px] border border-white/10 bg-white/[0.01] p-32 text-center">
+                        <div className="relative mb-12">
+                            <div className="absolute inset-0 bg-indigo-500/20 blur-3xl animate-pulse" />
+                            <div className="relative h-24 w-24 rounded-[32px] bg-white/5 border border-white/10 flex items-center justify-center text-slate-700">
+                                <Zap className="h-10 w-10 opacity-30" />
+                            </div>
                         </div>
-                        <h3 className="text-lg font-bold text-white mb-2">No test runs found</h3>
-                        <p className="max-w-[300px] text-sm text-slate-500 mb-8 leading-relaxed">
-                            Launch your first cohort of synthetic users to start gathering behavioral insights.
+                        <h3 className="text-2xl font-black text-white italic mb-4">No Protocol History</h3>
+                        <p className="max-w-[320px] mx-auto text-sm font-medium text-slate-600 italic leading-relaxed mb-12">
+                            You haven't deployed any synthetic cohorts yet. Launch your first execution protocol to begin.
                         </p>
                         <Link
                             href="/projects/new/setup"
-                            className="bg-white px-6 py-3 rounded-xl text-sm font-bold text-black hover:bg-slate-200 transition-all active:scale-95 shadow-xl shadow-white/5"
+                            className="flex items-center gap-4 rounded-2xl bg-white px-10 py-5 text-xs font-black uppercase tracking-[0.2em] text-black hover:bg-slate-200 transition-all shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)] active:scale-95"
                         >
-                            Get Started
+                            <Plus className="h-5 w-5" />
+                            Initialize First Protocol
                         </Link>
                     </div>
                 )}

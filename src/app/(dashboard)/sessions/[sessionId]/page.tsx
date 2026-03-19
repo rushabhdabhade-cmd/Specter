@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@clerk/nextjs';
 import { SessionControl } from '@/components/engine/SessionControl';
 import {
     ChevronLeft,
@@ -10,13 +11,18 @@ import {
     History,
     ExternalLink,
     Target,
+    Brain,
     User as UserIcon,
     Smile,
     Frown,
     Meh,
     Activity,
     AlertCircle,
-    BarChart3
+    BarChart3,
+    Sparkles,
+    Globe,
+    Cpu,
+    Compass
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -27,9 +33,12 @@ export default function SessionPage() {
     const sessionId = params.sessionId as string;
     const [session, setSession] = useState<any>(null);
     const [logs, setLogs] = useState<any[]>([]);
+    const [terminalLines, setTerminalLines] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const terminalEndRef = useRef<HTMLDivElement>(null);
+    const { getToken } = useAuth();
 
     // Auto-redirect to report when completed
     useEffect(() => {
@@ -54,62 +63,82 @@ export default function SessionPage() {
 
     useEffect(() => {
         async function fetchData() {
-            // Fetch session with persona config
-            const { data: sessionData } = await supabase
-                .from('persona_sessions')
-                .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
-                .eq('id', sessionId)
-                .single();
+            const token = await getToken();
+            const authenticatedSupabase = createClient(token || undefined);
 
-            // Fetch existing logs
-            const { data: logData } = await supabase
-                .from('session_logs')
-                .select('*')
-                .eq('session_id', sessionId)
-                .order('step_number', { ascending: true });
+            // 1. Parallel Fetching
+            const [sessionRes, logsRes] = await Promise.all([
+                authenticatedSupabase
+                    .from('persona_sessions')
+                    .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
+                    .eq('id', sessionId)
+                    .single(),
+
+                authenticatedSupabase
+                    .from('session_logs')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .order('step_number', { ascending: true })
+            ]);
+
+            const sessionData = sessionRes.data;
+            const logData = logsRes.data;
 
             setSession(sessionData);
             setLogs(logData || []);
+            if (sessionData?.live_status) {
+                setTerminalLines([sessionData.live_status]);
+            }
             setLoading(false);
+
+            // Subscribe to session updates
+            const sessionSub = authenticatedSupabase
+                .channel(`session_${sessionId}`)
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'persona_sessions',
+                    filter: `id=eq.${sessionId}`
+                }, (payload) => {
+                    setSession((prev: any) => ({ ...prev, ...payload.new }));
+                })
+                .on('broadcast', { event: 'log' }, (payload: any) => {
+                    const message = payload.payload?.message;
+                    if (message) {
+                        setTerminalLines(prev => [...prev, message]);
+                    }
+                })
+                .subscribe();
+
+            // Subscribe to new logs
+            const logsSub = authenticatedSupabase
+                .channel(`logs_${sessionId}`)
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'session_logs',
+                    filter: `session_id=eq.${sessionId}`
+                }, (payload) => {
+                    setLogs((prev) => [...prev, payload.new]);
+                })
+                .subscribe();
+
+            return () => {
+                authenticatedSupabase.removeChannel(sessionSub);
+                authenticatedSupabase.removeChannel(logsSub);
+            };
         }
 
         fetchData();
-
-        // Subscribe to session updates
-        const sessionSub = supabase
-            .channel(`session_${sessionId}`)
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'persona_sessions',
-                filter: `id=eq.${sessionId}`
-            }, (payload) => {
-                setSession((prev: any) => ({ ...prev, ...payload.new }));
-            })
-            .subscribe();
-
-        // Subscribe to new logs
-        const logsSub = supabase
-            .channel(`logs_${sessionId}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'session_logs',
-                filter: `session_id=eq.${sessionId}`
-            }, (payload) => {
-                setLogs((prev) => [...prev, payload.new]);
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(sessionSub);
-            supabase.removeChannel(logsSub);
-        };
-    }, [sessionId, supabase]);
+    }, [sessionId, getToken]);
 
     useEffect(() => {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [logs]);
+
+    useEffect(() => {
+        terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [terminalLines]);
 
     if (loading) return (
         <div className="flex items-center justify-center p-20 animate-pulse text-slate-500 font-bold uppercase tracking-widest text-xs">
@@ -128,46 +157,55 @@ export default function SessionPage() {
     return (
         <div className="animate-in fade-in space-y-8 duration-700 max-w-[1200px] mx-auto">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between p-6 rounded-[32px] bg-white/[0.02] border border-white/5 backdrop-blur-xl">
+                <div className="flex items-center gap-6">
                     <Link
                         href={`/test-runs/${session?.test_run_id}`}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white transition-all"
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all shadow-inner group"
                     >
-                        <ChevronLeft className="h-5 w-5" />
+                        <ChevronLeft className="h-6 w-6 group-hover:-translate-x-0.5 transition-transform" />
                     </Link>
-                    <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                            <h1 className="text-xl font-bold tracking-tight text-white">{session?.persona_configs?.name}</h1>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-slate-500 uppercase font-black">
-                                Session {sessionId.slice(0, 8)}
-                            </span>
+                    <div className="space-y-1.5">
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-2xl font-black tracking-tight text-white">{session?.persona_configs?.name}</h1>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                                <Activity className="h-3 w-3 text-indigo-400" />
+                                <span className="text-[10px] text-indigo-400 uppercase font-black tracking-widest leading-none pt-0.5">
+                                    Live Session
+                                </span>
+                            </div>
                         </div>
-                        <p className="text-sm font-medium text-slate-500">
-                            Testing <span className="text-slate-300">{session?.test_runs?.projects?.name}</span>
-                        </p>
+                        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                            <Compass className="h-3.5 w-3.5 text-slate-600" />
+                            <span>Navigating <span className="text-indigo-400/80 font-bold">{session?.test_runs?.projects?.name}</span></span>
+                        </div>
+                        {session?.live_status && (
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                {session.live_status.split('|').map((part: string, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-3 py-1.5 rounded-2xl animate-pulse">
+                                        {idx === 0 && <Compass className="h-3.5 w-3.5 text-emerald-400" />}
+                                        {idx === 1 && <Activity className="h-3.5 w-3.5 text-emerald-400" />}
+                                        {idx === 2 && <Globe className="h-3.5 w-3.5 text-emerald-400" />}
+                                        <span className="truncate max-w-[200px]">{part.trim()}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                     {session?.exit_reason && (
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${session.status === 'completed'
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-                            : 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                        <div className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl border backdrop-blur-md shadow-lg ${session.status === 'completed'
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                             }`}>
-                            <AlertCircle className="h-3.5 w-3.5" />
-                            <span className="text-[11px] font-bold uppercase tracking-widest leading-none pt-0.5">
+                            <div className={`h-2 w-2 rounded-full animate-pulse ${session.status === 'completed' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                            <span className="text-xs font-black uppercase tracking-[0.15em] leading-none pt-0.5">
                                 {session.exit_reason}
                             </span>
                         </div>
                     )}
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/5">
-                        <Target className="h-3.5 w-3.5 text-indigo-400" />
-                        <span className="text-[11px] font-bold text-white uppercase tracking-widest leading-none pt-0.5">
-                            Mode: {session?.execution_mode}
-                        </span>
-                    </div>
-
                 </div>
             </div>
 
@@ -175,62 +213,79 @@ export default function SessionPage() {
                 {/* Left Column: Visual Mirror & Monologue */}
                 <div className="lg:col-span-2 space-y-8">
                     {/* Visual Terminal */}
-                    <div className="group relative rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden shadow-2xl">
-                        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-white/[0.02]">
+                    <div className="group relative rounded-[40px] border border-white/10 bg-[#060606] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] transition-all hover:border-white/20">
+                        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-white/[0.03] backdrop-blur-md">
                             <div className="flex items-center gap-3">
+                                <div className="flex gap-1.5 mr-2">
+                                    <div className="h-2.5 w-2.5 rounded-full bg-red-500/20" />
+                                    <div className="h-2.5 w-2.5 rounded-full bg-amber-500/20" />
+                                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-500/20" />
+                                </div>
                                 <Terminal className="h-4 w-4 text-indigo-400" />
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Live Browser Terminal</span>
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Mission Mirror v1.0</span>
                             </div>
                             {latestLog?.current_url && (
-                                <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                                    <ExternalLink className="h-3 w-3" />
-                                    <span className="max-w-[200px] truncate">{latestLog.current_url}</span>
-                                </div>
+                                <a 
+                                    href={latestLog.current_url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] text-slate-400 font-mono hover:bg-white/10 hover:border-white/10 hover:text-white transition-all cursor-pointer"
+                                >
+                                    <Globe className="h-3 w-3 text-indigo-500/50" />
+                                    <span className="max-w-[300px] truncate">{latestLog.current_url}</span>
+                                </a>
                             )}
                         </div>
 
-                        <div className="aspect-video bg-black flex items-center justify-center overflow-hidden">
+                        <div className="aspect-video bg-black flex items-center justify-center overflow-hidden relative">
                             {latestLog?.screenshot_url ? (
                                 <img
                                     src={latestLog.screenshot_url}
                                     alt="Browser View"
-                                    className="w-full h-full object-contain"
+                                    className="w-full h-full object-contain filter brightness-[0.9] group-hover:brightness-100 transition-all duration-700"
                                 />
                             ) : (
-                                <div className="flex flex-col items-center gap-4 text-slate-700">
+                                <div className="flex flex-col items-center gap-6 text-slate-700">
                                     <div className="relative">
-                                        <Activity className="h-12 w-12 animate-pulse text-indigo-500/50" />
-                                        <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full animate-pulse" />
+                                        <Cpu className="h-16 w-16 animate-spin-slow text-indigo-500/30" />
+                                        <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full animate-pulse" />
                                     </div>
-                                    <div className="text-center space-y-2">
-                                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                                            {session?.live_status || 'Initializing engine...'}
+                                    <div className="text-center space-y-3">
+                                        <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">
+                                            {session?.live_status || 'Initializing Quantum Engine...'}
                                         </p>
-                                        <p className="text-[10px] text-slate-600 animate-pulse font-medium">
-                                            Specter AI is currently analyzing the visual state of your application.
+                                        <p className="text-[10px] text-slate-600 animate-pulse font-medium max-w-[240px] leading-relaxed">
+                                            Synchronizing temporal visual state with Specter Core for high-fidelity logic analysis.
                                         </p>
                                     </div>
                                 </div>
                             )}
+
+                            {/* Scanning overlay effect */}
+                            <div className="absolute inset-0 pointer-events-none opacity-20 bg-[linear-gradient(transparent_0%,rgba(99,102,241,0.05)_50%,transparent_100%)] bg-[length:100%_4px] animate-scan" />
                         </div>
 
                         {latestLog?.inner_monologue && (
-                            <div className="absolute bottom-4 left-4 right-4 animate-in slide-in-from-bottom-4 duration-500">
-                                <div className="p-5 rounded-2xl bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <MessageSquare className="h-4 w-4 text-indigo-400" />
-                                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Inner Monologue</span>
+                            <div className="absolute bottom-6 left-6 right-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                <div className="p-6 rounded-[32px] bg-black/60 backdrop-blur-2xl border border-white/10 shadow-2xl relative overflow-hidden group/monologue">
+                                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-transparent opacity-0 group-hover/monologue:opacity-100 transition-opacity duration-700" />
+
+                                    <div className="relative flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                                                <Brain className="h-4 w-4 text-indigo-400" />
+                                            </div>
+                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">Active Thought Process</span>
                                         </div>
-                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
+                                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 shadow-inner">
                                             {emotionIcons[latestLog.emotion_tag as keyof typeof emotionIcons] || emotionIcons.neutral}
-                                            <span className="text-[10px] font-bold capitalize text-slate-300 pt-0.5 leading-none">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 pt-0.5 leading-none">
                                                 {latestLog.emotion_tag || 'Neutral'}
                                             </span>
                                         </div>
                                     </div>
-                                    <p className="text-sm text-slate-200 leading-relaxed font-medium">
-                                        "{latestLog.inner_monologue}"
+                                    <p className="relative text-base text-white/90 leading-relaxed font-semibold tracking-tight italic">
+                                        &ldquo;{latestLog.inner_monologue}&rdquo;
                                     </p>
                                 </div>
                             </div>
@@ -238,32 +293,66 @@ export default function SessionPage() {
                     </div>
 
                     {/* Persona Details */}
-                    <div className="rounded-3xl border border-white/5 bg-white/[0.01] p-8 space-y-6">
-                        <div className="flex items-center gap-3">
-                            <UserIcon className="h-5 w-5 text-indigo-400" />
-                            <h3 className="text-sm font-bold uppercase tracking-widest text-white">Synthetic Persona</h3>
+                    <div className="rounded-[40px] border border-white/5 bg-white/[0.02] p-10 space-y-10 backdrop-blur-3xl shadow-2xl relative overflow-hidden group/persona">
+                        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shadow-inner">
+                                    <UserIcon className="h-6 w-6 text-indigo-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black tracking-tight text-white uppercase italic">Synthetic Bio-Profile</h3>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Participant Cohort ID: SPECTER-{sessionId.slice(0, 4).toUpperCase()}</p>
+                                </div>
+                            </div>
+                            <Sparkles className="h-5 w-5 text-indigo-500/30 animate-pulse" />
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Goal</p>
-                                <p className="text-sm text-slate-300 leading-relaxed font-medium">{session?.persona_configs?.goal_prompt}</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                            <div className="col-span-1 md:col-span-2 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <Target className="h-3.5 w-3.5 text-slate-600" />
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 pt-0.5">Primary Narrative Goal</p>
+                                </div>
+                                <p className="text-base text-indigo-50/90 leading-relaxed font-semibold italic pl-5 border-l-2 border-indigo-500/20">
+                                    &ldquo;{session?.persona_configs?.goal_prompt}&rdquo;
+                                </p>
                             </div>
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Tech Literacy</p>
-                                <p className="text-sm text-slate-300 font-bold uppercase tracking-widest">{session?.persona_configs?.tech_literacy}</p>
+
+                            <div className="grid grid-cols-1 gap-6">
+                                <div className="space-y-2 group/stat">
+                                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 group-hover/stat:text-indigo-500/50 transition-colors">Tech Literacy</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-1.5 flex-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className={`h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)] transition-all duration-1000`} style={{ width: session?.persona_configs?.tech_literacy === 'high' ? '100%' : session?.persona_configs?.tech_literacy === 'medium' ? '60%' : '30%' }} />
+                                        </div>
+                                        <span className="text-xs text-white font-black uppercase tracking-widest">{session?.persona_configs?.tech_literacy}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between py-3 border-y border-white/5">
+                                    <div className="space-y-1">
+                                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">Demographic</p>
+                                        <p className="text-xs text-white font-bold">{session?.persona_configs?.age_range || '25-45'} Years</p>
+                                    </div>
+                                    <div className="h-8 w-px bg-white/5" />
+                                    <div className="space-y-1 text-right">
+                                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">Origin</p>
+                                        <p className="text-xs text-white font-bold">{session?.persona_configs?.geolocation || 'Global'}</p>
+                                    </div>
+                                </div>
                             </div>
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Age Range</p>
-                                <p className="text-sm text-slate-300 font-bold uppercase tracking-widest">{session?.persona_configs?.age_range || 'N/A'}</p>
+                        </div>
+
+                        <div className="pt-8 border-t border-white/5 flex items-start gap-4">
+                            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5 mt-1">
+                                <Globe className="h-4 w-4 text-slate-500" />
                             </div>
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Geolocation</p>
-                                <p className="text-sm text-slate-300 font-bold uppercase tracking-widest">{session?.persona_configs?.geolocation || 'N/A'}</p>
-                            </div>
-                            <div className="col-span-full space-y-1 mt-4 pt-4 border-t border-white/5">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Domain Familiarity</p>
-                                <p className="text-sm text-slate-300 leading-relaxed font-medium italic">
-                                    {session?.persona_configs?.domain_familiarity || "General user with standard industry knowledge."}
+                            <div className="space-y-1.5 flex-1">
+                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Cognitive Domain Familiarity</p>
+                                <p className="text-sm text-slate-400 leading-relaxed font-medium">
+                                    {session?.persona_configs?.domain_familiarity || "General user with high-level awareness of digital landscape conventions and standard UX patterns."}
                                 </p>
                             </div>
                         </div>
@@ -277,6 +366,7 @@ export default function SessionPage() {
                         isPaused={!!session?.is_paused}
                         status={session?.status || 'queued'}
                         liveStatus={session?.live_status}
+                        innerMonologue={latestLog?.inner_monologue}
                     />
 
                     <div className="flex flex-col rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden max-h-[600px] shadow-2xl">
@@ -333,13 +423,15 @@ export default function SessionPage() {
                                                     </div>
                                                 )}
 
-                                                {!isSystem && action?.possible_paths && action.possible_paths.length > 0 && (
+                                                {!isSystem && action?.possible_paths && Array.isArray(action.possible_paths) && action.possible_paths.length > 0 && (
                                                     <div className="mb-3 space-y-1.5">
                                                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Possible Navigational Paths</span>
                                                         <div className="flex flex-wrap gap-1.5">
-                                                            {action.possible_paths.map((path: string, idx: number) => (
+                                                            {action.possible_paths.map((path: any, idx: number) => (
                                                                 <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/5 text-slate-500 font-mono">
-                                                                    {path}
+                                                                    {typeof path === 'object'
+                                                                        ? (path.path_name || path.description || JSON.stringify(path))
+                                                                        : String(path)}
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -379,6 +471,36 @@ export default function SessionPage() {
                 </div>
             </div>
 
+            {/* Live Diagnostics Terminal */}
+            <div className="rounded-[40px] border border-white/5 bg-[#080808] p-8 space-y-4 shadow-2xl relative overflow-hidden group/terminal backdrop-blur-3xl">
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
+                
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                            <Terminal className="h-5 w-5 text-emerald-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black tracking-tight text-white uppercase italic">Live Diagnostics Stream</h3>
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Zero-latency Ephemeral Console Buffer</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-4 bg-[#040404] rounded-3xl p-6 font-mono text-xs text-emerald-400/90 space-y-1.5 h-44 overflow-y-auto custom-scrollbar border border-white/5 shadow-inner">
+                    {terminalLines.map((line, i) => (
+                        <div key={i} className="flex items-start gap-2 animate-in fade-in slide-in-from-left-1 duration-300">
+                            <span className="text-emerald-500/60 font-black">📡</span>
+                            <span className="leading-relaxed break-all font-medium">{line}</span>
+                        </div>
+                    ))}
+                    {terminalLines.length === 0 && (
+                        <p className="text-slate-600 font-medium italic animate-pulse">Waiting for diagnostic stream outputs...</p>
+                    )}
+                    <div ref={terminalEndRef} />
+                </div>
+            </div>
+
             <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
@@ -392,6 +514,22 @@ export default function SessionPage() {
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(255, 255, 255, 0.1);
+        }
+        
+        @keyframes scan {
+          from { transform: translateY(-100%); }
+          to { transform: translateY(100%); }
+        }
+        .animate-scan {
+          animation: scan 4s linear infinite;
+        }
+        
+        @keyframes spin-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 12s linear infinite;
         }
       `}</style>
         </div>

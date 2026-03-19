@@ -2,7 +2,10 @@
 
 import {
     PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-    LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine,
+    Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+    BarChart, Bar, ScatterChart, Scatter, ZAxis, LabelList,
+    Treemap
 } from 'recharts';
 import {
     TrendingUp, TrendingDown, Minus, Info, Sparkles
@@ -10,9 +13,12 @@ import {
 
 interface FeedbackLog {
     step_number: number;
-    emotion_tag: 'neutral' | 'confusion' | 'frustration' | 'delight';
+    emotion_tag: string;
     inner_monologue: string;
-    action_taken?: { ux_feedback?: string };
+    action_taken?: {
+        ux_feedback?: string;
+        emotional_intensity?: number;
+    };
 }
 
 interface FeedbackSummaryProps {
@@ -21,14 +27,19 @@ interface FeedbackSummaryProps {
     id?: string;
 }
 
-const EMOTION_COLORS = {
+const EMOTION_COLORS: Record<string, string> = {
     delight: '#10b981',
+    satisfaction: '#34d399',
+    curiosity: '#818cf8',
+    surprise: '#fbbf24',
     neutral: '#475569',
     confusion: '#3b82f6',
+    boredom: '#94a3b8',
     frustration: '#ef4444',
+    disappointment: '#f87171',
 };
 
-const SCORE_MAP = { delight: 2, neutral: 0, confusion: -5, frustration: -10 };
+import { EMOTION_WEIGHTS } from '@/lib/utils/scoring';
 
 /* Extract significant words from feedback strings */
 function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: number; tag: string }[] {
@@ -47,8 +58,15 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
     const freq: Record<string, { count: number; tags: string[] }> = {};
 
     logs.forEach(log => {
-        const text = log.action_taken?.ux_feedback || '';
+        let text: any = log.action_taken?.ux_feedback || '';
         if (!text || text === 'undefined') return;
+
+        // If it's an object (happened in some LLM runs), try to extract 'overall' or just stringify
+        if (typeof text === 'object') {
+            text = text.overall || text.feedback || JSON.stringify(text);
+        }
+
+        if (typeof text !== 'string') return;
 
         const words = text.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/);
         // Use 2-gram and 1-gram
@@ -73,6 +91,16 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
         }));
 }
 
+function categorizeFeedback(text: string): string {
+    const t = text.toLowerCase();
+    if (t.includes('link') || t.includes('navigat') || t.includes('menu') || t.includes('redirect')) return 'Navigation';
+    if (t.includes('text') || t.includes('read') || t.includes('inform') || t.includes('content')) return 'Content';
+    if (t.includes('button') || t.includes('click') || t.includes('action')) return 'Interactive';
+    if (t.includes('color') || t.includes('layout') || t.includes('design') || t.includes('look')) return 'Visuals';
+    if (t.includes('load') || t.includes('slow') || t.includes('wait') || t.includes('speed')) return 'Speed';
+    return 'Other';
+}
+
 /* Custom tooltip for pie */
 const PieTooltip = ({ active, payload }: any) => {
     if (!active || !payload?.length) return null;
@@ -85,15 +113,73 @@ const PieTooltip = ({ active, payload }: any) => {
 };
 
 /* Custom tooltip for line chart */
-const LineTooltip = ({ active, payload, label }: any) => {
+const HealthTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
-    const score = payload[0]?.value;
-    const color = score > 0 ? '#10b981' : score < -5 ? '#ef4444' : '#f59e0b';
+    const health = payload[0]?.value;
+    const color = health > 70 ? '#10b981' : health > 40 ? '#f59e0b' : '#ef4444';
     return (
         <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs">
             <p className="text-slate-400 mb-1">Step {label}</p>
-            <p className="font-black" style={{ color }}>Score: {score > 0 ? '+' : ''}{score}</p>
+            <p className="font-black" style={{ color }}>UX Health: {health}%</p>
         </div>
+    );
+};
+
+const WaterfallTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    const color = d.isPositive ? '#10b981' : '#ef4444';
+    return (
+        <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs">
+            <p className="text-slate-400 mb-1">Step {label} (Impact)</p>
+            <p className="font-black" style={{ color }}>
+                {d.isPositive ? '+' : '-'}{d.displayDelta} pts ({d.emotion})
+            </p>
+        </div>
+    );
+};
+
+const ScatterTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    const isFriction = d.x > 0;
+    return (
+        <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs">
+            <p className="text-slate-400 mb-1">Step {d.step}: {d.name}</p>
+            <p className="font-black" style={{ color: isFriction ? '#ef4444' : '#10b981' }}>
+                {isFriction ? 'Friction' : 'Delight'}: {isFriction ? d.x : d.y}%
+            </p>
+        </div>
+    );
+};
+
+const TreemapContent = (props: any) => {
+    const { x, y, width, height, index, name } = props;
+    const colors = ['#ef444490', '#3b82f690', '#fbbf2490', '#818cf890', '#94a3b890', '#f8717190'];
+    return (
+        <g>
+            <rect
+                x={x} y={y} width={width} height={height}
+                style={{
+                    fill: colors[index % colors.length],
+                    stroke: '#000000',
+                    strokeWidth: 2,
+                    strokeOpacity: 0.2,
+                }}
+            />
+            {width > 40 && height > 20 && (
+                <text
+                    x={x + width / 2} y={y + height / 2 + 5}
+                    textAnchor="middle"
+                    fill="#fff"
+                    fontSize={10}
+                    fontWeight="bold"
+                    className="select-none pointer-events-none"
+                >
+                    {name}
+                </text>
+            )}
+        </g>
     );
 };
 
@@ -111,15 +197,90 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
             fill: EMOTION_COLORS[name as keyof typeof EMOTION_COLORS],
         }));
 
-    // Cumulative score over steps for line chart
-    let cumulativeScore = 100;
-    const lineData = [...logs]
+    // Sentiment Radar Data
+    const sentimentGroups = ['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment'];
+    const radarData = sentimentGroups.map(emo => {
+        const matchingLogs = logs.filter(l => l.emotion_tag === emo);
+        const count = matchingLogs.length;
+        const avgIntensity = count > 0
+            ? matchingLogs.reduce((acc, l) => {
+                const i = l.action_taken?.emotional_intensity;
+                const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+                return acc + intensity;
+            }, 0) / count
+            : 0;
+        return {
+            subject: emo.charAt(0).toUpperCase() + emo.slice(1),
+            A: Math.round(avgIntensity * 100 * (count > 0 ? 1 : 0)), // Only show if count > 0
+            fullMark: 100,
+            color: EMOTION_COLORS[emo]
+        };
+    });
+
+    // Waterfall Data (Score Drain)
+    let waterfallScore = 100;
+    const waterfallData = [...logs]
         .sort((a, b) => a.step_number - b.step_number)
         .map(l => {
-            const delta = SCORE_MAP[l.emotion_tag] ?? 0;
-            cumulativeScore = Math.max(0, Math.min(100, cumulativeScore + delta));
-            return { step: l.step_number, score: cumulativeScore, emotion: l.emotion_tag };
+            const w = EMOTION_WEIGHTS[l.emotion_tag];
+            const weight = typeof w === 'number' ? w : 0;
+            const i = l.action_taken?.emotional_intensity;
+            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+            const delta = weight * intensity;
+            const prev = waterfallScore;
+            waterfallScore = Math.max(0, Math.min(100, waterfallScore + delta));
+
+            return {
+                step: l.step_number,
+                displayDelta: Math.abs(Math.round(delta)),
+                isPositive: delta >= 0,
+                // Waterfall logic: [start, end]
+                value: delta >= 0 ? [prev, waterfallScore] : [waterfallScore, prev],
+                emotion: l.emotion_tag
+            };
         });
+
+    // Cumulative Health score for Area chart
+    let currentHealth = 100;
+    const healthData = [...logs]
+        .sort((a, b) => a.step_number - b.step_number)
+        .map(l => {
+            const w = EMOTION_WEIGHTS[l.emotion_tag];
+            const weight = typeof w === 'number' ? w : 0;
+            const i = l.action_taken?.emotional_intensity;
+            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+            const delta = weight * intensity;
+            currentHealth = Math.max(0, Math.min(100, currentHealth + delta));
+            return { step: l.step_number, health: Math.round(currentHealth), emotion: l.emotion_tag };
+        });
+
+    // Scatter Data (Friction vs Delight Matrix)
+    const frictionEmotions = ['confusion', 'frustration', 'boredom', 'disappointment'];
+    const delightEmotions = ['delight', 'satisfaction', 'curiosity', 'surprise'];
+
+    const scatterData = logs.map(l => {
+        const i = l.action_taken?.emotional_intensity;
+        const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
+        const isFriction = frictionEmotions.includes(l.emotion_tag);
+        const isDelight = delightEmotions.includes(l.emotion_tag);
+
+        return {
+            x: isFriction ? intensity * 100 : 0,
+            y: isDelight ? intensity * 100 : 0,
+            name: l.emotion_tag,
+            step: l.step_number
+        };
+    }).filter(d => d.x > 0 || d.y > 0);
+
+    // Treemap Data (Issue Hierarchy)
+    const issueFreq: Record<string, number> = {};
+    logs.forEach(l => {
+        if (frictionEmotions.includes(l.emotion_tag)) {
+            const cat = categorizeFeedback(String(l.action_taken?.ux_feedback || ''));
+            issueFreq[cat] = (issueFreq[cat] || 0) + 1;
+        }
+    });
+    const treemapData = Object.entries(issueFreq).map(([name, size]) => ({ name, size }));
 
     // Top UX feedback phrases
     const phrases = topPhrases(logs);
@@ -139,57 +300,102 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
             {/* Charts row */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-                {/* Donut chart */}
+                {/* Radar chart */}
                 <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
                     <div>
-                        <h3 className="text-base font-bold text-white">Emotion Distribution</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Across all steps</p>
+                        <h3 className="text-base font-bold text-white">Sentiment Pulse</h3>
+                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Emotional intensity mapping</p>
                     </div>
-
                     <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={pieData}
-                                    cx="50%" cy="50%"
-                                    innerRadius={50} outerRadius={80}
-                                    paddingAngle={3}
-                                    dataKey="value"
-                                    strokeWidth={0}
-                                >
-                                    {pieData.map((entry, i) => (
-                                        <Cell key={i} fill={entry.fill} opacity={0.9} />
-                                    ))}
-                                </Pie>
-                                <Tooltip content={<PieTooltip />} />
-                            </PieChart>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                                <PolarGrid stroke="rgba(255,255,255,0.08)" />
+                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 7, fontWeight: 800 }} />
+                                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                                <Radar
+                                    name="Pulse"
+                                    dataKey="A"
+                                    stroke="#6366f1"
+                                    strokeWidth={2}
+                                    fill="#6366f1"
+                                    fillOpacity={0.4}
+                                    dot={{ r: 2, fill: '#6366f1' }}
+                                />
+                            </RadarChart>
                         </ResponsiveContainer>
-                    </div>
-
-                    {/* Legend */}
-                    <div className="grid grid-cols-2 gap-2">
-                        {pieData.map((d, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                                <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: d.fill }} />
-                                <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-slate-400 truncate">{d.name}</p>
-                                    <p className="text-[9px] text-slate-600">{d.pct}%</p>
-                                </div>
-                            </div>
-                        ))}
                     </div>
                 </div>
 
-                {/* Line chart */}
+                {/* Friction vs Delight Matrix */}
                 <div className="lg:col-span-3 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
                     <div>
-                        <h3 className="text-base font-bold text-white">UX Score Over Journey</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Cumulative score trend</p>
+                        <h3 className="text-base font-bold text-white">Friction vs Delight Matrix</h3>
+                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Interaction mapping by psychological impact</p>
+                    </div>
+                    <div className="h-48 relative">
+                        {/* Quadrant Labels */}
+                        <div className="absolute top-0 right-0 text-[8px] font-black text-emerald-500/40 uppercase p-2 tracking-tighter">Sweet Spots</div>
+                        <div className="absolute bottom-0 left-0 text-[8px] font-black text-red-500/40 uppercase p-2 tracking-tighter">Pain Points</div>
+
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis type="number" dataKey="x" name="Friction" domain={[0, 100]} hide />
+                                <YAxis type="number" dataKey="y" name="Delight" domain={[0, 100]} hide />
+                                <ZAxis type="number" range={[50, 400]} />
+                                <Tooltip content={<ScatterTooltip />} />
+                                <ReferenceLine x={50} stroke="rgba(255,255,255,0.1)" />
+                                <ReferenceLine y={50} stroke="rgba(255,255,255,0.1)" />
+                                <Scatter name="Interactions" data={scatterData}>
+                                    {scatterData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.y > entry.x ? '#10b981' : '#ef4444'} />
+                                    ))}
+                                </Scatter>
+                            </ScatterChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Waterfall Impact chart */}
+                <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
+                    <div>
+                        <h3 className="text-base font-bold text-white">UX Health Impact (Waterfall)</h3>
+                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Step-by-step score contribution</p>
+                    </div>
+                    <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                            <BarChart data={waterfallData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="step" tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
+                                <YAxis domain={[0, 100]} tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<WaterfallTooltip />} />
+                                <Bar dataKey="value" strokeWidth={0}>
+                                    {waterfallData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.isPositive ? '#10b981' : '#ef4444'} opacity={0.8} />
+                                    ))}
+                                    <LabelList dataKey="displayDelta" position="top" style={{ fill: '#475569', fontSize: 9, fontWeight: 800 }} />
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Health Area chart */}
+                <div className="lg:col-span-3 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
+                    <div>
+                        <h3 className="text-base font-bold text-white">UX Health Journey</h3>
+                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Cumulative satisfaction trend</p>
                     </div>
 
                     <div className="h-52">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={lineData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                            <AreaChart data={healthData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="healthColor" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                                 <XAxis
                                     dataKey="step"
@@ -203,43 +409,57 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                                     axisLine={false}
                                     tickLine={false}
                                 />
-                                <Tooltip content={<LineTooltip />} />
-                                <ReferenceLine y={50} stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
-                                <Line
+                                <Tooltip content={<HealthTooltip />} />
+                                <Area
                                     type="monotone"
-                                    dataKey="score"
-                                    stroke={`url(#scoreGradient-${id || 'default'})`}
-                                    strokeWidth={2.5}
-                                    dot={(props: any) => {
-                                        const { cx, cy, payload } = props;
-                                        const color = EMOTION_COLORS[payload.emotion as keyof typeof EMOTION_COLORS] || '#475569';
-                                        return <circle key={props.key} cx={cx} cy={cy} r={3.5} fill={color} stroke="none" />;
-                                    }}
+                                    dataKey="health"
+                                    stroke="#10b981"
+                                    fillOpacity={1}
+                                    fill="url(#healthColor)"
+                                    strokeWidth={2}
                                 />
-                                <defs>
-                                    <linearGradient id={`scoreGradient-${id || 'default'}`} x1="0" y1="0" x2="1" y2="0">
-                                        <stop offset="0%" stopColor="#6366f1" />
-                                        <stop offset="100%" stopColor="#10b981" />
-                                    </linearGradient>
-                                </defs>
-                            </LineChart>
+                            </AreaChart>
                         </ResponsiveContainer>
                     </div>
-
-                    {/* Min/max annotations */}
-                    <div className="flex gap-6">
-                        {[
-                            { label: 'Start Score', value: '100', color: '#6366f1' },
-                            { label: 'Final Score', value: String(lineData[lineData.length - 1]?.score ?? 100), color: '#10b981' },
-                            { label: 'Drop', value: String(100 - (lineData[lineData.length - 1]?.score ?? 100)), color: '#ef4444' },
-                        ].map(({ label, value, color }) => (
-                            <div key={label}>
-                                <p className="text-[9px] text-slate-600 uppercase tracking-widest font-black">{label}</p>
-                                <p className="text-xl font-black mt-0.5" style={{ color }}>{value}</p>
-                            </div>
-                        ))}
-                    </div>
                 </div>
+
+                {/* Min/max annotations */}
+                <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 flex flex-col justify-center space-y-8">
+                    {[
+                        { label: 'Initial Health', value: '100', color: '#6366f1', sub: 'Baseline start' },
+                        { label: 'Current Level', value: String(healthData[healthData.length - 1]?.health ?? 100), color: (healthData[healthData.length - 1]?.health ?? 100) > 70 ? '#10b981' : '#f59e0b', sub: 'Calculated Perception' },
+                        { label: 'Worst Point', value: healthData.length > 0 ? String(Math.min(...healthData.map(d => d.health))) : '100', color: '#ef4444', sub: 'The "Peak" Friction' },
+                    ].map(({ label, value, color, sub }) => (
+                        <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '40' }}>
+                            <p className="text-[10px] text-slate-600 uppercase tracking-widest font-black leading-none">{label}</p>
+                            <div className="flex items-baseline gap-2 mt-2">
+                                <p className="text-3xl font-black" style={{ color }}>{value}%</p>
+                                <p className="text-[10px] text-slate-500 font-bold">{sub}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Issue Treemap */}
+                {treemapData.length > 0 && (
+                    <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
+                        <div>
+                            <h3 className="text-base font-bold text-white">Issue Hierarchy</h3>
+                            <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Categorized Friction points</p>
+                        </div>
+                        <div className="h-48">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                <Treemap
+                                    data={treemapData}
+                                    dataKey="size"
+                                    aspectRatio={4 / 3}
+                                    stroke="#fff"
+                                    content={<TreemapContent />}
+                                />
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* AI-Generated Feedback Summary — Concise Executive Insight */}

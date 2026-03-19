@@ -17,7 +17,10 @@ export function RerunButton({ runId }: RerunButtonProps) {
         setLoading(true);
         try {
             await rerunTestRun(runId);
-        } catch (err) {
+        } catch (err: any) {
+            if (err.message === 'NEXT_REDIRECT' || err.message?.includes('NEXT_REDIRECT')) {
+                return;
+            }
             console.error(err);
             alert('Failed to rerun test. Please try again.');
         } finally {

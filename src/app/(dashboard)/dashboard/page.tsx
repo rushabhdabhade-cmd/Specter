@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Plus, CheckCircle2, Play, Clock, Zap } from 'lucide-react';
+import { Plus, CheckCircle2, Play, Clock, Zap, History, ArrowUpRight, Cpu } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { auth } from '@clerk/nextjs/server';
 import { LiveDashboardStats } from '@/components/engine/LiveDashboardStats';
@@ -10,65 +10,47 @@ export default async function DashboardPage() {
 
   const supabase = await createClient();
 
-  // Fetch Stats (Filtered by userId)
-  const { count: projectsCount } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId);
+  // 1. Parallel Fetching (Filtered by userId)
+  const [projectsRes, runsRes, personasRes, recentRunsRes] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId),
 
-  const { count: runsCount } = await supabase
-    .from('test_runs')
-    .select('*, projects!inner(*)', { count: 'exact', head: true })
-    .eq('projects.user_id', userId);
+    supabase
+      .from('test_runs')
+      .select('*, projects!inner(*)', { count: 'exact', head: true })
+      .eq('projects.user_id', userId),
 
-  const { count: personasCount } = await supabase
-    .from('persona_sessions')
-    .select('*, test_runs!inner(*, projects!inner(*))', { count: 'exact', head: true })
-    .eq('test_runs.projects.user_id', userId);
+    supabase
+      .from('persona_sessions')
+      .select('*, test_runs!inner(*, projects!inner(*))', { count: 'exact', head: true })
+      .eq('test_runs.projects.user_id', userId),
 
-  // Fetch Recent Runs with Project URL
-  const { data: recentRunsRaw } = await supabase
-    .from('test_runs')
-    .select(`
-      id,
-      status,
-      created_at,
-      projects!inner (
-        target_url,
-        user_id
-      ),
-      persona_sessions (
+    supabase
+      .from('test_runs')
+      .select(`
         id,
-        status
-      )
-    `)
-    .eq('projects.user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(5);
+        status,
+        created_at,
+        projects!inner (
+          target_url,
+          user_id
+        ),
+        persona_sessions (
+          id,
+          status
+        )
+      `)
+      .eq('projects.user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+  ]);
 
-  const stats = [
-    {
-      label: 'Active Projects',
-      value: projectsCount?.toString() || '0',
-      icon: CheckCircle2,
-      color: 'text-emerald-500',
-      bgColor: 'bg-emerald-500/10',
-    },
-    {
-      label: 'Total Test Runs',
-      value: runsCount?.toString() || '0',
-      icon: Play,
-      color: 'text-blue-500',
-      bgColor: 'bg-blue-500/10',
-    },
-    {
-      label: 'Personas Deployed',
-      value: personasCount?.toString() || '0',
-      icon: Clock,
-      color: 'text-amber-500',
-      bgColor: 'bg-amber-500/10',
-    },
-  ];
+  const projectsCount = projectsRes.count;
+  const runsCount = runsRes.count;
+  const personasCount = personasRes.count;
+  const recentRunsRaw = recentRunsRes.data;
 
   const recentRuns = (recentRunsRaw || []).map((run: any) => {
     const totalSessions = run.persona_sessions?.length || 0;
@@ -79,100 +61,123 @@ export default async function DashboardPage() {
       url: run.projects?.target_url || 'Unknown',
       date: new Date(run.created_at).toLocaleDateString(),
       status: run.status?.toUpperCase() || 'UNKNOWN',
-      statusColor: run.status === 'failed' ? 'bg-red-500' : run.status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500',
+      statusColor: run.status === 'failed' ? 'text-red-400 border-red-500/20' : run.status === 'completed' ? 'text-emerald-400 border-emerald-500/20' : 'text-blue-400 border-blue-500/20',
       totalSessions,
       completedSessions
     };
   });
 
   return (
-    <div className="animate-in fade-in space-y-10 duration-700">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-white">Dashboard</h1>
-          <p className="font-medium text-slate-500">
-            Welcome back. Here's what's happening with your synthetic users.
+    <div className="animate-in fade-in space-y-20 duration-1000 selection:bg-indigo-500/30">
+      {/* ── COMMAND HEADER ─────────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+        <div className="space-y-4">
+
+          <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white">Command <br /> <span className="italic opacity-50">Center.</span></h1>
+          <p className="max-w-md text-sm font-medium text-slate-500 italic leading-relaxed">
+            Discovering UX vulnerabilities through autonomous AI-driven personas.
           </p>
         </div>
         <Link
           href="/projects/new/setup"
-          className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+          className="group flex items-center gap-4 rounded-2xl bg-white px-8 py-5 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
         >
-          <Plus className="h-4 w-4" />
-          New Test Run
+          <Plus className="h-5 w-5" />
+          Initialize Cohort
         </Link>
       </div>
 
-      {/* Stats Grid */}
-      <LiveDashboardStats
-        initialStats={{
-          projectsCount: projectsCount || 0,
-          runsCount: runsCount || 0,
-          personasCount: personasCount || 0
-        }}
-        userId={userId}
-      />
-      {/* Recent Activity */}
-      {recentRuns.length > 0 && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-semibold tracking-tight text-white">Recent Test Runs</h2>
+      {/* ── LIVE ANALYTICS ─────────────────────────────────────────────── */}
+      <section className="space-y-10">
 
-          <div className="space-y-3">
+        <LiveDashboardStats
+          initialStats={{
+            projectsCount: projectsCount || 0,
+            runsCount: runsCount || 0,
+            personasCount: personasCount || 0
+          }}
+          userId={userId}
+        />
+      </section>
+
+      {/* ── EXECUTION PROTOCOLS ────────────────────────────────────────── */}
+      {recentRuns.length > 0 && (
+        <section className="space-y-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-10 w-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
+                <History className="h-5 w-5 text-slate-500" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-white italic">Execution Logs</h2>
+            </div>
+            <Link href="/test-runs" className="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-white transition-colors flex items-center gap-2">
+              View All Protocol Logs <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
             {recentRuns.map((run) => (
               <Link
                 key={run.id}
                 href={`/test-runs/${run.id}`}
-                className="group flex items-center justify-between rounded-2xl border border-white/5 bg-[#0f0f0f] p-5 px-6 transition-all hover:border-white/10 hover:bg-[#121212]"
+                className="group flex flex-col md:flex-row md:items-center justify-between rounded-[32px] border border-white/5 bg-[#0a0a0a] p-8 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.01]"
               >
-                <div className="flex items-center gap-5">
+                <div className="flex items-center gap-8">
                   <div className="relative">
-                    <div
-                      className={`h-2.5 w-2.5 rounded-full ${run.statusColor} shadow-[0_0_10px_rgba(239,68,68,0.5)]`}
-                    />
-                    <div
-                      className={`absolute inset-0 h-2.5 w-2.5 rounded-full ${run.statusColor} animate-ping opacity-20`}
-                    />
+                    <div className="h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                      <Zap className={`h-5 w-5 ${run.status === 'COMPLETED' ? 'text-emerald-400' : run.status === 'FAILED' ? 'text-red-400' : 'text-blue-400'} group-hover:scale-110 transition-transform`} />
+                    </div>
                   </div>
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-semibold text-white transition-colors group-hover:text-indigo-400">
+                  <div className="space-y-1">
+                    <p className="text-lg font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">
                       {run.url}
                     </p>
-                    <p className="text-[11px] font-medium tracking-widest text-slate-500 uppercase">
-                      {run.date}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 italic">ID: {run.id.slice(0, 8)}</span>
+                      <span className="h-1 w-1 rounded-full bg-slate-800" />
+                      <span className="text-[9px] font-black tracking-widest text-slate-500 uppercase">{run.date}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="flex flex-col items-end gap-1 px-4 border-r border-white/5">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Cohort</span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {run.completedSessions}/{run.totalSessions} Ready
+                <div className="flex items-center gap-8 mt-6 md:mt-0">
+                  <div className="flex flex-col items-end gap-1 px-6 border-r border-white/5">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">Cohort Synthesis</span>
+                    <span className="text-xs font-mono font-bold text-slate-400">
+                      {run.completedSessions}/{run.totalSessions} <span className="opacity-30 italic">Active</span>
                     </span>
                   </div>
-                  <div className={`rounded-full border border-white/5 bg-white/5 px-3 py-1 text-[10px] font-bold tracking-tighter text-slate-300`}>
+                  <div className={`px-4 py-2 rounded-xl bg-white/5 border ${run.statusColor} text-[10px] font-black tracking-[0.2em] uppercase`}>
                     {run.status}
                   </div>
                 </div>
               </Link>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Empty State Hint */}
+      {/* Empty State */}
       {recentRuns.length === 0 && (
-        <div className="flex flex-col items-center justify-center space-y-4 rounded-2xl border border-dashed border-white/5 bg-white/[0.01] p-12 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 text-slate-500">
-            <Zap className="h-6 w-6" />
+        <div className="flex flex-col items-center justify-center space-y-8 rounded-[48px] border border-white/5 bg-white/[0.01] p-32 text-center">
+          <div className="relative">
+            <div className="absolute inset-0 bg-indigo-500/20 blur-3xl animate-pulse" />
+            <div className="relative h-20 w-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-500">
+              <Zap className="h-10 w-10 opacity-30" />
+            </div>
           </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-white">No activity yet</p>
-            <p className="max-w-[200px] text-xs text-slate-500">
-              Configure your first test run to start analyzing your user journey.
+          <div className="space-y-3">
+            <h3 className="text-2xl font-black text-white italic">Protocol Inactive</h3>
+            <p className="max-w-[280px] mx-auto text-sm font-medium text-slate-600 italic leading-relaxed">
+              No behavioral synthesis sessions found. Initialize your first protocol to begin.
             </p>
           </div>
+          <Link
+            href="/projects/new/setup"
+            className="text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-white transition-colors underline underline-offset-8 decoration-indigo-500/20"
+          >
+            Launch Setup Wizard
+          </Link>
         </div>
       )}
     </div>

@@ -15,19 +15,37 @@ export default async function TestRunPage({ params }: { params: Promise<{ runId:
 
     const supabase = await createClient();
 
-    // Fetch test run with project details
-    const { data: run, error: runError } = await supabase
-        .from('test_runs')
-        .select(`
-      *,
-      projects (
-        name,
-        target_url,
-        llm_provider
-      )
-    `)
-        .eq('id', runId)
-        .single();
+    // 1. Parallel Fetching
+    const [runRes, sessionsRes] = await Promise.all([
+        supabase
+            .from('test_runs')
+            .select(`
+          *,
+          projects (
+            name,
+            target_url,
+            llm_provider
+          )
+        `)
+            .eq('id', runId)
+            .single(),
+
+        supabase
+            .from('persona_sessions')
+            .select(`
+          *,
+          persona_configs (
+            name,
+            goal_prompt
+          )
+        `)
+            .eq('test_run_id', runId)
+            .order('created_at', { ascending: true })
+    ]);
+
+    const run = runRes.data as any;
+    const runError = runRes.error;
+    const sessions = sessionsRes.data as any[] | null;
 
     if (runError || !run) {
         return (
@@ -38,19 +56,6 @@ export default async function TestRunPage({ params }: { params: Promise<{ runId:
             </div>
         );
     }
-
-    // Fetch all sessions for this test run
-    const { data: sessions } = await supabase
-        .from('persona_sessions')
-        .select(`
-      *,
-      persona_configs (
-        name,
-        goal_prompt
-      )
-    `)
-        .eq('test_run_id', runId)
-        .order('created_at', { ascending: true });
 
     const statusColors = {
         queued: 'text-slate-500 bg-slate-500/10 border-slate-500/20',

@@ -2,74 +2,160 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Observation, Action, PersonaProfile, LLMProvider } from './types';
+import {
+    Observation, Action, PersonaProfile, LLMProvider,
+    Archetype, ObservationSection, PageScanAnalysis
+} from './types';
+
+// ─── Zod schemas ──────────────────────────────────────────────────────────────
 
 const ActionSchema = z.object({
-    type: z.enum(['click', 'type', 'scroll', 'wait', 'complete', 'fail']),
+    type: z.enum(['click', 'type', 'scroll', 'wait', 'complete', 'fail', 'skip_node']),
     selector: z.string().optional(),
     text: z.string().optional(),
     reasoning: z.string(),
-    emotional_state: z.string(),
+    emotional_state: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
+    emotional_intensity: z.number().min(0).max(1),
+    specific_emotion: z.string().optional(),
     ux_feedback: z.string(),
-    possible_paths: z.array(z.string())
+    proposed_solution: z.string().optional(),
+    possible_paths: z.array(z.string()).default([])
 });
 
-// ─── Token-saving helpers ─────────────────────────────────────────────────────
+const SectionResultSchema = z.object({
+    label: z.string(),
+    ux_feedback: z.string(),
+    emotional_state: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
+    emotional_intensity: z.number().min(0).max(1),
+    proposed_solution: z.string().optional()
+});
 
-/** Trim history to only the essential fields to save tokens. */
+const PageScanSchema = z.object({
+    sections: z.array(SectionResultSchema),
+    overall_emotion: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
+    overall_intensity: z.number().min(0).max(1),
+    page_summary: z.string()
+});
+
+const PersonaSchema = z.object({
+    name: z.string(),
+    age_range: z.string(),
+    geolocation: z.string(),
+    tech_literacy: z.enum(['low', 'medium', 'high']),
+    domain_familiarity: z.string(),
+    goal_prompt: z.string()
+});
+
+const ArchetypeSchema = z.object({
+    id: z.string(),
+    icon_type: z.enum(['users', 'zap', 'user', 'check', 'globe', 'x', 'shopping-cart', 'home', 'settings']),
+    desc: z.string()
+});
+
+// ─── Shared prompt builders ───────────────────────────────────────────────────
+
 function trimHistory(history: Action[]): string {
     return JSON.stringify(
         history.slice(-4).map(a => ({
             t: a.type,
-            s: a.selector,
-            url: a.current_url,
-            r: a.reasoning?.slice(0, 60)
+            s: (a.selector || a.text || '').slice(0, 40),
+            url: (a.current_url || '').slice(-35),
+            r: (a.reasoning || '').slice(0, 50)
         }))
     );
 }
 
-/** Truncate DOM context to a max number of elements and chars. */
-function truncateDom(domContext: string | undefined, maxElements = 40, maxChars = 2000): string {
+function trimDom(domContext: string | undefined, max = 28): string {
     if (!domContext) return '[]';
     try {
-        const elements = JSON.parse(domContext);
-        const capped = elements.slice(0, maxElements);
-        const str = JSON.stringify(capped);
-        return str.length > maxChars ? str.slice(0, maxChars) + '…]' : str;
+        const els = JSON.parse(domContext);
+        // Prefer interactive elements (links, buttons, inputs) over generic elements
+        const interactive = els.filter((e: any) =>
+            ['link', 'button', 'textbox', 'searchbox', 'input'].includes((e.role || '').toLowerCase())
+        );
+        const rest = els.filter((e: any) =>
+            !['link', 'button', 'textbox', 'searchbox', 'input'].includes((e.role || '').toLowerCase())
+        );
+        const merged = [...interactive, ...rest].slice(0, max);
+        return JSON.stringify(merged.map((e: any) => ({ role: e.role, text: e.text, sel: e.selector })));
     } catch {
-        return domContext.slice(0, maxChars);
+        return '[]';
     }
 }
 
-/** Compact persona/action prompt shared by all providers. */
 function buildActionPrompt(
     observation: Observation,
     persona: PersonaProfile,
-    history: Action[]
+    history: Action[],
+    blacklist: string[] = [],
+    triedElements: string[] = []
 ): string {
-    const lastAction = history[history.length - 1];
-    const isStuck = lastAction &&
-        (lastAction.type === 'click' || lastAction.type === 'type') &&
-        lastAction.current_url === observation.url;
-    const stuckNote = isStuck
-        ? `⚠️ STUCK: Last ${lastAction.type} on ${lastAction.selector || '?'} did not navigate. Try something different.\n`
-        : '';
+    const uniquePages = new Set(history.map(a => a.current_url?.split('?')[0])).size;
+    return `You are ${persona.name} (${persona.tech_literacy} tech literacy, goal: ${persona.goal_prompt}).
+URL: ${observation.url} | Pages explored: ${uniquePages}
 
-    return `You are ${persona.name}, a synthetic user (tech: ${persona.tech_literacy}).
-Goal: ${persona.goal_prompt}
-URL: ${observation.url}
-${stuckNote}
-DOM (interactive elements, capped): ${truncateDom(observation.domContext)}
-History (last 4): ${trimHistory(history)}
+INTERACTIVE ELEMENTS:
+${trimDom(observation.domContext)}
 
-Reason as your persona — show emotions. Think: 1)What do you see? 2)What are your options? 3)What will you do?
-Rules: Never repeat a selector that didn't change the URL. Prefer scroll/different element when stuck. Max 1 wait per 5 steps.
-If goal reached → complete. If totally stuck → fail.
+RECENT HISTORY:
+${trimHistory(history)}
 
-Return JSON: { "type","selector"?,"text"?,"reasoning","emotional_state","ux_feedback","possible_paths":[] }`;
+BLOCKED: ${[...blacklist, ...triedElements].slice(0, 10).join(', ') || 'none'}
+
+INSTRUCTIONS:
+- Behave as this persona. Explore the page as they would.
+- 'reasoning': first-person internal monologue (why you're choosing this action).
+- 'ux_feedback': honest critique of what is visually confusing, missing, or well-designed RIGHT NOW on this screen.
+- 'proposed_solution': specific, actionable fix for the designer (required if friction found).
+- Use 'skip_node' if the page is a 404, completely irrelevant to your goal, or has no useful content.
+- Use 'complete' only when you have fully explored your goal path.
+
+⚠️ AUTH FORMS — STRICT RULE (highest priority):
+If the current page contains a login form, sign-up form, registration form, or any page that asks for credentials (email/password, phone/OTP, social login buttons), you MUST:
+1. Set 'type' to 'skip_node'.
+2. Write 'ux_feedback' about the design of the auth form itself (clarity, trust signals, friction).
+3. Do NOT attempt to type into any field. Do NOT click login/signup/submit buttons.
+This applies to: /login, /signin, /signup, /register, /auth, /account/create, and any page whose primary content is an authentication form.
+
+Return JSON: { type, text, reasoning, emotional_state, emotional_intensity, specific_emotion, ux_feedback, proposed_solution, possible_paths }`;
 }
 
-// ─── Providers ────────────────────────────────────────────────────────────────
+function buildPageScanPrompt(
+    sections: ObservationSection[],
+    pageUrl: string,
+    pageTitle: string,
+    persona: PersonaProfile
+): string {
+    const sectionLabels = sections.map(s => s.label || 'Section').join(', ');
+    return `You are a UX auditor evaluating a webpage as the persona: ${persona.name}.
+Persona goal: ${persona.goal_prompt}
+Page: ${pageTitle} (${pageUrl})
+Sections captured: ${sectionLabels}
+
+For EACH section screenshot (provided as images in order), analyze:
+1. Visual hierarchy — is the most important content prominent?
+2. Content clarity — is the messaging clear for this persona?
+3. Friction — any confusing UI, missing CTAs, broken layouts, or trust issues?
+4. Emotional response — how would this persona feel seeing this section?
+
+Be specific and critical. Generic feedback like "looks clean" is not acceptable.
+Point to exact elements: headlines, CTAs, images, forms, navigation items.
+
+Return JSON matching this structure:
+{
+  "sections": [
+    { "label": "Top", "ux_feedback": "...", "emotional_state": "...", "emotional_intensity": 0.0-1.0, "proposed_solution": "..." },
+    ...
+  ],
+  "overall_emotion": "...",
+  "overall_intensity": 0.0-1.0,
+  "page_summary": "2-3 sentence summary of overall UX quality for this persona"
+}`;
+}
+
+// ─── OpenAI Provider ──────────────────────────────────────────────────────────
+// Uses gpt-4o for vision tasks (decideNextAction, analyzePageSections)
+// Uses gpt-4o-mini for text-only tasks (summaries, personas, archetypes) — ~15x cheaper
 
 export class OpenAIProvider implements LLMProvider {
     private client: OpenAI;
@@ -78,101 +164,218 @@ export class OpenAIProvider implements LLMProvider {
         this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history);
-
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
         const response = await this.client.chat.completions.create({
             model: 'gpt-4o',
+            max_tokens: 600,
             messages: [
-                { role: 'system', content: 'You are a synthetic UX persona navigating a website. Always return valid JSON.' },
+                { role: 'system', content: 'Synthetic UX persona. JSON only.' },
                 {
-                    role: 'user',
-                    content: [
+                    role: 'user', content: [
                         { type: 'text', text: prompt },
-                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}` } }
+                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}`, detail: 'low' } }
                     ]
                 }
             ],
             response_format: zodResponseFormat(ActionSchema, 'action')
         });
-
-        const choice = response.choices[0].message.content;
-        if (!choice) throw new Error('No response from OpenAI');
-        return JSON.parse(choice) as Action;
+        return JSON.parse(response.choices[0].message.content || '{}');
     }
 
-    async generateSummary(prompt: string): Promise<string> {
+    // Single API call for ALL page sections — replaces N separate analyzeSection() calls
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
+
+        const content: any[] = [{ type: 'text', text: prompt }];
+        for (const section of sections) {
+            content.push({
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' }
+            });
+        }
+
         const response = await this.client.chat.completions.create({
             model: 'gpt-4o',
+            max_tokens: 1000,
+            messages: [
+                { role: 'system', content: 'UX auditor. JSON only. Be specific and critical.' },
+                { role: 'user', content }
+            ],
+            response_format: zodResponseFormat(PageScanSchema, 'page_scan')
+        });
+
+        return JSON.parse(response.choices[0].message.content || '{}');
+    }
+
+    // text-only: use mini model
+    async generateSummary(prompt: string): Promise<string> {
+        const res = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 500,
             messages: [{ role: 'user', content: prompt }]
         });
-        return response.choices[0].message.content || '';
+        return res.choices[0].message.content || '';
+    }
+
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const res = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 800,
+            messages: [{
+                role: 'user',
+                content: `UX Researcher. Generate 5 user persona categories for: ${siteContext}.
+Constraints: ${userPrompt || 'none'}. Archetypes: ${archetypes.join(', ')}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }
+Use role names not human names (e.g. "Budget Traveler", not "John Doe").`
+            }],
+            response_format: { type: 'json_object' }
+        });
+        const parsed = JSON.parse(res.choices[0].message.content || '{"personas":[]}');
+        return parsed.personas || [];
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const res = await this.client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 400,
+            messages: [{
+                role: 'user',
+                content: `Suggest 6 user archetypes for this site. Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }
+icon_type must be one of: users, zap, user, check, globe, x, shopping-cart, home, settings
+Site: ${siteContext}`
+            }],
+            response_format: { type: 'json_object' }
+        });
+        const parsed = JSON.parse(res.choices[0].message.content || '{"archetypes":[]}');
+        return parsed.archetypes || [];
     }
 }
+
+// ─── Gemini Provider ──────────────────────────────────────────────────────────
+// Uses gemini-2.0-flash for everything — free tier available, fast, vision-capable
 
 export class GeminiProvider implements LLMProvider {
     private genAI: GoogleGenerativeAI;
 
     constructor(apiKey?: string) {
-        const key = apiKey || process.env.GEMINI_API_KEY || '';
-        this.genAI = new GoogleGenerativeAI(key);
+        this.genAI = new GoogleGenerativeAI(apiKey || process.env.GEMINI_API_KEY || '');
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history);
+    private get flashModel() {
+        return this.genAI.getGenerativeModel({
+            model: 'gemini-2.0-flash',
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+    }
 
-        const screenshotSize = observation.screenshot?.length || 0;
-        if (screenshotSize < 100) {
-            console.warn('⚠️ Screenshot too small:', screenshotSize, 'bytes');
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
+        const result = await this.flashModel.generateContent([
+            prompt,
+            { inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } }
+        ]);
+        const action = JSON.parse(result.response.text());
+
+        // Normalize possible_paths
+        if (!Array.isArray(action.possible_paths)) {
+            action.possible_paths = typeof action.possible_paths === 'string' ? [action.possible_paths] : [];
+        }
+        action.possible_paths = action.possible_paths.map((p: any) =>
+            typeof p === 'object' ? (p.path_name || p.description || JSON.stringify(p)) : String(p)
+        );
+        return action;
+    }
+
+    // Single call with all section images
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
+
+        const parts: any[] = [prompt];
+        for (const section of sections) {
+            parts.push({ inlineData: { data: section.screenshot, mimeType: 'image/jpeg' } });
         }
 
-        const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-        let lastError: any = null;
-
-        for (const modelName of modelsToTry) {
-            try {
-                const model = this.genAI.getGenerativeModel({
-                    model: modelName,
-                    generationConfig: { responseMimeType: 'application/json' }
-                });
-
-                const content: any[] = [prompt];
-                if (screenshotSize > 100) {
-                    content.push({ inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } });
-                }
-
-                const result = await model.generateContent(content);
-                const response = await result.response;
-                if (response) {
-                    return JSON.parse(response.text()) as Action;
-                }
-            } catch (err: any) {
-                lastError = err;
-                console.error(`❌ Gemini ${modelName} failed:`, err.message);
-            }
+        const result = await this.flashModel.generateContent(parts);
+        try {
+            return JSON.parse(result.response.text());
+        } catch {
+            return {
+                sections: sections.map(s => ({
+                    label: s.label || 'Section',
+                    ux_feedback: 'Analysis unavailable',
+                    emotional_state: 'neutral',
+                    emotional_intensity: 0.3
+                })),
+                overall_emotion: 'neutral',
+                overall_intensity: 0.3,
+                page_summary: 'Analysis unavailable'
+            };
         }
-
-        throw lastError || new Error('All Gemini models failed');
     }
 
     async generateSummary(prompt: string): Promise<string> {
-        const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-        let lastError: any = null;
+        const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const res = await model.generateContent(prompt);
+        return res.response.text();
+    }
 
-        for (const modelName of modelsToTry) {
-            try {
-                const model = this.genAI.getGenerativeModel({ model: modelName });
-                const result = await model.generateContent(prompt);
-                const response = await result.response;
-                return response.text();
-            } catch (err: any) {
-                lastError = err;
-                console.error(`❌ Gemini summary ${modelName} failed:`, err.message);
-            }
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const prompt = `UX Researcher. Generate 5 user persona categories for: ${siteContext}.
+Archetypes: ${archetypes.join(', ')}. Constraints: ${userPrompt || 'none'}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }
+Use role names not human names.`;
+        const res = await this.flashModel.generateContent(prompt);
+        try {
+            const parsed = JSON.parse(res.response.text());
+            return parsed.personas || (Array.isArray(parsed) ? parsed : []);
+        } catch {
+            return [];
         }
-        throw lastError || new Error('All Gemini models failed for summary');
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const prompt = `Suggest 6 user archetypes for this site.
+Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }
+icon_type must be one of: users, zap, user, check, globe, x, shopping-cart, home, settings
+Site: ${siteContext}`;
+        const res = await this.flashModel.generateContent(prompt);
+        try {
+            const parsed = JSON.parse(res.response.text());
+            return (parsed.archetypes || []).map((a: any, i: number) => ({
+                id: a.id || `Archetype-${i}`,
+                icon_type: a.icon_type || 'users',
+                desc: a.desc || 'No description'
+            }));
+        } catch {
+            return [];
+        }
     }
 }
+
+// ─── Ollama Provider (local / free) ──────────────────────────────────────────
 
 export class OllamaProvider implements LLMProvider {
     private host: string;
@@ -180,137 +383,123 @@ export class OllamaProvider implements LLMProvider {
 
     constructor() {
         this.host = process.env.OLLAMA_HOST || 'http://localhost:11434';
-        const modelStr = process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL || 'llava';
+        const modelStr = process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL || 'llama3.2-vision';
         this.models = modelStr.split(',').map(m => m.trim());
     }
 
-    private async fetchWithRetry(model: string, prompt: string, screenshot: string, signal: AbortSignal, retries = 2): Promise<any> {
-        for (let i = 0; i <= retries; i++) {
-            try {
-                const response = await fetch(`${this.host}/api/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model,
-                        prompt,
-                        images: screenshot ? [screenshot] : [],
-                        stream: false,
-                        format: 'json'
-                    }),
-                    signal
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text().catch(() => 'No error body');
-                    throw new Error(`Ollama error (${response.status}): ${errorText}`);
-                }
-
-                return await response.json();
-            } catch (err: any) {
-                if (i === retries || err.name === 'AbortError') throw err;
-                const delay = Math.pow(2, i) * 1000;
-                console.warn(`⚠️ ${model} attempt ${i + 1}/${retries + 1} failed. Retrying in ${delay}ms...`);
-                await new Promise(res => setTimeout(res, delay));
-            }
+    private async call(model: string, prompt: string, images: string[]): Promise<any> {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120_000);
+        try {
+            const res = await fetch(`${this.host}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, prompt, images, stream: false, format: 'json' }),
+                signal: controller.signal
+            });
+            if (!res.ok) throw new Error(`Ollama ${res.status}`);
+            return await res.json();
+        } finally {
+            clearTimeout(timeout);
         }
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history);
-        console.log(`🤖 Ollama inference (${this.models.join(', ')})...`);
-        console.time('inference_total');
-
-        let validResults: { model: string, action: Action }[] = [];
-
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
         try {
-            const results = await Promise.all(this.models.map(async (model) => {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 300000);
-                try {
-                    const data = await this.fetchWithRetry(model, prompt, observation.screenshot, controller.signal);
-                    clearTimeout(timeoutId);
-                    return { model, action: JSON.parse(data.response) as Action };
-                } catch (err: any) {
-                    console.error(`❌ ${model} failed:`, err.message);
-                    return null;
-                }
-            }));
-            validResults = results.filter((r): r is { model: string, action: Action } => r !== null);
-        } catch (err) {
-            console.warn('Critical inference failure, falling back to sequential...');
-        }
-
-        if (validResults.length === 0) {
-            for (const model of this.models) {
-                const controller = new AbortController();
-                setTimeout(() => controller.abort(), 600000);
-                try {
-                    const data = await this.fetchWithRetry(model, prompt, observation.screenshot, controller.signal);
-                    validResults.push({ model, action: JSON.parse(data.response) as Action });
-                    break;
-                } catch (err: any) {
-                    console.error(`❌ Backup ${model} failed:`, err.message);
-                }
+            const data = await this.call(this.models[0], prompt, [observation.screenshot]);
+            return JSON.parse(data.response) as Action;
+        } catch {
+            if (this.models.length > 1) {
+                const data = await this.call(this.models[1], prompt, [observation.screenshot]);
+                return JSON.parse(data.response) as Action;
             }
+            throw new Error('All Ollama models failed');
         }
+    }
 
-        console.timeEnd('inference_total');
-        if (validResults.length === 0) throw new Error('Ollama provider unavailable');
-
-        return this.synthesize(validResults);
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        // Ollama: send only the primary (first) section screenshot to keep inference fast
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
+        const primaryImage = sections[0]?.screenshot || '';
+        try {
+            const data = await this.call(this.models[0], prompt, [primaryImage]);
+            return JSON.parse(data.response);
+        } catch {
+            return {
+                sections: sections.map(s => ({
+                    label: s.label || 'Section',
+                    ux_feedback: 'Analysis unavailable',
+                    emotional_state: 'neutral',
+                    emotional_intensity: 0.3
+                })),
+                overall_emotion: 'neutral',
+                overall_intensity: 0.3,
+                page_summary: 'Analysis unavailable'
+            };
+        }
     }
 
     async generateSummary(prompt: string): Promise<string> {
-        const controller = new AbortController();
-        setTimeout(() => controller.abort(), 60000);
-        try {
-            const response = await fetch(`${this.host}/api/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: this.models[0], prompt, stream: false }),
-                signal: controller.signal
-            });
-            const data = await response.json();
-            return data.response;
-        } catch (err: any) {
-            console.error('❌ Ollama summary failed:', err.message);
-            return 'AI summary unavailable.';
-        }
+        const data = await this.call(this.models[0], prompt, []);
+        return data.response;
     }
 
-    private synthesize(results: { model: string, action: Action }[]): Action {
-        if (results.length === 1) return results[0].action;
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const prompt = `Generate 5 user persona categories for: ${siteContext}. Constraints: ${userPrompt}. Archetypes: ${archetypes.join(', ')}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }`;
+        const data = await this.call(this.models[0], prompt, []);
+        const parsed = JSON.parse(data.response);
+        return parsed.personas || [];
+    }
 
-        const primary = results[0].action;
-        const reasoning = results.map(r => `[${r.model}] ${r.action.reasoning}`).join('\n\n');
-        const ux = results.map(r => `[${r.model}] ${r.action.ux_feedback}`).join('\n\n');
-        const paths = Array.from(new Set(results.flatMap(r => r.action.possible_paths || [])));
-
-        return { ...primary, reasoning, ux_feedback: ux, possible_paths: paths };
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const data = await this.call(this.models[0], `Suggest 6 archetypes for: ${siteContext}. Return JSON: { "archetypes": [...] }`, []);
+        const parsed = JSON.parse(data.response);
+        return parsed.archetypes || [];
     }
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+// ─── LLMService facade ────────────────────────────────────────────────────────
 
 export class LLMService {
     private provider: LLMProvider;
 
-    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai', apiKey?: string }) {
-        const providerType = config?.provider || 'ollama';
-        if (providerType === 'gemini') {
-            this.provider = new GeminiProvider(config?.apiKey);
-        } else if (providerType === 'openai') {
-            this.provider = new OpenAIProvider();
-        } else {
-            this.provider = new OllamaProvider();
-        }
+    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai'; apiKey?: string }) {
+        const type = config?.provider || 'gemini'; // Default to Gemini (free tier)
+        if (type === 'openai') this.provider = new OpenAIProvider();
+        else if (type === 'gemini') this.provider = new GeminiProvider(config?.apiKey);
+        else this.provider = new OllamaProvider();
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        return this.provider.decideNextAction(observation, persona, history);
+    decideNextAction(obs: Observation, p: PersonaProfile, h: Action[], b: string[] = [], t: string[] = []): Promise<Action> {
+        return this.provider.decideNextAction(obs, p, h, b, t);
     }
 
-    async generateSummary(prompt: string): Promise<string> {
+    analyzePageSections(sections: ObservationSection[], url: string, title: string, p: PersonaProfile): Promise<PageScanAnalysis> {
+        return this.provider.analyzePageSections(sections, url, title, p);
+    }
+
+    generateSummary(prompt: string): Promise<string> {
         return this.provider.generateSummary(prompt);
+    }
+
+    generatePersonas(s: string, u: string, a: string[]): Promise<PersonaProfile[]> {
+        return this.provider.generatePersonas(s, u, a);
+    }
+
+    suggestArchetypes(s: string): Promise<Archetype[]> {
+        return this.provider.suggestArchetypes(s);
     }
 }

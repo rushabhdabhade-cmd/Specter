@@ -35,40 +35,47 @@ export function ActionItems({ items }: ActionItemsProps) {
 
             <div className="grid grid-cols-1 gap-4">
                 {items.map((item, i) => {
-                    const priorityColor =
-                        item.priority.toLowerCase().includes('high') ? 'text-red-400 bg-red-400/10 border-red-400/20' :
-                            item.priority.toLowerCase().includes('medium') ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' :
-                                'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+                    const priority = item.priority.toLowerCase();
+                    const isHigh = priority.includes('high');
+                    const isMedium = priority.includes('medium');
+
+                    const colorClass = isHigh ? 'text-red-400' : isMedium ? 'text-amber-400' : 'text-emerald-400';
+                    const bgClass = isHigh ? 'bg-red-500/5 border-red-500/10' : isMedium ? 'bg-amber-500/5 border-amber-500/10' : 'bg-emerald-500/5 border-emerald-500/10';
+                    const accentClass = isHigh ? 'bg-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.4)]' : isMedium ? 'bg-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.4)]';
+                    
+                    const Icon = isHigh ? AlertCircle : isMedium ? Zap : CheckCircle2;
 
                     return (
                         <div
                             key={i}
-                            className="group relative rounded-3xl border border-white/5 bg-[#0a0a0a] p-6 transition-all hover:bg-white/[0.03] hover:border-white/10"
+                            className={`group relative rounded-3xl border ${bgClass} p-6 transition-all duration-300 hover:bg-white/[0.02] hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-black/40 overflow-hidden`}
                         >
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                <div className="flex items-start gap-5">
-                                    <div className={`mt-1 flex-shrink-0 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${priorityColor}`}>
-                                        {item.priority}
+                            {/* Color-coded accent line always visible but grows on hover */}
+                            <div className={`absolute left-0 top-0 bottom-0 w-1 group-hover:w-1.5 transition-all duration-300 ${accentClass}`} />
+
+                            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pl-2">
+                                <div className="flex items-start gap-4 flex-1">
+                                    <div className={`mt-1 flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center ${isHigh ? 'bg-red-500/10' : isMedium ? 'bg-amber-500/10' : 'bg-emerald-500/10'} border border-white/5`}>
+                                        <Icon className={`h-4 w-4 ${colorClass}`} />
                                     </div>
-                                    <div className="space-y-1">
-                                        <h4 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">
-                                            {item.title}
-                                        </h4>
-                                        <p className="text-sm text-slate-400 leading-relaxed max-w-2xl">
+                                    <div className="space-y-1.5 flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <h4 className="text-base font-bold text-white group-hover:text-indigo-400 transition-colors leading-snug">
+                                                {item.title}
+                                            </h4>
+                                            <div className={`flex-shrink-0 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/5 bg-black/40 ${colorClass}`}>
+                                                {item.priority}
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-slate-400 leading-relaxed max-w-2xl font-medium">
                                             {item.detail}
                                         </p>
                                     </div>
                                 </div>
-
-                                <div className="flex items-center gap-3">
-                                    <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:bg-white/10 transition-all">
-                                        Analyze Friction <ChevronRight className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
                             </div>
 
-                            {/* Accent line */}
-                            <div className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 rounded-full bg-indigo-500/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            {/* subtle glow gradient behind the card */}
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
                         </div>
                     );
                 })}
