@@ -16,8 +16,9 @@ export async function createTestRun(formData: {
     scope: string;
     requiresAuth: boolean;
     executionMode: 'autonomous' | 'manual';
-    llmProvider: 'ollama' | 'gemini';
-    geminiKey?: string;
+    llmProvider: 'ollama' | 'gemini' | 'openrouter';
+    llmApiKey?: string;
+    llmModelName?: string;
     credentials?: {
         username?: string;
         password?: string;
@@ -48,7 +49,7 @@ export async function createTestRun(formData: {
         }
     }
 
-    const geminiKey = formData.geminiKey || process.env.GEMINI_API_KEY;
+    const llmApiKey = formData.llmApiKey || (formData.llmProvider === 'gemini' ? process.env.GEMINI_API_KEY : undefined);
 
     // 2. Create or find Project (including credentials)
     const { data: project, error: pError } = await (adminSupabase
@@ -60,8 +61,9 @@ export async function createTestRun(formData: {
             requires_auth: formData.requiresAuth,
             auth_credentials: formData.credentials ? JSON.stringify(formData.credentials) : null,
             llm_provider: formData.llmProvider,
-            encrypted_llm_key: geminiKey ? encrypt(geminiKey) : null,
-            save_llm_key: !!geminiKey
+            llm_model_name: formData.llmModelName || null,
+            encrypted_llm_key: llmApiKey ? encrypt(llmApiKey) : null,
+            save_llm_key: !!llmApiKey
         }, { onConflict: 'user_id,target_url' })
         .select()
         .single();
@@ -149,13 +151,15 @@ export async function createTestRun(formData: {
 
 export async function suggestAudienceArchetypes(formData: {
     url: string;
-    geminiKey?: string;
+    llmProvider?: 'gemini' | 'openrouter' | 'ollama';
+    llmApiKey?: string;
+    llmModelName?: string;
 }) {
     const { userId } = await auth();
     if (!userId) throw new Error('Unauthorized');
 
     const adminSupabase = createAdminClient();
-    const cacheKey = `archetypes:${formData.url}`;
+    const cacheKey = `archetypes:${new URL(formData.url).href}`;
 
     try {
         const { data: cached } = await (adminSupabase
@@ -172,12 +176,12 @@ export async function suggestAudienceArchetypes(formData: {
         // Proceed on cache miss
     }
 
-    const geminiKey = formData.geminiKey || process.env.GEMINI_API_KEY;
+    // Browser scraping always uses env Gemini key (Stagehand requirement)
     const browser = new BrowserService();
     let siteContext = "";
 
     try {
-        await browser.init("google/gemini-2.0-flash", geminiKey);
+        await browser.init("google/gemini-2.0-flash", process.env.GEMINI_API_KEY);
         await browser.navigate(formData.url);
         const observation = await browser.observe();
 
@@ -193,13 +197,12 @@ export async function suggestAudienceArchetypes(formData: {
         await browser.close();
     }
 
-    const llm = new LLMService({
-        provider: 'gemini',
-        apiKey: geminiKey
-    });
+    const provider = formData.llmProvider || 'gemini';
+    const apiKey = formData.llmApiKey || (provider === 'gemini' ? process.env.GEMINI_API_KEY : undefined);
+    const llm = new LLMService({ provider, apiKey, modelName: formData.llmModelName });
 
     const suggested = await llm.suggestArchetypes(siteContext);
-    console.log(`🤖 Gemini suggested ${(suggested as any).length || 0} archetypes.`);
+    console.log(`🤖 LLM suggested ${(suggested as any).length || 0} archetypes.`);
 
     // Cache the result
     try {
@@ -219,18 +222,16 @@ export async function generateAIPersonas(formData: {
     url: string;
     archetypes: string[];
     userPrompt: string;
-    geminiKey?: string;
+    llmProvider?: 'gemini' | 'openrouter' | 'ollama';
+    llmApiKey?: string;
+    llmModelName?: string;
 }) {
     const { userId } = await auth();
     if (!userId) throw new Error('Unauthorized');
 
     const adminSupabase = createAdminClient();
-    const hash = crypto.createHash('md5').update(JSON.stringify({
-        url: formData.url,
-        archetypes: [...formData.archetypes].sort(),
-        userPrompt: formData.userPrompt
-    })).digest('hex');
-    const cacheKey = `personas:${formData.url}:${hash}`;
+    const normalizedUrl = new URL(formData.url).href;
+    const cacheKey = `personas:${normalizedUrl}`;
 
     try {
         const { data: cached } = await (adminSupabase
@@ -240,19 +241,19 @@ export async function generateAIPersonas(formData: {
             .single();
 
         if (cached && cached.payload) {
-            console.log('✅ Found cached personas for URL and prompt:', formData.url);
+            console.log('✅ Found cached personas for:', normalizedUrl);
             return cached.payload;
         }
     } catch (err) {
         // Proceed on cache miss
     }
 
-    const geminiKey = formData.geminiKey || process.env.GEMINI_API_KEY;
+    // Browser scraping always uses env Gemini key (Stagehand requirement)
     const browser = new BrowserService();
     let siteContext = "";
 
     try {
-        await browser.init("google/gemini-2.0-flash", geminiKey);
+        await browser.init("google/gemini-2.0-flash", process.env.GEMINI_API_KEY);
         await browser.navigate(formData.url);
         const observation = await browser.observe();
 
@@ -262,19 +263,17 @@ export async function generateAIPersonas(formData: {
         }
     } catch (err) {
         console.error('Browser discovery failed for persona generation:', err);
-        // Fallback context if browser fails
         siteContext = `URL: ${formData.url} (Manual discovery failed, using URL only)`;
     } finally {
         await browser.close();
     }
 
-    const llm = new LLMService({
-        provider: 'gemini',
-        apiKey: geminiKey
-    });
+    const provider = formData.llmProvider || 'gemini';
+    const apiKey = formData.llmApiKey || (provider === 'gemini' ? process.env.GEMINI_API_KEY : undefined);
+    const llm = new LLMService({ provider, apiKey, modelName: formData.llmModelName });
 
     const personas = await llm.generatePersonas(siteContext, formData.userPrompt, formData.archetypes);
-    console.log(`👥 Gemini generated ${personas.length} personas.`);
+    console.log(`👥 LLM generated ${personas.length} personas.`);
 
     const result = personas.map((p: any, idx: number) => ({
         id: idx + 1,
@@ -287,7 +286,7 @@ export async function generateAIPersonas(formData: {
         personaCount: 1
     }));
 
-    // Cache the result
+    // Cache the result (upsert overwrites stale entry on regenerate)
     try {
         await (adminSupabase.from('ai_caches') as any).upsert({
             cache_key: cacheKey,

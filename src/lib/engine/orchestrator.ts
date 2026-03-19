@@ -65,13 +65,14 @@ export class Orchestrator {
                 const project = sessionData.persona_configs?.projects;
                 const executionMode = sessionData.execution_mode || 'autonomous';
                 const provider = project?.llm_provider || 'gemini'; // default to free Gemini
+                const modelName: string | undefined = project?.llm_model_name || undefined;
 
                 let apiKey: string | undefined;
                 if (project?.encrypted_llm_key) {
                     try { apiKey = decrypt(project.encrypted_llm_key); } catch (_) { }
                 }
 
-                this.llm = new LLMService({ provider, apiKey });
+                this.llm = new LLMService({ provider, apiKey, modelName });
 
                 if (attempt > 1) {
                     await this.log(sessionId, url, 'neutral', 'Recovery restart after crash.', { type: 'system', info: 'session_retry' });
@@ -87,12 +88,18 @@ export class Orchestrator {
                 this.updateLiveStatus(sessionId, 'Initializing browser...');
                 await this.log(sessionId, url, 'neutral', 'Initializing browser engine.', { type: 'system', info: 'browser_init' });
 
+                // Stagehand model for browser automation — separate from the LLM reasoning model.
+                // OpenRouter users: Stagehand still uses Gemini via env key (OpenRouter key is for reasoning only).
                 const stagehandModel =
                     provider === 'openai' ? 'gpt-4o' :
-                        provider === 'anthropic' ? 'claude-3-5-sonnet-20240620' :
+                        provider === 'openrouter' ? 'google/gemini-2.0-flash' :
                             provider === 'gemini' ? 'google/gemini-2.0-flash' : 'gpt-4o';
 
-                await this.browser.init(stagehandModel, apiKey);
+                const stagehandApiKey = provider === 'openrouter'
+                    ? (process.env.GEMINI_API_KEY || apiKey)
+                    : apiKey;
+
+                await this.browser.init(stagehandModel, stagehandApiKey);
 
                 // ── 2. Serial page traversal ─────────────────────────────────
                 await this.runTraversal(sessionId, url, persona, executionMode);

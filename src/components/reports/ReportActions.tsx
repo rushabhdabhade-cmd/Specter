@@ -180,7 +180,7 @@ export function ReportActions() {
                     </>
                 )}
             </button>
-            {/* <button
+            <button
                 disabled={isExporting}
                 onClick={handleExport}
                 className="flex h-11 items-center gap-2 rounded-xl bg-white px-6 text-xs font-black uppercase tracking-widest text-black hover:bg-slate-200 transition-all active:scale-95 shadow-xl shadow-white/5 min-w-[160px] justify-center disabled:opacity-50"
@@ -195,7 +195,7 @@ export function ReportActions() {
                         <Download className="h-4 w-4" /> Export PDF
                     </>
                 )}
-            </button> */}
+            </button>
         </div>
     );
 }

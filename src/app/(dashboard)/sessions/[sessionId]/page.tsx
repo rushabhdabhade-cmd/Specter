@@ -86,12 +86,23 @@ export default function SessionPage() {
 
             setSession(sessionData);
             setLogs(logData || []);
-            if (sessionData?.live_status) {
-                setTerminalLines([sessionData.live_status]);
-            }
+
+            // Reconstruct terminal history from stored session logs
+            const historyLines = (logData || []).map((log: any) => {
+                const action = log.action_taken as any;
+                if (action?.type === 'system') {
+                    return `[SYS] ${(action.info || '').replace(/_/g, ' ').toUpperCase()}`;
+                }
+                const path = (() => { try { return new URL(log.current_url).pathname; } catch { return log.current_url || ''; } })();
+                const thought = log.inner_monologue ? ` — ${log.inner_monologue.slice(0, 90)}` : '';
+                return `[Step ${log.step_number}] ${(action?.type || 'action').toUpperCase()} ${path}${thought}`;
+            }).filter(Boolean);
+            if (sessionData?.live_status) historyLines.push(`[STATUS] ${sessionData.live_status}`);
+            setTerminalLines(historyLines);
+
             setLoading(false);
 
-            // Subscribe to session updates
+            // Subscribe to session postgres changes
             const sessionSub = authenticatedSupabase
                 .channel(`session_${sessionId}`)
                 .on('postgres_changes', {
@@ -102,10 +113,15 @@ export default function SessionPage() {
                 }, (payload) => {
                     setSession((prev: any) => ({ ...prev, ...payload.new }));
                 })
+                .subscribe();
+
+            // Subscribe to live terminal broadcast — must match orchestrator's channel name
+            const terminalSub = authenticatedSupabase
+                .channel(`terminal_${sessionId}`)
                 .on('broadcast', { event: 'log' }, (payload: any) => {
                     const message = payload.payload?.message;
                     if (message) {
-                        setTerminalLines(prev => [...prev, message]);
+                        setTerminalLines(prev => [...prev, `[LIVE] ${message}`]);
                     }
                 })
                 .subscribe();
@@ -120,11 +136,21 @@ export default function SessionPage() {
                     filter: `session_id=eq.${sessionId}`
                 }, (payload) => {
                     setLogs((prev) => [...prev, payload.new]);
+                    // Mirror new steps into terminal in real-time
+                    const log = payload.new as any;
+                    const action = log.action_taken as any;
+                    const path = (() => { try { return new URL(log.current_url).pathname; } catch { return log.current_url || ''; } })();
+                    const thought = log.inner_monologue ? ` — ${log.inner_monologue.slice(0, 90)}` : '';
+                    const line = action?.type === 'system'
+                        ? `[SYS] ${(action.info || '').replace(/_/g, ' ').toUpperCase()}`
+                        : `[Step ${log.step_number}] ${(action?.type || 'action').toUpperCase()} ${path}${thought}`;
+                    setTerminalLines(prev => [...prev, line]);
                 })
                 .subscribe();
 
             return () => {
                 authenticatedSupabase.removeChannel(sessionSub);
+                authenticatedSupabase.removeChannel(terminalSub);
                 authenticatedSupabase.removeChannel(logsSub);
             };
         }

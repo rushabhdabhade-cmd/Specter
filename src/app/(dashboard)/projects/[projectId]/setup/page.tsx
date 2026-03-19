@@ -46,8 +46,9 @@ export default function NewTestRunPage() {
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('gemini');
-  const [geminiKey, setGeminiKey] = useState('');
+  const [llmProvider, setLlmProvider] = useState<'gemini' | 'openrouter' | 'ollama'>('gemini');
+  const [llmApiKey, setLlmApiKey] = useState('');
+  const [llmModelName, setLlmModelName] = useState('');
   const [showLibrary, setShowLibrary] = useState(false);
 
   const [isLaunching, setIsLaunching] = useState(false);
@@ -70,49 +71,56 @@ export default function NewTestRunPage() {
   // AI Generation State
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiStep, setAiStep] = useState<'selection' | 'editor'>('selection');
-  const [dynamicArchetypes, setDynamicArchetypes] = useState<DynamicArchetype[]>([]);
-  const [selectedArchetypes, setSelectedArchetypes] = useState<string[]>([]);
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [fetchedUrl, setFetchedUrl] = useState('');
+  const [aiStep, setAiStep] = useState<'pending' | 'editor'>('pending');
 
-  // Analyze audience when entering Step 2
+  // Auto-generate cohort when entering Step 2
   useEffect(() => {
-    if (step === 2 && (dynamicArchetypes.length === 0 || fetchedUrl !== url) && !isAnalyzing) {
-      handleAnalyzeAudience();
+    if (step === 2 && aiStep === 'pending' && !isAnalyzing && !isGenerating) {
+      autoGenerateCohort();
     }
-  }, [step, url, fetchedUrl]);
+  }, [step]);
 
-  const handleAnalyzeAudience = async () => {
+  const autoGenerateCohort = async (bypassCache = false) => {
     setIsAnalyzing(true);
-    setFetchedUrl(url);
+    setIsGenerating(false);
     setError(null);
     try {
-      const suggested = await suggestAudienceArchetypes({
+      // Phase 1: scan site and get archetypes (always cached per URL)
+      const archetypes = await suggestAudienceArchetypes({
         url,
-        geminiKey: llmProvider === 'gemini' ? geminiKey : undefined
+        llmProvider,
+        llmApiKey: llmApiKey || undefined,
+        llmModelName: llmModelName || undefined,
       });
-      setDynamicArchetypes(suggested as any);
-      if (suggested.length > 0) {
-        setSelectedArchetypes([suggested[0].id]);
-      }
+      const archetypeIds = (archetypes as any[]).map((a: any) => a.id);
+
+      // Phase 2: generate personas (bypassCache=true on regenerate to get fresh results)
+      setIsAnalyzing(false);
+      setIsGenerating(true);
+      const generated = await generateAIPersonas({
+        url,
+        archetypes: archetypeIds,
+        userPrompt: '',
+        llmProvider,
+        llmApiKey: llmApiKey || undefined,
+        llmModelName: llmModelName || undefined,
+        bypassCache,
+      });
+      setPersonas(generated as any);
+      setSelectedPersonaId((generated as any)[0]?.id || 1);
+      setAiStep('editor');
     } catch (err: any) {
-      console.error('Failed to suggest archetypes:', err);
-      // Fallback to basic archetypes if AI fails
-      setDynamicArchetypes([
-        { id: 'End User', icon_type: 'users', desc: 'Typical consumer navigating the app' },
-        { id: 'Technical User', icon_type: 'zap', desc: 'User with high technical knowledge' },
-        { id: 'First-time Visitor', icon_type: 'globe', desc: 'New user exploring basic value props' }
-      ]);
-      setSelectedArchetypes(['End User']);
+      setError(err.message || 'Auto-generation failed. You can add personas manually below.');
+      setAiStep('editor');
     } finally {
       setIsAnalyzing(false);
+      setIsGenerating(false);
     }
   };
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [step, aiStep]);
+  }, [step]);
 
   const selectedPersona = personas.find((p) => p.id === selectedPersonaId) || personas[0];
 
@@ -167,26 +175,6 @@ export default function NewTestRunPage() {
     }
   };
 
-  const handleAIGenerate = async () => {
-    setIsGenerating(true);
-    setError(null);
-    try {
-      const generated = await generateAIPersonas({
-        url,
-        archetypes: selectedArchetypes,
-        userPrompt: customPrompt,
-        geminiKey: llmProvider === 'gemini' ? geminiKey : undefined
-      });
-      setPersonas(generated as any);
-      setSelectedPersonaId(generated[0].id);
-      setAiStep('editor');
-    } catch (err: any) {
-      setError(err.message || 'AI Generation failed. Please try again.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleLaunch = async () => {
     setIsLaunching(true);
     setError(null);
@@ -197,7 +185,8 @@ export default function NewTestRunPage() {
         requiresAuth,
         executionMode: 'autonomous',
         llmProvider,
-        geminiKey: llmProvider === 'gemini' ? geminiKey : undefined,
+        llmApiKey: llmApiKey || undefined,
+        llmModelName: llmModelName || undefined,
         credentials: requiresAuth ? { username, password } : undefined,
         personas
       });
@@ -245,7 +234,7 @@ export default function NewTestRunPage() {
           >
             {step > 2 ? <Check className="h-5 w-5" strokeWidth={3} /> : '02'}
           </div>
-          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-600'}`}>User Archetype</span>
+          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-600'}`}>Persona Cohort</span>
         </div>
 
         {/* Step 3 */}
@@ -381,6 +370,79 @@ export default function NewTestRunPage() {
             </div> */}
 
 
+            {/* AI Engine Section */}
+            <div className="space-y-5 text-left pt-2 border-t border-white/5">
+              <div className="flex items-center gap-3 text-slate-400">
+                <div className="h-8 w-8 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center shadow-inner">
+                  <Zap className="h-4 w-4 text-indigo-400" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">AI Engine</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setLlmProvider('gemini'); setLlmApiKey(''); setLlmModelName(''); }}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'gemini' ? 'bg-white/5 border-white/20 text-white shadow-lg' : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-400'}`}
+                >
+                  <span className="text-sm font-bold">Gemini</span>
+                  <span className="text-[10px] opacity-60 leading-tight">Google Flash 2.0 · Free tier</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLlmProvider('openrouter')}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'openrouter' ? 'bg-white/5 border-white/20 text-white shadow-lg' : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-400'}`}
+                >
+                  <span className="text-sm font-bold">OpenRouter</span>
+                  <span className="text-[10px] opacity-60 leading-tight">100+ vision models</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setLlmProvider('ollama'); setLlmModelName(''); }}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'ollama' ? 'bg-white/5 border-white/20 text-white shadow-lg' : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-400'}`}
+                >
+                  <span className="text-sm font-bold">Local</span>
+                  <span className="text-[10px] opacity-60 leading-tight">Ollama · No API needed</span>
+                </button>
+              </div>
+
+              {llmProvider === 'openrouter' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Model ID</label>
+                      <a
+                        href="https://openrouter.ai/models?fmt=cards&input_modalities=image"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-bold uppercase tracking-widest"
+                      >
+                        Browse vision models ↗
+                      </a>
+                    </div>
+                    <input
+                      type="text"
+                      value={llmModelName}
+                      onChange={(e) => setLlmModelName(e.target.value)}
+                      placeholder="e.g. anthropic/claude-3-5-sonnet"
+                      className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/30 transition-all shadow-inner font-mono text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">OpenRouter API Key</label>
+                    <input
+                      type="password"
+                      value={llmApiKey}
+                      onChange={(e) => setLlmApiKey(e.target.value)}
+                      placeholder="sk-or-v1-••••••••••••••••••••••••••••••"
+                      className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/30 transition-all shadow-inner"
+                    />
+                  </div>
+                </div>
+              )}
+
+            </div>
+
             <button
               onClick={() => {
                 let targetUrl = url.trim();
@@ -400,11 +462,24 @@ export default function NewTestRunPage() {
                   if (!parsed.hostname.includes('.')) {
                     throw new Error('Invalid hostname');
                   }
-                  setUrl(targetUrl); // Save the formatted URL
+                  setUrl(parsed.href); // Save the normalized URL (ensures consistent cache keys)
                 } catch (e) {
                   setError('Please enter a valid URL (e.g., https://example.com)');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                   return;
+                }
+
+                if (llmProvider === 'openrouter') {
+                  if (!llmModelName.trim()) {
+                    setError('Please enter a model ID for OpenRouter (e.g. anthropic/claude-3-5-sonnet).');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                  }
+                  if (!llmApiKey.trim()) {
+                    setError('Please enter your OpenRouter API key.');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                  }
                 }
 
                 setStep(2);
@@ -422,127 +497,35 @@ export default function NewTestRunPage() {
       {step === 2 && (
         <div className="w-full max-w-5xl flex flex-col items-center space-y-10">
           <div className="text-center space-y-3">
-            <h1 className="text-4xl font-bold tracking-tight text-white">
-              {aiStep === 'selection' ? 'Who should audit the app?' : 'Build your cohort'}
-            </h1>
+            <h1 className="text-4xl font-bold tracking-tight text-white">Build your cohort</h1>
             <p className="text-slate-400 text-lg">
-              {aiStep === 'selection'
-                ? 'Select archetypes and provide context for AI-generated personas.'
-                : 'Define who will be testing your application. (Limit: 5 personas)'}
+              {isAnalyzing || isGenerating ? 'Specter is scanning your site and generating personas...' : 'Review and refine the AI-generated personas. (Limit: 5)'}
             </p>
           </div>
 
-          {aiStep === 'selection' ? (
-            <div className="w-full max-w-3xl space-y-10 bg-[#0a0a0a] border border-white/10 rounded-[32px] p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
-              {isAnalyzing ? (
-                <div className="flex flex-col items-center justify-center py-20 space-y-6">
-                  <div className="relative">
-                    <Loader2 className="h-16 w-16 animate-spin text-white/20" />
-                    <Sparkles className="absolute inset-0 m-auto h-8 w-8 text-white animate-pulse" />
-                  </div>
-                  <div className="space-y-2 text-center">
-                    <h2 className="text-xl font-bold text-white uppercase tracking-tighter">Auditing Audience...</h2>
-                    <p className="text-slate-500 text-sm">Identifying likely user segments for {new URL(url).hostname}</p>
-                  </div>
+          {(isAnalyzing || isGenerating) ? (
+            <div className="w-full max-w-3xl bg-[#0a0a0a] border border-white/10 rounded-[32px] p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+              <div className="flex flex-col items-center justify-center py-20 space-y-6">
+                <div className="relative">
+                  <Loader2 className="h-16 w-16 animate-spin text-white/20" />
+                  <Sparkles className="absolute inset-0 m-auto h-8 w-8 text-white animate-pulse" />
                 </div>
-              ) : (
-                <>
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Suggested Archetypes</label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {dynamicArchetypes.map((arch, idx) => {
-                        const Icon = ICON_MAP[arch.icon_type] || Users;
-                        const isSelected = selectedArchetypes.includes(arch.id);
-                        return (
-                          <button
-                            key={arch.id || `arch-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedArchetypes(selectedArchetypes.filter(a => a !== arch.id));
-                              } else {
-                                setSelectedArchetypes([...selectedArchetypes, arch.id]);
-                              }
-                            }}
-                            className={`flex flex-col items-start gap-4 p-5 rounded-2xl border transition-all text-left group ${isSelected
-                              ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                              : 'bg-transparent border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300'
-                              }`}
-                          >
-                            <div className={`p-3 rounded-xl transition-colors ${isSelected ? 'bg-white text-black' : 'bg-white/10 text-slate-400 group-hover:text-slate-300'}`}>
-                              <Icon className="h-5 w-5" />
-                            </div>
-                            <div className="space-y-1">
-                              <span className="text-sm font-bold block">{arch.id}</span>
-                              <span className="text-[10px] opacity-60 leading-tight block">{arch.desc}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                      {dynamicArchetypes.length === 0 && (
-                        <div className="col-span-full py-12 text-center border border-dashed border-white/5 rounded-2xl bg-white/[0.01]">
-                          <p className="text-slate-500 text-sm">No specific archetypes found. Try selecting manually.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4 pt-6 border-t border-white/5 text-left">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Custom Context (Optional)</label>
-                      <span className="text-[10px] text-slate-500 font-medium">Adds specific nuance to all personas</span>
-                    </div>
-                    <textarea
-                      rows={4}
-                      value={customPrompt}
-                      onChange={(e) => setCustomPrompt(e.target.value)}
-                      className="w-full bg-[#111111] border border-white/10 rounded-2xl p-5 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-white/20 transition-all resize-none shadow-inner"
-                      placeholder="e.g. Focus on users who are hesitant about privacy, or users looking for a budget-friendly option."
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-4">
-                    {error && (
-                      <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium animate-in fade-in slide-in-from-top-2">
-                        {error}
-                      </div>
-                    )}
-                    <div className="flex gap-4">
-                      <button
-                        type="button"
-                        onClick={() => { setAiStep('editor'); setShowLibrary(true); }}
-                        className="flex-1 py-6 rounded-2xl bg-[#0a0a0a] border border-white/10 text-slate-400 font-bold hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2 group"
-                      >
-                        <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                        Manual Start
-                      </button>
-                      <button
-                        disabled={isGenerating || selectedArchetypes.length === 0}
-                        onClick={handleAIGenerate}
-                        className="flex-[2] py-6 rounded-2xl bg-white text-black font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(255,255,255,0.1)] group disabled:bg-slate-300 disabled:cursor-not-allowed"
-                      >
-                        {isGenerating ? (
-                          <>
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                            Persona Engine Visiting Site...
-                          </>
-                        ) : (
-                          <>
-                            Generate AI Cohort
-                            <ChevronRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
+                <div className="space-y-2 text-center">
+                  <h2 className="text-xl font-bold text-white uppercase tracking-tighter">
+                    {isAnalyzing ? 'Scanning your site...' : 'Crafting your cohort...'}
+                  </h2>
+                  <p className="text-slate-500 text-sm">
+                    {isAnalyzing
+                      ? `Analyzing ${(() => { try { return new URL(url).hostname; } catch { return url; } })()} to understand your audience`
+                      : 'Generating personas based on your site context'}
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setStep(1)}
                 className="w-full pt-4 text-slate-600 text-[10px] font-bold uppercase tracking-widest hover:text-slate-400 transition-colors"
               >
-                ← Back to Target Configuration
+                ← Cancel
               </button>
             </div>
           ) : (
@@ -603,10 +586,10 @@ export default function NewTestRunPage() {
                   </div>
 
                   <button
-                    onClick={() => setAiStep('selection')}
+                    onClick={() => { setAiStep('pending'); autoGenerateCohort(true); }}
                     className="w-full py-4 text-indigo-500/60 text-[10px] font-bold uppercase tracking-widest hover:text-indigo-400 transition-colors"
                   >
-                    ← Back to AI Generation
+                    ↺ Regenerate Cohort
                   </button>
                 </div>
 
@@ -707,7 +690,7 @@ export default function NewTestRunPage() {
                 </div>
               </div>
 
-              <div className="w-full flex flex-col gap-4 pt-10">
+              <div className="w-full flex flex-col gap-4 pt-2">
                 {error && (
                   <div className="w-full p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium animate-in fade-in slide-in-from-top-2">
                     {error}
@@ -716,7 +699,7 @@ export default function NewTestRunPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     disabled={isLaunching}
-                    onClick={() => setStep(1)}
+                    onClick={() => { setStep(1); setAiStep('pending'); setError(null); }}
                     className="px-10 py-6 rounded-2xl bg-[#0a0a0a] border border-white/5 text-white font-bold hover:bg-white/5 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                   >
                     Back
