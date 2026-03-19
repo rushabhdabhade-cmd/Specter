@@ -23,9 +23,9 @@ export class BrowserService {
 
     async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
-            this.stagehand = new Stagehand({
-                env: 'LOCAL',
-                apiKey: process.env.BROWSERBASE_API_KEY,
+            const useBrowserBase = !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
+            const stagehandConfig: any = {
+                env: useBrowserBase ? 'BROWSERBASE' : 'LOCAL',
                 verbose: 0,               // quiet — we log our own events
                 disableAPI: true,
                 model: {
@@ -34,11 +34,19 @@ export class BrowserService {
                         ? (apiKey || process.env.GEMINI_API_KEY)
                         : (apiKey || process.env.OPENAI_API_KEY),
                 },
-                localBrowserLaunchOptions: {
+            };
+
+            if (useBrowserBase) {
+                stagehandConfig.apiKey = process.env.BROWSERBASE_API_KEY;
+                stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
+            } else {
+                stagehandConfig.localBrowserLaunchOptions = {
                     headless: true,
                     viewport: { width: 1280, height: 800 }
-                }
-            });
+                };
+            }
+
+            this.stagehand = new Stagehand(stagehandConfig);
 
             console.log('🎬 Initializing Stagehand...');
             await this.stagehand.init();
