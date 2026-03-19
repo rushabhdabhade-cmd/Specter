@@ -163,9 +163,8 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
       </div>
 
       {/* ── Hero Stats ────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'UX Score', value: uxScore, icon: TrendingUp, color: uxScore >= 75 ? '#10b981' : uxScore >= 50 ? '#f59e0b' : '#ef4444', unit: '/100' },
           { label: 'Friction', value: frictionLevel, icon: Activity, color: frictionLevel === 'Low' ? '#10b981' : frictionLevel === 'Medium' ? '#f59e0b' : frictionLevel === 'N/A' ? '#64748b' : '#ef4444', isStatus: true },
           { label: 'Sessions', value: sessions?.length || 0, icon: Users, color: '#6366f1' },
           { label: 'Total Steps', value: totalLogs, icon: Zap, color: '#f59e0b' },
@@ -175,7 +174,6 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">{stat.label}</p>
             <div className="flex items-end justify-center gap-1">
               <span className={`${stat.isStatus ? 'text-2xl' : 'text-4xl'} font-black tracking-tighter leading-none`} style={{ color: stat.color }}>{stat.value}</span>
-              {stat.unit && <span className="text-slate-600 font-bold text-sm mb-1">{stat.unit}</span>}
             </div>
           </div>
         ))}
@@ -195,7 +193,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
         {/* Synthesis Markdown */}
         {report?.executive_summary ? (
-          <div className="rounded-3xl md:rounded-[40px] border border-white/5 bg-[#0a0a0a] p-5 md:p-10 prose prose-invert max-w-none shadow-2xl prose-pre:whitespace-pre-wrap break-words">
+          <div className="rounded-3xl md:rounded-[40px] border border-white/5 bg-[#0a0a0a] p-5 md:p-5 pb-3 prose prose-invert max-w-none shadow-2xl prose-pre:whitespace-pre-wrap break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {report.executive_summary.replace(/^#+\s*STRATEGIC\s*SUMMARY\s*\n+/i, '')}
             </ReactMarkdown>

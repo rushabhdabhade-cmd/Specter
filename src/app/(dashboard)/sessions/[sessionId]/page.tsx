@@ -33,9 +33,11 @@ export default function SessionPage() {
     const sessionId = params.sessionId as string;
     const [session, setSession] = useState<any>(null);
     const [logs, setLogs] = useState<any[]>([]);
+    const [terminalLines, setTerminalLines] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const terminalEndRef = useRef<HTMLDivElement>(null);
     const { getToken } = useAuth();
 
     // Auto-redirect to report when completed
@@ -84,6 +86,9 @@ export default function SessionPage() {
 
             setSession(sessionData);
             setLogs(logData || []);
+            if (sessionData?.live_status) {
+                setTerminalLines([sessionData.live_status]);
+            }
             setLoading(false);
 
             // Subscribe to session updates
@@ -96,6 +101,12 @@ export default function SessionPage() {
                     filter: `id=eq.${sessionId}`
                 }, (payload) => {
                     setSession((prev: any) => ({ ...prev, ...payload.new }));
+                })
+                .on('broadcast', { event: 'log' }, (payload: any) => {
+                    const message = payload.payload?.message;
+                    if (message) {
+                        setTerminalLines(prev => [...prev, message]);
+                    }
                 })
                 .subscribe();
 
@@ -124,6 +135,10 @@ export default function SessionPage() {
     useEffect(() => {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [logs]);
+
+    useEffect(() => {
+        terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [terminalLines]);
 
     if (loading) return (
         <div className="flex items-center justify-center p-20 animate-pulse text-slate-500 font-bold uppercase tracking-widest text-xs">
@@ -453,6 +468,36 @@ export default function SessionPage() {
                             <div ref={logsEndRef} />
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* Live Diagnostics Terminal */}
+            <div className="rounded-[40px] border border-white/5 bg-[#080808] p-8 space-y-4 shadow-2xl relative overflow-hidden group/terminal backdrop-blur-3xl">
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
+                
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                            <Terminal className="h-5 w-5 text-emerald-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black tracking-tight text-white uppercase italic">Live Diagnostics Stream</h3>
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Zero-latency Ephemeral Console Buffer</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-4 bg-[#040404] rounded-3xl p-6 font-mono text-xs text-emerald-400/90 space-y-1.5 h-44 overflow-y-auto custom-scrollbar border border-white/5 shadow-inner">
+                    {terminalLines.map((line, i) => (
+                        <div key={i} className="flex items-start gap-2 animate-in fade-in slide-in-from-left-1 duration-300">
+                            <span className="text-emerald-500/60 font-black">📡</span>
+                            <span className="leading-relaxed break-all font-medium">{line}</span>
+                        </div>
+                    ))}
+                    {terminalLines.length === 0 && (
+                        <p className="text-slate-600 font-medium italic animate-pulse">Waiting for diagnostic stream outputs...</p>
+                    )}
+                    <div ref={terminalEndRef} />
                 </div>
             </div>
 

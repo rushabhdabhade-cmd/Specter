@@ -116,33 +116,7 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
                     </div>
                 </div>
 
-                {/* Broken Links List */}
-                <div className={`rounded-[40px] border border-white/5 bg-[#0a0a0a] shadow-2xl lg:col-span-2 ${(data.brokenLinks?.length || 0) > 0 ? 'p-8 space-y-6' : 'p-6 space-y-3'}`}>
-                    <div className="flex items-center gap-3 mb-2">
-                        <Link2Off className="h-4 w-4 text-red-400" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Network Resource Audit</span>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {data.brokenLinks?.length > 0 ? data.brokenLinks.map((item, i) => {
-                            if (!item) return null;
-                            return (
-                                <div key={i} className="flex items-start gap-4 p-4 rounded-2xl bg-red-500/[0.02] border border-red-500/10 group hover:border-red-500/30 transition-all">
-                                    <AlertCircle className="h-4 w-4 text-red-500 mt-1 flex-shrink-0" />
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-bold text-red-400">{item.error || '404 - Not Found'}</p>
-                                        <p className="text-[10px] font-mono text-slate-500 truncate max-w-[400px]">{item.url}</p>
-                                    </div>
-                                </div>
-                            );
-                        }) : (
-                            <div className="flex items-center justify-center py-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl gap-2 col-span-2 mt-1">
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">All network resources resolving</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
             </div>
         </div>
     );

@@ -60,7 +60,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
                                     href="/dashboard"
                                     className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all"
                                 >
-                                    Console
+                                    Dashboard
                                 </Link>
                                 <UserButton appearance={{ elements: { userButtonAvatarBox: 'h-8 w-8 rounded-lg' } }} />
                             </div>

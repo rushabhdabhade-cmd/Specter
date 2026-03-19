@@ -21,6 +21,7 @@ export class Orchestrator {
     private browser: BrowserService;
     private llm!: LLMService;
     private supabase = createAdminClient();
+    private channel: any;
 
     // Step log buffer — flushed in batches to reduce DB round-trips
     private logBuffer: any[] = [];
@@ -42,6 +43,8 @@ export class Orchestrator {
 
     async runSession(sessionId: string, url: string, persona: PersonaProfile) {
         console.log(`🚀 Session ${sessionId} | ${persona.name} | ${url}`);
+        this.channel = this.supabase.channel(`terminal_${sessionId}`).subscribe();
+        
         let testRunId: string | undefined;
         const MAX_RETRIES = 2;
 
@@ -109,6 +112,8 @@ export class Orchestrator {
 
             } catch (err: any) {
                 console.error(`❌ Session ${sessionId} attempt ${attempt} failed:`, err.message);
+                this.updateLiveStatus(sessionId, `❌ Error: ${err.message}`);
+                
                 if (attempt < MAX_RETRIES) {
                     await this.browser.close().catch(() => { });
                     await this.flushLogs();
@@ -456,9 +461,19 @@ export class Orchestrator {
 
     private updateLiveStatus(sessionId: string, status: string) {
         console.log(`📡 [${sessionId.slice(0, 8)}] ${status}`);
-        // Fire-and-forget — don't block the hot path
+        
+        // 1. Existing DB update
         void (this.supabase.from('persona_sessions') as any)
             .update({ live_status: status }).eq('id', sessionId);
+
+        // 2. Broadcast live diagnostics (no DB load)
+        if (this.channel) {
+            void this.channel.send({
+                type: 'broadcast',
+                event: 'log',
+                payload: { message: status, timestamp: new Date().toISOString() }
+            });
+        }
     }
 
     private async waitForStepSignal(sessionId: string): Promise<void> {

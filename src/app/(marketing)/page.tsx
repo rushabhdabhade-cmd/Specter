@@ -32,18 +32,13 @@ export default function Home() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-8 pt-10">
             <Link
-              href="/sign-up"
+              href="/dashboard"
               className="group relative flex items-center gap-4 rounded-2xl bg-white px-12 py-6 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_30px_60px_-15px_rgba(255,255,255,0.2)]"
             >
               Start Synthesis
               <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
             </Link>
-            <Link
-              href="/docs"
-              className="text-sm font-black uppercase tracking-[0.2em] text-slate-500 hover:text-white transition-all underline decoration-slate-800 underline-offset-[12px] decoration-2 hover:decoration-indigo-500"
-            >
-              Explore Cohorts
-            </Link>
+
           </div>
         </div>
 

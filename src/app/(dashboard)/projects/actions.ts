@@ -179,7 +179,7 @@ export async function suggestAudienceArchetypes(formData: {
     try {
         await browser.init("google/gemini-2.0-flash", geminiKey);
         await browser.navigate(formData.url);
-        const observation = await browser.observe([], true);
+        const observation = await browser.observe();
 
         siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
         if (observation.sections) {
@@ -254,7 +254,7 @@ export async function generateAIPersonas(formData: {
     try {
         await browser.init("google/gemini-2.0-flash", geminiKey);
         await browser.navigate(formData.url);
-        const observation = await browser.observe([], true); // Full scan
+        const observation = await browser.observe();
 
         siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
         if (observation.sections) {
@@ -276,14 +276,14 @@ export async function generateAIPersonas(formData: {
     const personas = await llm.generatePersonas(siteContext, formData.userPrompt, formData.archetypes);
     console.log(`👥 Gemini generated ${personas.length} personas.`);
 
-    const result = personas.map((p: PersonaProfile, idx: number) => ({
+    const result = personas.map((p: any, idx: number) => ({
         id: idx + 1,
-        name: p.name,
-        geolocation: p.geolocation,
-        ageRange: p.age_range,
-        techLiteracy: p.tech_literacy.charAt(0).toUpperCase() + p.tech_literacy.slice(1),
-        domainFamiliarity: p.domain_familiarity,
-        prompt: p.goal_prompt,
+        name: p.name || `Persona ${idx + 1}`,
+        geolocation: p.geolocation || 'Global',
+        ageRange: p.age_range || '25-45',
+        techLiteracy: p.tech_literacy ? (p.tech_literacy.charAt(0).toUpperCase() + p.tech_literacy.slice(1)) : 'Medium',
+        domainFamiliarity: p.domain_familiarity || 'Average',
+        prompt: p.goal_prompt || 'Explore the site',
         personaCount: 1
     }));
 
