@@ -21,13 +21,11 @@ export class BrowserService {
 
     // ─── Init ───────────────────────────────────────────────────────────────────
 
-    async init(modelName: string = 'gemini-2.0-flash', apiKey?: string) {
+    async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
             const useBrowserBase = !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
 
-            // Stagehand v3 model names don't use provider prefix — strip 'google/' if present
-            const stagehandModelName = modelName.replace(/^google\//, '');
-            const isGemini = stagehandModelName.includes('gemini');
+            const isGemini = modelName.includes('gemini');
             const resolvedApiKey = isGemini
                 ? (apiKey || process.env.GEMINI_API_KEY)
                 : (apiKey || process.env.OPENAI_API_KEY);
@@ -37,7 +35,7 @@ export class BrowserService {
                 verbose: 0,
                 disableAPI: true,
                 model: {
-                    modelName: stagehandModelName,
+                    modelName,
                     apiKey: resolvedApiKey,
                 },
             };
