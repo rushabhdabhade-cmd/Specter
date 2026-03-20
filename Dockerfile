@@ -13,7 +13,16 @@ RUN pnpm install --frozen-lockfile
 # Copy full source
 COPY . .
 
-# Build Next.js (output: standalone)
+# Declare build-time args for NEXT_PUBLIC vars (Railway passes these automatically)
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+
+# Expose them as ENV so Next.js can bake them into the bundle during build
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+
 RUN pnpm build
 
 ENV NODE_ENV=production
