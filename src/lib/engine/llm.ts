@@ -501,6 +501,11 @@ export class OpenRouterProvider implements LLMProvider {
         return content;
     }
 
+    private isNoVisionError(err: any): boolean {
+        const msg: string = err?.message ?? '';
+        return (err?.status === 404 || err?.code === 404) && msg.toLowerCase().includes('image input');
+    }
+
     private async withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
         for (let attempt = 0; attempt <= retries; attempt++) {
             try {
@@ -527,20 +532,33 @@ export class OpenRouterProvider implements LLMProvider {
         triedElements: string[] = []
     ): Promise<Action> {
         const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
-        const response = await this.withRetry(() => this.client.chat.completions.create({
+        const makeRequest = (withImage: boolean) => this.client.chat.completions.create({
             model: this.modelName,
             max_tokens: 600,
             messages: [
                 { role: 'system', content: 'Synthetic UX persona. Return ONLY valid JSON. No markdown.' },
                 {
-                    role: 'user', content: [
-                        { type: 'text', text: prompt },
-                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}`, detail: 'low' } }
-                    ]
+                    role: 'user', content: withImage
+                        ? [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}`, detail: 'low' } }
+                        ]
+                        : prompt
                 }
             ],
             response_format: { type: 'json_object' }
-        }));
+        });
+
+        let response: any;
+        try {
+            response = await this.withRetry(() => makeRequest(true));
+        } catch (err: any) {
+            if (this.isNoVisionError(err)) {
+                console.warn(`⚠️ Model ${this.modelName} doesn't support vision — retrying text-only`);
+                response = await this.withRetry(() => makeRequest(false));
+            } else throw err;
+        }
+
         const action = JSON.parse(this.getContent(response));
         if (!Array.isArray(action.possible_paths)) {
             action.possible_paths = typeof action.possible_paths === 'string' ? [action.possible_paths] : [];
@@ -555,22 +573,36 @@ export class OpenRouterProvider implements LLMProvider {
         persona: PersonaProfile
     ): Promise<PageScanAnalysis> {
         const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
-        const content: any[] = [{ type: 'text', text: prompt }];
-        for (const section of sections) {
-            content.push({
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' }
+        const makeRequest = (withImages: boolean) => {
+            const content: any[] = [{ type: 'text', text: prompt }];
+            if (withImages) {
+                for (const section of sections) {
+                    content.push({
+                        type: 'image_url',
+                        image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' }
+                    });
+                }
+            }
+            return this.client.chat.completions.create({
+                model: this.modelName,
+                max_tokens: 1000,
+                messages: [
+                    { role: 'system', content: 'UX auditor. Return ONLY valid JSON. No markdown.' },
+                    { role: 'user', content: withImages ? content : prompt }
+                ],
+                response_format: { type: 'json_object' }
             });
+        };
+
+        let response: any;
+        try {
+            response = await this.withRetry(() => makeRequest(true));
+        } catch (err: any) {
+            if (this.isNoVisionError(err)) {
+                console.warn(`⚠️ Model ${this.modelName} doesn't support vision — retrying text-only`);
+                response = await this.withRetry(() => makeRequest(false));
+            } else throw err;
         }
-        const response = await this.withRetry(() => this.client.chat.completions.create({
-            model: this.modelName,
-            max_tokens: 1000,
-            messages: [
-                { role: 'system', content: 'UX auditor. Return ONLY valid JSON. No markdown.' },
-                { role: 'user', content }
-            ],
-            response_format: { type: 'json_object' }
-        }));
         try {
             return JSON.parse(this.getContent(response));
         } catch {
