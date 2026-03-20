@@ -140,7 +140,11 @@ export async function createTestRun(formData: {
             } as any;
 
             console.log(`🚀 Launching Orchestrator for session ${session.id}...`);
-            orchestrator.runSession(session.id, formData.url, personaProfile).catch((err: any) => {
+            orchestrator.runSession(session.id, formData.url, personaProfile, {
+                provider: formData.llmProvider,
+                apiKey: llmApiKey,
+                modelName: formData.llmModelName,
+            }).catch((err: any) => {
                 console.error(`❌ Autonomous session ${session.id} failed:`, err);
             });
         }

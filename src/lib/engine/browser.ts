@@ -44,6 +44,8 @@ export class BrowserService {
             if (useBrowserBase) {
                 stagehandConfig.apiKey = process.env.BROWSERBASE_API_KEY;
                 stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
+                // 30 min timeout — enough for 15-page traversal with LLM inference
+                stagehandConfig.browserbaseSessionCreateParams = { timeout: 1800 };
             } else {
                 // Resolve the Playwright Chromium path so chrome-launcher can find it
                 // in Docker/Railway where Chrome isn't at a standard system path
