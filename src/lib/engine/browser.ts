@@ -1,5 +1,6 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
+import { chromium } from 'playwright-core';
 
 // Interactive roles worth sending to the LLM — everything else is structural noise
 const INTERACTIVE_ROLES = new Set([
@@ -44,8 +45,17 @@ export class BrowserService {
                 stagehandConfig.apiKey = process.env.BROWSERBASE_API_KEY;
                 stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
             } else {
+                // Resolve the Playwright Chromium path so chrome-launcher can find it
+                // in Docker/Railway where Chrome isn't at a standard system path
+                let executablePath: string | undefined;
+                try {
+                    executablePath = chromium.executablePath();
+                } catch {
+                    // Falls back to chrome-launcher's auto-discovery (local dev)
+                }
                 stagehandConfig.localBrowserLaunchOptions = {
                     headless: true,
+                    executablePath,
                     viewport: { width: 1280, height: 800 }
                 };
             }

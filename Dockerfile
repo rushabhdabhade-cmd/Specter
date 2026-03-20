@@ -1,4 +1,4 @@
-# Microsoft's official Playwright image — Node.js + Chromium + all system deps pre-installed
+# Microsoft's official Playwright image — Node.js + all system browser deps pre-installed
 FROM mcr.microsoft.com/playwright:v1.50.0-noble
 
 WORKDIR /app
@@ -9,6 +9,10 @@ RUN npm install -g pnpm
 # Install dependencies first (better layer caching)
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
+
+# Install the Chromium version that matches the playwright package in node_modules
+# (the base image ships v1.50 Chromium; our package.json may pin a different version)
+RUN npx playwright install --with-deps chromium
 
 # Copy full source
 COPY . .
