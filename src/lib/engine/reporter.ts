@@ -29,8 +29,8 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         .maybeSingle();
 
     const PLACEHOLDER_MARKERS = [
-        '*AI synthesis unavailable*',
-        '*AI synthesis failed',
+        'AI synthesis unavailable',
+        'AI synthesis failed',
         'Synthesis in progress'
     ];
 
@@ -128,14 +128,19 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
     let actionItems: any[] = [];
     let feedbackSummary: string | null = null;
 
-    if (project?.llm_provider) {
-        let apiKey: string | undefined;
-        if (project.encrypted_llm_key) {
+    // Report synthesis always uses Gemini (free, text-only) with the env key.
+    // We never use the project's OpenRouter/custom key here — it may be a
+    // vision-only budget key that fails on text-only synthesis endpoints.
+    const geminiEnvKey = process.env.GEMINI_API_KEY;
+    if (geminiEnvKey || project?.llm_provider === 'openai') {
+        let apiKey: string | undefined = geminiEnvKey;
+        const synthProvider: 'gemini' | 'openai' = project?.llm_provider === 'openai' ? 'openai' : 'gemini';
+
+        // For OpenAI projects, fall back to their stored key if no Gemini env key
+        if (synthProvider === 'openai' && !apiKey && project?.encrypted_llm_key) {
             try { apiKey = decrypt(project.encrypted_llm_key); } catch (_) { }
         }
 
-        // Always use Gemini flash or gpt-4o-mini for text synthesis (free/cheap)
-        const synthProvider = project.llm_provider === 'openai' ? 'openai' : 'gemini';
         const llm = new LLMService({ provider: synthProvider, apiKey });
 
         // Main synthesis
@@ -163,8 +168,9 @@ Max 5 items.`;
             console.log(`🤖 Synthesizing report with ${synthProvider}...`);
             aiSynthesis = await llm.generateSummary(synthesisPrompt);
             console.log('✅ Synthesis complete.');
-        } catch (err) {
-            console.error('❌ Synthesis failed:', err);
+        } catch (err: any) {
+            console.error('❌ Synthesis failed:', err?.message ?? err);
+            aiSynthesis = `### Summary\n${sessions.length} personas tested. ${completedCount} completed. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis failed: ${err?.message ?? 'unknown error'}*`;
         }
 
         // Parse action items
