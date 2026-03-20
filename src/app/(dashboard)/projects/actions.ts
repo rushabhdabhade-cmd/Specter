@@ -181,7 +181,7 @@ export async function suggestAudienceArchetypes(formData: {
     let siteContext = "";
 
     try {
-        await browser.init("google/gemini-2.0-flash", process.env.GEMINI_API_KEY);
+        await browser.init("gemini-2.0-flash", process.env.GEMINI_API_KEY);
         await browser.navigate(formData.url);
         const observation = await browser.observe();
 
@@ -253,7 +253,7 @@ export async function generateAIPersonas(formData: {
     let siteContext = "";
 
     try {
-        await browser.init("google/gemini-2.0-flash", process.env.GEMINI_API_KEY);
+        await browser.init("gemini-2.0-flash", process.env.GEMINI_API_KEY);
         await browser.navigate(formData.url);
         const observation = await browser.observe();
 

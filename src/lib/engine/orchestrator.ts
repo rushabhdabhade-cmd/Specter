@@ -92,8 +92,8 @@ export class Orchestrator {
                 // OpenRouter users: Stagehand still uses Gemini via env key (OpenRouter key is for reasoning only).
                 const stagehandModel =
                     provider === 'openai' ? 'gpt-4o' :
-                        provider === 'openrouter' ? 'google/gemini-2.0-flash' :
-                            provider === 'gemini' ? 'google/gemini-2.0-flash' : 'gpt-4o';
+                        provider === 'openrouter' ? 'gemini-2.0-flash' :
+                            provider === 'gemini' ? 'gemini-2.0-flash' : 'gpt-4o';
 
                 const stagehandApiKey = provider === 'openrouter'
                     ? (process.env.GEMINI_API_KEY || apiKey)
