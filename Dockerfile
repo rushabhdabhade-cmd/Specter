@@ -17,9 +17,8 @@ COPY . .
 RUN pnpm build
 
 ENV NODE_ENV=production
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
 
-EXPOSE 3000
+# Railway injects PORT automatically — do not hardcode it
+# Next.js reads $PORT and listens on whatever Railway assigns
 
 CMD ["pnpm", "start"]
