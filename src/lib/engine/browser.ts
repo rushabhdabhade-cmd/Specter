@@ -14,6 +14,7 @@ export class BrowserService {
     private page: any = null;
     private savedConfig: any = null;       // saved for reconnect
     private lastKnownUrl: string = '';     // last navigated URL, restored after reconnect
+    private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -42,6 +43,7 @@ export class BrowserService {
 
     private async reconnect(): Promise<void> {
         console.warn('CDP dropped — reconnecting to Browserless...');
+        this.stopKeepalive();
         try { await this.stagehand?.close(); } catch { /* already dead */ }
         this.stagehand = null;
         this.page = null;
@@ -171,6 +173,31 @@ export class BrowserService {
 
         if (!this.page) throw new Error('Stagehand failure: Page object not found.');
         await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+
+        this.startKeepalive();
+    }
+
+    // ─── Keepalive — prevents Railway proxy from dropping idle WebSocket ─────────
+
+    private startKeepalive() {
+        this.stopKeepalive();
+        // Only needed when using a remote browser over WebSocket (Browserless/Browserbase)
+        if (!this.savedConfig?.localBrowserLaunchOptions?.cdpUrl && this.savedConfig?.env !== 'BROWSERBASE') return;
+
+        this.keepaliveTimer = setInterval(async () => {
+            try {
+                if (this.page) await this.page.evaluate(() => 1);
+            } catch {
+                // Silently swallow — withReconnect on the next real call will handle recovery
+            }
+        }, 25_000); // 25s — well under Railway's ~60s idle timeout
+    }
+
+    private stopKeepalive() {
+        if (this.keepaliveTimer) {
+            clearInterval(this.keepaliveTimer);
+            this.keepaliveTimer = null;
+        }
     }
 
     // ─── Network ────────────────────────────────────────────────────────────────
@@ -547,6 +574,7 @@ export class BrowserService {
     }
 
     async close() {
+        this.stopKeepalive();
         if (this.stagehand) await this.stagehand.close().catch(() => { });
         this.page = null;
         this.stagehand = null;
