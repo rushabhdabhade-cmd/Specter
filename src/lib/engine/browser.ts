@@ -12,8 +12,6 @@ const INTERACTIVE_ROLES = new Set([
 export class BrowserService {
     private stagehand: Stagehand | null = null;
     private page: any = null;
-    private cdpBrowser: any = null;       // non-null only in Browserless mode
-    private activeContext: any = null;    // Playwright context used for page-count tracking
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -49,9 +47,18 @@ export class BrowserService {
                 stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
                 // 30 min timeout — enough for 15-page traversal with LLM inference
                 stagehandConfig.browserbaseSessionCreateParams = { timeout: 1800 };
+            } else if (useBrowserless) {
+                // Pass cdpUrl directly — Stagehand connects to Browserless natively.
+                // No local Chromium binary needed on the app server.
+                const wsUrl = process.env.BROWSERLESS_WS_URL!;
+                console.log(`🔌 Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
+                stagehandConfig.localBrowserLaunchOptions = {
+                    cdpUrl: wsUrl,
+                    viewport: { width: 1280, height: 800 },
+                    ignoreHTTPSErrors: true,
+                };
             } else {
-                // Resolve the Playwright Chromium path so chrome-launcher can find it
-                // in Docker/Railway where Chrome isn't at a standard system path
+                // LOCAL: launch Playwright's bundled Chromium directly on this machine
                 let executablePath: string | undefined;
                 try {
                     executablePath = chromium.executablePath();
@@ -70,63 +77,33 @@ export class BrowserService {
             console.log('🎬 Initializing Stagehand...');
             await this.stagehand.init();
 
-            if (useBrowserless) {
-                // ── Browserless (self-hosted) mode ────────────────────────────────
-                // Stagehand is initialized (AI model ready) but we replace its browser
-                // with a fresh CDP connection to the external Browserless container.
-                const wsUrl = process.env.BROWSERLESS_WS_URL!;
-                console.log(`🔌 Connecting to Browserless: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
+            const context = (this.stagehand as any).context;
+            if (!context) throw new Error('Stagehand failure: Context not found after init.');
 
-                this.cdpBrowser = await chromium.connectOverCDP(wsUrl);
-                const cdpContext = await this.cdpBrowser.newContext({
-                    viewport: { width: 1280, height: 800 },
-                    ignoreHTTPSErrors: true,
-                });
-                this.activeContext = cdpContext;
-                this.page = await cdpContext.newPage();
+            const allPages = context.pages ? context.pages() : [];
+            this.page = (context.activePage ? context.activePage() : null) || allPages[0];
 
-                this.attachNetworkListeners(cdpContext);
-                cdpContext.on('page', async (newPage: any) => {
-                    console.log(`✨ New tab (CDP): ${newPage.url()}. Switching...`);
+            if (!this.page) {
+                console.log('🚀 Forcing newPage()...');
+                this.page = await context.newPage();
+            }
+
+            const pwContext = this.page?.context ? this.page.context() : context;
+            if (pwContext && typeof pwContext.on === 'function') {
+                this.attachNetworkListeners(pwContext);
+                pwContext.on('page', async (newPage: any) => {
+                    console.log(`✨ New tab: ${newPage.url()}. Switching...`);
                     this.page = newPage;
                     await newPage.bringToFront().catch(() => { });
                     await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
                 });
-
-                console.log('✅ Browserless CDP connection ready.');
-            } else {
-                // ── Browserbase or LOCAL mode ──────────────────────────────────────
-                const context = (this.stagehand as any).context;
-                if (!context) throw new Error('Stagehand failure: Context not found after init.');
-
-                this.activeContext = context;
-
-                const allPages = context.pages ? context.pages() : [];
-                this.page = (context.activePage ? context.activePage() : null) || allPages[0];
-
-                if (!this.page) {
-                    console.log('🚀 Forcing newPage()...');
-                    this.page = await context.newPage();
-                }
-
-                const pwContext = this.page?.context ? this.page.context() : context;
-                if (pwContext && typeof pwContext.on === 'function') {
-                    this.attachNetworkListeners(pwContext);
-                    pwContext.on('page', async (newPage: any) => {
-                        console.log(`✨ New tab: ${newPage.url()}. Switching...`);
-                        this.page = newPage;
-                        await newPage.bringToFront().catch(() => { });
-                        await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
-                    });
-                }
-
-                console.log('✅ Stagehand ready.');
             }
 
-            if (!this.page) throw new Error('Browser init failure: Page object not found.');
+            if (!this.page) throw new Error('Stagehand failure: Page object not found.');
             await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+            console.log('✅ Stagehand ready.');
         } catch (err: any) {
-            console.error('❌ Browser init failed:', err.message);
+            console.error('❌ Stagehand init failed:', err.message);
             throw err;
         }
     }
@@ -361,7 +338,7 @@ export class BrowserService {
         if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
 
         const oldUrl = this.page.url();
-        const oldPageCount = this.activeContext?.pages?.()?.length ?? 1;
+        const oldPageCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
 
         try {
             switch (action.type) {
@@ -379,9 +356,9 @@ export class BrowserService {
                     // Wait for navigation or new tab
                     for (let i = 0; i < 5; i++) {
                         await this.page.waitForTimeout(800);
-                        const newCount = this.activeContext?.pages?.()?.length ?? 1;
+                        const newCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
                         if (newCount > oldPageCount) {
-                            const pages = this.activeContext.pages();
+                            const pages = (this.stagehand as any).context.pages();
                             this.page = pages[pages.length - 1];
                             await this.page.bringToFront?.().catch(() => { });
                             break;
@@ -415,7 +392,7 @@ export class BrowserService {
         }
 
         const newUrl = this.page.url();
-        const newPageCount = this.activeContext?.pages?.()?.length ?? 1;
+        const newPageCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
             await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
         }
@@ -489,11 +466,8 @@ export class BrowserService {
 
     async close() {
         if (this.stagehand) await this.stagehand.close().catch(() => { });
-        if (this.cdpBrowser) await this.cdpBrowser.close().catch(() => { });
         this.page = null;
         this.stagehand = null;
-        this.cdpBrowser = null;
-        this.activeContext = null;
     }
 
     getMetrics(): HeuristicMetrics {

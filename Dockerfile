@@ -1,13 +1,8 @@
+# Lightweight Node.js image — no local Chromium needed.
+# Production uses Browserless (separate Railway service) via BROWSERLESS_WS_URL.
 FROM node:20-slim
 
 WORKDIR /app
-
-# System deps required by Playwright's bundled Chromium
-RUN apt-get update && apt-get install -y \
-    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-    libgbm1 libasound2 libpango-1.0-0 libcairo2 \
-    --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm
 RUN npm install -g pnpm
@@ -15,9 +10,6 @@ RUN npm install -g pnpm
 # Install dependencies first (better layer caching)
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
-
-# Download Playwright's bundled Chromium (used by Stagehand LOCAL init)
-RUN pnpm exec playwright install chromium
 
 # Copy full source
 COPY . .

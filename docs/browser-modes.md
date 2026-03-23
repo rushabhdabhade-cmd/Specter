@@ -30,15 +30,13 @@ Browserless runs as a separate Docker container exposing a CDP WebSocket.
    BROWSERLESS_WS_URL=wss://browserless-xyz.railway.app?token=<your-secret-token>
    ```
 
-### Local dev setup
+### Local dev
 
+Do **not** set `BROWSERLESS_WS_URL` in `.env.local`. The engine falls through to LOCAL mode automatically, launching a headless Playwright Chromium on your machine.
+
+Run once after cloning to download the browser binary:
 ```bash
-docker compose up -d        # starts Browserless on localhost:3000
-```
-
-Add to `.env.local`:
-```
-BROWSERLESS_WS_URL=ws://localhost:3000?token=localdev
+pnpm exec playwright install chromium
 ```
 
 ---
