@@ -13,11 +13,13 @@ export async function DELETE(
     const supabase = createAdminClient();
 
     // Verify ownership before deleting
-    const { data: testRun } = await supabase
+    type TestRunRow = { id: string; project: { user_id: string } | { user_id: string }[] };
+    const result = await (supabase
         .from('test_runs')
         .select('id, project:projects!inner(user_id)')
         .eq('id', testRunId)
-        .single();
+        .single() as unknown as Promise<{ data: TestRunRow | null }>);
+    const testRun = result.data;
 
     const project = Array.isArray(testRun?.project) ? testRun.project[0] : testRun?.project;
     if (!testRun || project?.user_id !== userId) {

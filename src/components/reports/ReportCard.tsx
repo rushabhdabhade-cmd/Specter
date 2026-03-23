@@ -90,9 +90,7 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-slate-500 group-hover:scale-110 group-hover:text-indigo-400 transition-all duration-500">
-                            <BarChart3 className="h-8 w-8" />
-                        </div>
+
                     </div>
 
                     {/* Metrics */}
@@ -131,7 +129,7 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                                     </div>
                                 )}
                             </div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-800 italic">
+                            <span className="text-[10px] text-white uppercase tracking-widest text-slate-800 italic">
                                 {report.sessionCount} Synthetic Agents
                             </span>
                         </div>
