@@ -3,7 +3,7 @@ import {
   ArrowRight, Zap, Target, BrainCircuit,
   ShieldCheck, Globe, Cpu, BarChart3,
   Sparkles, Layers, MousePointer2, Activity,
-  Users, Clock
+  Users, Clock, Brain, User, History, Meh
 } from 'lucide-react';
 
 export default function Home() {
@@ -42,58 +42,199 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── BROWSER MOCKUP ──────────────────────────────────────────────── */}
-        <div className="relative mt-40 w-full max-w-6xl mx-auto p-2 rounded-[48px] border border-white/10 bg-white/[0.02] backdrop-blur-3xl shadow-[0_64px_128px_-32px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-1000 delay-500">
-          <div className="rounded-[40px] overflow-hidden border border-white/5 bg-[#0a0a0a] aspect-[16/10] flex flex-col relative">
-            {/* Browser Toolbar */}
-            <div className="h-14 border-b border-white/5 bg-white/[0.02] flex items-center px-8 justify-between">
-              <div className="flex gap-2">
-                <div className="h-3 w-3 rounded-full bg-white/10" />
-                <div className="h-3 w-3 rounded-full bg-white/10" />
-                <div className="h-3 w-3 rounded-full bg-white/10" />
+        {/* ── SESSION DASHBOARD MOCKUP ─────────────────────────────────── */}
+        <div className="relative mt-10 w-full max-w-6xl mx-auto p-2 rounded-[48px] border border-white/10 bg-white/[0.02] backdrop-blur-3xl shadow-[0_64px_128px_-32px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-1000 delay-500">
+          <div className="rounded-[40px] overflow-hidden border border-white/5 bg-[#0a0a0a] aspect-[16/10] flex flex-col">
+
+            {/* Session Header Bar */}
+            <div className="h-11 border-b border-white/5 bg-white/[0.02] flex items-center px-5 gap-3 shrink-0">
+              <div className="flex gap-1.5">
+                <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
+                <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
+                <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
               </div>
-              <div className="h-7 w-96 rounded-lg bg-white/5 border border-white/5 flex items-center px-4">
-                <Globe className="h-3 w-3 text-slate-600 mr-3" />
-                <div className="h-1.5 w-40 rounded bg-white/10" />
+              <div className="h-6 w-72 rounded-md bg-white/5 border border-white/5 flex items-center px-3 gap-2">
+                <Globe className="h-2.5 w-2.5 text-slate-600 shrink-0" />
+                <span className="text-[9px] text-slate-500 font-mono truncate">specter.app · Live Session Active</span>
               </div>
-              <div className="h-3 w-3 rounded bg-white/10" />
+              <div className="ml-auto flex items-center gap-3">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[8px] font-black uppercase tracking-widest text-emerald-400">
+                  <Activity className="h-2 w-2" />
+                  Live
+                </span>
+                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-600">Skeptical Founder · Step 4</span>
+              </div>
             </div>
 
-            <div className="flex-1 flex items-center justify-center relative p-12 lg:p-24 overflow-hidden">
-              {/* Background grid effect */}
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
+            {/* Main Layout */}
+            <div className="flex-1 flex overflow-hidden">
 
-              <div className="relative z-10 flex flex-col items-center space-y-12">
-                <div className="flex justify-center -space-x-6">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <div key={i} className="h-24 w-24 rounded-[32px] border-4 border-[#0a0a0a] bg-gradient-to-br from-slate-900 to-black flex items-center justify-center shadow-2xl transition-transform hover:-translate-y-4 hover:z-20 cursor-default group/p">
-                      <BrainCircuit className="h-10 w-10 text-slate-600 group-hover:text-indigo-400 transition-colors" />
+              {/* Left: Browser Mirror */}
+              <div className="flex-[2] relative border-r border-white/5 overflow-hidden bg-[#080808]">
+                {/* Fake webpage being scanned */}
+                <div className="absolute inset-0">
+                  {/* Fake nav */}
+                  <div className="h-9 border-b border-white/5 bg-white/[0.015] flex items-center px-5 gap-5">
+                    <div className="h-3.5 w-16 rounded bg-white/15" />
+                    <div className="flex gap-3 ml-auto items-center">
+                      <div className="h-2 w-10 rounded bg-white/5" />
+                      <div className="h-2 w-10 rounded bg-white/5" />
+                      <div className="h-2 w-10 rounded bg-white/5" />
+                      <div className="h-6 w-16 rounded-lg bg-indigo-500/25 border border-indigo-500/20" />
                     </div>
-                  ))}
+                  </div>
+                  {/* Hero area */}
+                  <div className="p-6 space-y-3">
+                    <div className="h-2 w-24 rounded bg-indigo-500/20" />
+                    <div className="h-5 w-56 rounded-lg bg-white/12" />
+                    <div className="h-5 w-40 rounded-lg bg-white/8" />
+                    <div className="h-2 w-64 rounded bg-white/5" />
+                    <div className="h-2 w-48 rounded bg-white/5" />
+                    <div className="flex gap-2.5 mt-3">
+                      <div className="h-8 w-24 rounded-xl bg-white/15 border border-white/10" />
+                      <div className="h-8 w-20 rounded-xl bg-white/5 border border-white/5" />
+                    </div>
+                  </div>
+                  {/* Pricing cards */}
+                  <div className="px-6 flex gap-3">
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className={`flex-1 rounded-2xl p-3 border space-y-2 ${i === 1 ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-white/[0.02] border-white/5'}`}>
+                        <div className="h-2 w-12 rounded bg-white/20" />
+                        <div className="h-4 w-16 rounded bg-white/15" />
+                        <div className="space-y-1">
+                          <div className="h-1.5 w-full rounded bg-white/5" />
+                          <div className="h-1.5 w-4/5 rounded bg-white/5" />
+                          <div className="h-1.5 w-3/5 rounded bg-white/5" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-3 text-center">
-                  <h3 className="text-3xl font-black tracking-tight text-white italic">Synthetic Cohort Active</h3>
-                  <div className="flex items-center justify-center gap-4">
-                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black uppercase tracking-widest text-emerald-400">
-                      <Activity className="h-3 w-3" />
-                      Live Stream
-                    </span>
-                    <span className="h-1 w-1 rounded-full bg-slate-800" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Collecting Behavioral Data</span>
+
+                {/* AI scanning line */}
+                <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-indigo-500/5 to-transparent animate-pulse" />
+                <div className="absolute inset-x-0 top-1/3 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+
+                {/* Monologue bubble */}
+                <div className="absolute bottom-3 left-3 right-3">
+                  <div className="p-3.5 rounded-[20px] bg-black/75 backdrop-blur-2xl border border-white/10 shadow-2xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-5 w-5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                          <Brain className="h-2.5 w-2.5 text-indigo-400" />
+                        </div>
+                        <span className="text-[7px] font-black uppercase tracking-[0.2em] text-indigo-300">Active Thought Process</span>
+                      </div>
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
+                        <Meh className="h-2.5 w-2.5 text-slate-400" />
+                        <span className="text-[7px] font-black uppercase tracking-widest text-slate-300">Neutral</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-white/90 leading-relaxed font-semibold italic">
+                      &ldquo;Pricing page loaded but I can&apos;t tell what&apos;s included in each plan at a glance. The feature comparison is buried below the fold...&rdquo;
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Floating elements */}
-              <div className="absolute top-20 right-20 h-40 w-40 rounded-full bg-indigo-500/5 blur-3xl animate-pulse" />
-              <div className="absolute bottom-20 left-20 h-40 w-40 rounded-full bg-emerald-500/5 blur-3xl" />
+              {/* Right: Persona + History */}
+              <div className="w-[36%] flex flex-col overflow-hidden">
+
+                {/* Persona Bio */}
+                <div className="p-4 border-b border-white/5 space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-7 w-7 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                      <User className="h-3.5 w-3.5 text-indigo-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-black uppercase tracking-tight text-white italic truncate">Skeptical Founder</p>
+                      <p className="text-[7px] font-black uppercase tracking-[0.2em] text-slate-600">SPECTER-A3F2</p>
+                    </div>
+                    <Sparkles className="h-3 w-3 text-indigo-500/30 animate-pulse shrink-0" />
+                  </div>
+
+                  <div className="pl-2 border-l-2 border-indigo-500/20">
+                    <p className="text-[9px] text-indigo-100/80 leading-relaxed font-semibold italic">
+                      &ldquo;Find the best pricing plan — check if there&apos;s a free tier before committing.&rdquo;
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-[7px] font-black uppercase tracking-[0.2em] text-slate-600">Tech Literacy</p>
+                    <div className="flex items-center gap-2">
+                      <div className="h-1 flex-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full w-full bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.5)]" />
+                      </div>
+                      <span className="text-[7px] text-white font-black uppercase tracking-widest">High</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between pt-1 border-t border-white/5">
+                    <div className="text-center">
+                      <p className="text-[7px] font-black uppercase tracking-[0.15em] text-slate-600">Age</p>
+                      <p className="text-[9px] text-white font-bold">30–45</p>
+                    </div>
+                    <div className="w-px bg-white/5" />
+                    <div className="text-center">
+                      <p className="text-[7px] font-black uppercase tracking-[0.15em] text-slate-600">Origin</p>
+                      <p className="text-[9px] text-white font-bold">US / SF</p>
+                    </div>
+                    <div className="w-px bg-white/5" />
+                    <div className="text-center">
+                      <p className="text-[7px] font-black uppercase tracking-[0.15em] text-slate-600">Step</p>
+                      <p className="text-[9px] text-indigo-400 font-bold">4 / 15</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Nav History Header */}
+                <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[0.01] shrink-0">
+                  <History className="h-3 w-3 text-indigo-400" />
+                  <span className="text-[7px] font-bold uppercase tracking-widest text-slate-500">Navigation History</span>
+                </div>
+
+                {/* Steps */}
+                <div className="flex-1 overflow-hidden p-3 space-y-3">
+                  {[
+                    { step: 1, type: 'system', label: 'session started', emotion: null, note: 'Mission started for Skeptical Founder.' },
+                    { step: 2, type: 'click', label: 'click', emotion: 'curiosity', note: 'Clicked "Pricing" in the top navigation bar.' },
+                    { step: 3, type: 'scroll', label: 'scroll', emotion: 'neutral', note: 'Scrolling to compare plan features and tiers.' },
+                    { step: 4, type: 'click', label: 'click', emotion: 'confusion', note: 'Tried clicking plan card — no clear CTA visible.', active: true },
+                  ].map((item) => (
+                    <div key={item.step} className="relative pl-4 border-l border-white/5">
+                      <div className={`absolute left-[-4px] top-1.5 h-2 w-2 rounded-full ${
+                        item.type === 'system' ? 'bg-slate-700' :
+                        item.emotion === 'confusion' ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]' :
+                        'bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.4)]'
+                      }`} />
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[7px] font-black uppercase tracking-widest text-slate-600">Step {item.step}</span>
+                        <span className={`text-[6px] px-1 py-0.5 rounded font-bold uppercase tracking-widest ${
+                          item.type === 'system'
+                            ? 'bg-white/5 border border-white/10 text-slate-500'
+                            : item.emotion === 'confusion'
+                            ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+                            : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400'
+                        }`}>
+                          {item.label}
+                        </span>
+                        {item.emotion && (
+                          <span className="ml-auto text-[6px] font-bold uppercase tracking-widest text-slate-600">{item.emotion}</span>
+                        )}
+                      </div>
+                      <p className="text-[8px] text-slate-500 leading-relaxed">{item.note}</p>
+                    </div>
+                  ))}
+                </div>
+
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* ── METRICS SECTION ──────────────────────────────────────────────── */}
-      <section className="relative py-40 border-y border-white/5 bg-white/[0.01]">
+      <section className="relative py-10 border-y border-white/5 bg-white/[0.01]">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-12 text-center">
             {[
@@ -117,7 +258,7 @@ export default function Home() {
       </section>
 
       {/* ── FEATURES GRID ───────────────────────────────────────────────── */}
-      <section className="px-6 py-60 bg-[#050505]">
+      <section className="px-6 py-10 bg-[#050505]">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 mb-32">
             <div className="max-w-xl space-y-6">
@@ -155,7 +296,7 @@ export default function Home() {
       </section>
 
       {/* ── INTERACTIVE STEP PREVIEW ────────────────────────────────────── */}
-      <section className="px-6 py-40">
+      <section className="px-6 py-10">
         <div className="mx-auto max-w-7xl rounded-[64px] border border-white/10 bg-gradient-to-br from-[#0d0d0d] to-black p-12 md:p-32 overflow-hidden relative">
           <div className="absolute top-0 right-0 h-full w-1/2 bg-indigo-600/5 blur-[120px] pointer-events-none" />
 
@@ -214,7 +355,7 @@ export default function Home() {
       </section>
 
       {/* ── CTA ────────────────────────────────────────────────────────── */}
-      <section className="px-6 py-60">
+      <section className="px-6 py-10">
         <div className="mx-auto max-w-5xl rounded-[64px] bg-gradient-to-br from-indigo-600 to-indigo-900 p-16 md:p-32 text-center shadow-[0_64px_128px_-32px_rgba(79,70,229,0.5)] relative overflow-hidden group">
           <div className="absolute top-0 right-0 h-full w-full bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1),transparent)]" />
           <div className="absolute -bottom-48 -left-48 h-96 w-96 bg-white/5 blur-[100px] rounded-full" />

@@ -1,5 +1,6 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
+import { chromium } from 'playwright-core';
 
 // Interactive roles worth sending to the LLM — everything else is structural noise
 const INTERACTIVE_ROLES = new Set([
@@ -23,22 +24,45 @@ export class BrowserService {
 
     async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
-            this.stagehand = new Stagehand({
-                env: 'LOCAL',
-                apiKey: process.env.BROWSERBASE_API_KEY,
-                verbose: 0,               // quiet — we log our own events
+            const useBrowserBase = !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
+
+            const isGemini = modelName.includes('gemini');
+            const resolvedApiKey = isGemini
+                ? (apiKey || process.env.GEMINI_API_KEY)
+                : (apiKey || process.env.OPENAI_API_KEY);
+
+            const stagehandConfig: any = {
+                env: useBrowserBase ? 'BROWSERBASE' : 'LOCAL',
+                verbose: 0,
                 disableAPI: true,
                 model: {
                     modelName,
-                    apiKey: (modelName.includes('google') || modelName.includes('gemini'))
-                        ? (apiKey || process.env.GEMINI_API_KEY)
-                        : (apiKey || process.env.OPENAI_API_KEY),
+                    apiKey: resolvedApiKey,
                 },
-                localBrowserLaunchOptions: {
-                    headless: true,
-                    viewport: { width: 1280, height: 800 }
+            };
+
+            if (useBrowserBase) {
+                stagehandConfig.apiKey = process.env.BROWSERBASE_API_KEY;
+                stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
+                // 30 min timeout — enough for 15-page traversal with LLM inference
+                stagehandConfig.browserbaseSessionCreateParams = { timeout: 1800 };
+            } else {
+                // Resolve the Playwright Chromium path so chrome-launcher can find it
+                // in Docker/Railway where Chrome isn't at a standard system path
+                let executablePath: string | undefined;
+                try {
+                    executablePath = chromium.executablePath();
+                } catch {
+                    // Falls back to chrome-launcher's auto-discovery (local dev)
                 }
-            });
+                stagehandConfig.localBrowserLaunchOptions = {
+                    headless: true,
+                    executablePath,
+                    viewport: { width: 1280, height: 800 }
+                };
+            }
+
+            this.stagehand = new Stagehand(stagehandConfig);
 
             console.log('🎬 Initializing Stagehand...');
             await this.stagehand.init();

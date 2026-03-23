@@ -21,19 +21,26 @@ import { TechnicalAudit } from '@/components/reports/TechnicalAudit';
 
 export default async function ReportPage({ params }: { params: Promise<{ testRunId: string }> }) {
   const { testRunId } = await params;
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  // Allow public (unauthenticated) viewing — reports are shareable by link.
+  // userId is used only to enforce ownership when the viewer is logged in.
+  const { userId } = await auth().catch(() => ({ userId: null })) as { userId: string | null };
 
   const supabase = createAdminClient();
 
   // 1. Parallel Fetching
   const [runRes, reportRes, sessionsRes] = await Promise.all([
-    supabase
-      .from('test_runs')
-      .select(`*, projects!inner(*)`)
-      .eq('id', testRunId)
-      .eq('projects.user_id', userId)
-      .single(),
+    userId
+      ? supabase
+          .from('test_runs')
+          .select(`*, projects!inner(*)`)
+          .eq('id', testRunId)
+          .eq('projects.user_id', userId)
+          .single()
+      : supabase
+          .from('test_runs')
+          .select(`*, projects(*)`)
+          .eq('id', testRunId)
+          .single(),
 
     supabase
       .from('reports')
@@ -59,7 +66,16 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
   const report = reportRes.data as any;
   const sessions = sessionsRes.data as any[] | null;
 
-  if (runError || !run) redirect('/reports');
+  // Redirect authenticated owners to their reports list on error;
+  // show a simple not-found message to public viewers.
+  if (runError || !run) {
+    if (userId) redirect('/reports');
+    return (
+      <div className="flex items-center justify-center min-h-screen text-slate-500 text-sm">
+        Report not found or access denied.
+      </div>
+    );
+  }
 
   const totalLogs = sessions?.reduce((acc: number, s: any) => acc + (s.session_logs?.length || 0), 0) || 0;
 

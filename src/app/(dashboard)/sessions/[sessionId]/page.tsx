@@ -86,12 +86,23 @@ export default function SessionPage() {
 
             setSession(sessionData);
             setLogs(logData || []);
-            if (sessionData?.live_status) {
-                setTerminalLines([sessionData.live_status]);
-            }
+
+            // Reconstruct terminal history from stored session logs
+            const historyLines = (logData || []).map((log: any) => {
+                const action = log.action_taken as any;
+                if (action?.type === 'system') {
+                    return `[SYS] ${(action.info || '').replace(/_/g, ' ').toUpperCase()}`;
+                }
+                const path = (() => { try { return new URL(log.current_url).pathname; } catch { return log.current_url || ''; } })();
+                const thought = log.inner_monologue ? ` — ${log.inner_monologue.slice(0, 90)}` : '';
+                return `[Step ${log.step_number}] ${(action?.type || 'action').toUpperCase()} ${path}${thought}`;
+            }).filter(Boolean);
+            if (sessionData?.live_status) historyLines.push(`[STATUS] ${sessionData.live_status}`);
+            setTerminalLines(historyLines);
+
             setLoading(false);
 
-            // Subscribe to session updates
+            // Subscribe to session postgres changes
             const sessionSub = authenticatedSupabase
                 .channel(`session_${sessionId}`)
                 .on('postgres_changes', {
@@ -102,10 +113,15 @@ export default function SessionPage() {
                 }, (payload) => {
                     setSession((prev: any) => ({ ...prev, ...payload.new }));
                 })
+                .subscribe();
+
+            // Subscribe to live terminal broadcast — must match orchestrator's channel name
+            const terminalSub = authenticatedSupabase
+                .channel(`terminal_${sessionId}`)
                 .on('broadcast', { event: 'log' }, (payload: any) => {
                     const message = payload.payload?.message;
                     if (message) {
-                        setTerminalLines(prev => [...prev, message]);
+                        setTerminalLines(prev => [...prev, `[LIVE] ${message}`]);
                     }
                 })
                 .subscribe();
@@ -120,11 +136,21 @@ export default function SessionPage() {
                     filter: `session_id=eq.${sessionId}`
                 }, (payload) => {
                     setLogs((prev) => [...prev, payload.new]);
+                    // Mirror new steps into terminal in real-time
+                    const log = payload.new as any;
+                    const action = log.action_taken as any;
+                    const path = (() => { try { return new URL(log.current_url).pathname; } catch { return log.current_url || ''; } })();
+                    const thought = log.inner_monologue ? ` — ${log.inner_monologue.slice(0, 90)}` : '';
+                    const line = action?.type === 'system'
+                        ? `[SYS] ${(action.info || '').replace(/_/g, ' ').toUpperCase()}`
+                        : `[Step ${log.step_number}] ${(action?.type || 'action').toUpperCase()} ${path}${thought}`;
+                    setTerminalLines(prev => [...prev, line]);
                 })
                 .subscribe();
 
             return () => {
                 authenticatedSupabase.removeChannel(sessionSub);
+                authenticatedSupabase.removeChannel(terminalSub);
                 authenticatedSupabase.removeChannel(logsSub);
             };
         }
@@ -139,6 +165,30 @@ export default function SessionPage() {
     useEffect(() => {
         terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [terminalLines]);
+
+    // ── Progress derivation ───────────────────────────────────────────────────
+    const MAX_PAGES = 15;
+    const MAX_ACTIONS_PAGE = 5;
+
+    // Parse "Page X/15: …" or "Page X | Action Y/5 | …" from live_status
+    const pageMatch = session?.live_status?.match(/Page\s+(\d+)/i);
+    const actionMatch = session?.live_status?.match(/Action\s+(\d+)\/(\d+)/i);
+    const pagesVisited = pageMatch ? parseInt(pageMatch[1], 10) : 0;
+    const currentPageAction = actionMatch ? parseInt(actionMatch[1], 10) : 0;
+
+    // Fallback: count unique page URLs from log history
+    const uniquePages = new Set(logs.map((l: any) => l.current_url).filter(Boolean)).size;
+    const effectivePages = Math.max(pagesVisited, uniquePages);
+
+    const stepsCompleted = logs.filter((l: any) => (l.action_taken as any)?.type !== 'system').length;
+    const totalCapacity = MAX_PAGES * MAX_ACTIONS_PAGE; // 75 max actions
+
+    // Overall %: weight pages 70% + actions-within-page 30%
+    const pageProgress = Math.min(effectivePages / MAX_PAGES, 1);
+    const actionProgress = effectivePages > 0 ? currentPageAction / MAX_ACTIONS_PAGE : 0;
+    const overallPct = session?.status === 'completed' ? 100
+        : session?.status === 'error' ? Math.round(pageProgress * 100)
+        : Math.min(Math.round((pageProgress * 0.7 + actionProgress * 0.3) * 100), 99);
 
     if (loading) return (
         <div className="flex items-center justify-center p-20 animate-pulse text-slate-500 font-bold uppercase tracking-widest text-xs">
@@ -207,6 +257,71 @@ export default function SessionPage() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="px-6 pb-6 space-y-3">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <BarChart3 className="h-3.5 w-3.5 text-indigo-400" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Session Progress</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest">
+                        <span className="text-slate-500">
+                            <span className="text-white">{effectivePages}</span>/{MAX_PAGES} pages
+                        </span>
+                        <span className="text-slate-500">
+                            <span className="text-white">{stepsCompleted}</span> steps
+                        </span>
+                        <span className={`text-lg font-black tabular-nums ${
+                            session?.status === 'completed' ? 'text-emerald-400' :
+                            session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
+                        }`}>{overallPct}%</span>
+                    </div>
+                </div>
+
+                {/* Track */}
+                <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden relative">
+                    {/* Pages filled */}
+                    <div
+                        className={`h-full rounded-full transition-all duration-700 ease-out ${
+                            session?.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' :
+                            session?.status === 'error'     ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]' :
+                            'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.5)]'
+                        }`}
+                        style={{ width: `${overallPct}%` }}
+                    />
+                    {/* Shimmer on active */}
+                    {session?.status === 'running' && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer" />
+                    )}
+                </div>
+
+                {/* Page tick marks */}
+                <div className="flex items-center gap-[1px]">
+                    {Array.from({ length: MAX_PAGES }).map((_, i) => (
+                        <div
+                            key={i}
+                            className={`h-1 flex-1 rounded-sm transition-all duration-500 ${
+                                i < effectivePages
+                                    ? session?.status === 'completed' ? 'bg-emerald-500/60' : 'bg-indigo-500/60'
+                                    : i === effectivePages && session?.status === 'running'
+                                    ? 'bg-indigo-500/30 animate-pulse'
+                                    : 'bg-white/5'
+                            }`}
+                        />
+                    ))}
+                </div>
+                <p className="text-[9px] text-slate-600 font-medium">
+                    {session?.status === 'completed'
+                        ? `Completed — ${stepsCompleted} total interactions across ${effectivePages} pages`
+                        : session?.status === 'error'
+                        ? 'Session ended with an error'
+                        : effectivePages === 0
+                        ? 'Starting up...'
+                        : `Exploring page ${effectivePages} of ${MAX_PAGES} — ${MAX_PAGES - effectivePages} page${MAX_PAGES - effectivePages !== 1 ? 's' : ''} remaining`
+                    }
+                </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -530,6 +645,14 @@ export default function SessionPage() {
         }
         .animate-spin-slow {
           animation: spin-slow 12s linear infinite;
+        }
+
+        @keyframes shimmer {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(100%); }
+        }
+        .animate-shimmer {
+          animation: shimmer 1.8s ease-in-out infinite;
         }
       `}</style>
         </div>

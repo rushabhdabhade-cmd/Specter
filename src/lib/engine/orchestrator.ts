@@ -41,10 +41,15 @@ export class Orchestrator {
 
     // ─── Main entry ───────────────────────────────────────────────────────────
 
-    async runSession(sessionId: string, url: string, persona: PersonaProfile) {
+    async runSession(
+        sessionId: string,
+        url: string,
+        persona: PersonaProfile,
+        llmConfig?: { provider: 'gemini' | 'openrouter' | 'ollama' | 'openai'; apiKey?: string; modelName?: string }
+    ) {
         console.log(`🚀 Session ${sessionId} | ${persona.name} | ${url}`);
         this.channel = this.supabase.channel(`terminal_${sessionId}`).subscribe();
-        
+
         let testRunId: string | undefined;
         const MAX_RETRIES = 2;
 
@@ -62,16 +67,29 @@ export class Orchestrator {
                 if (sessionError || !sessionData) throw new Error(`Failed to fetch session: ${sessionError?.message}`);
 
                 testRunId = sessionData.test_run_id;
-                const project = sessionData.persona_configs?.projects;
                 const executionMode = sessionData.execution_mode || 'autonomous';
-                const provider = project?.llm_provider || 'gemini'; // default to free Gemini
 
+                // Prefer the config passed directly (avoids stale/overwritten project data
+                // when multiple concurrent test runs share the same project row).
+                let provider: 'gemini' | 'openrouter' | 'ollama' | 'openai';
                 let apiKey: string | undefined;
-                if (project?.encrypted_llm_key) {
-                    try { apiKey = decrypt(project.encrypted_llm_key); } catch (_) { }
+                let modelName: string | undefined;
+
+                if (llmConfig) {
+                    provider = llmConfig.provider;
+                    apiKey = llmConfig.apiKey;
+                    modelName = llmConfig.modelName;
+                } else {
+                    // Fallback: read from project (legacy path)
+                    const project = sessionData.persona_configs?.projects;
+                    provider = project?.llm_provider || 'gemini';
+                    modelName = project?.llm_model_name || undefined;
+                    if (project?.encrypted_llm_key) {
+                        try { apiKey = decrypt(project.encrypted_llm_key); } catch (_) { }
+                    }
                 }
 
-                this.llm = new LLMService({ provider, apiKey });
+                this.llm = new LLMService({ provider, apiKey, modelName });
 
                 if (attempt > 1) {
                     await this.log(sessionId, url, 'neutral', 'Recovery restart after crash.', { type: 'system', info: 'session_retry' });
@@ -87,15 +105,24 @@ export class Orchestrator {
                 this.updateLiveStatus(sessionId, 'Initializing browser...');
                 await this.log(sessionId, url, 'neutral', 'Initializing browser engine.', { type: 'system', info: 'browser_init' });
 
+                // Stagehand model for browser automation — separate from the LLM reasoning model.
+                // OpenRouter users: Stagehand still uses Gemini via env key (OpenRouter key is for reasoning only).
                 const stagehandModel =
                     provider === 'openai' ? 'gpt-4o' :
-                        provider === 'anthropic' ? 'claude-3-5-sonnet-20240620' :
+                        provider === 'openrouter' ? 'google/gemini-2.0-flash' :
                             provider === 'gemini' ? 'google/gemini-2.0-flash' : 'gpt-4o';
 
-                await this.browser.init(stagehandModel, apiKey);
+                const stagehandApiKey = provider === 'openrouter'
+                    ? (process.env.GEMINI_API_KEY || apiKey)
+                    : apiKey;
+
+                await this.browser.init(stagehandModel, stagehandApiKey);
 
                 // ── 2. Serial page traversal ─────────────────────────────────
-                await this.runTraversal(sessionId, url, persona, executionMode);
+                // On retries after a BrowserBase timeout, restore already-visited
+                // pages from logs so we skip them and resume from the last page.
+                const resumeState = attempt > 1 ? await this.buildResumeState(sessionId) : null;
+                await this.runTraversal(sessionId, url, persona, executionMode, resumeState);
 
                 // ── 3. Complete ──────────────────────────────────────────────
                 await this.flushLogs(); // flush any remaining buffered logs
@@ -113,10 +140,17 @@ export class Orchestrator {
             } catch (err: any) {
                 console.error(`❌ Session ${sessionId} attempt ${attempt} failed:`, err.message);
                 this.updateLiveStatus(sessionId, `❌ Error: ${err.message}`);
-                
+
+                const isTimeout = this.isBrowserbaseTimeout(err);
+
                 if (attempt < MAX_RETRIES) {
                     await this.browser.close().catch(() => { });
                     await this.flushLogs();
+                    if (isTimeout) {
+                        await this.log(sessionId, url, 'neutral',
+                            'BrowserBase session timed out — opening a new browser session and resuming from last page.',
+                            { type: 'system', info: 'session_retry' });
+                    }
                     continue;
                 }
                 await (this.supabase.from('persona_sessions') as any).update({
@@ -132,17 +166,49 @@ export class Orchestrator {
         }
     }
 
+    // ─── BrowserBase timeout detection ────────────────────────────────────────
+
+    private isBrowserbaseTimeout(err: any): boolean {
+        const msg: string = (err?.message ?? '').toLowerCase();
+        return msg.includes('timed out') || msg.includes('socket-close') || msg.includes('cdp transport closed');
+    }
+
+    // ─── Resume state reconstruction ──────────────────────────────────────────
+
+    private async buildResumeState(sessionId: string): Promise<{ visited: Set<string>; resumeUrl: string | null }> {
+        const { data: logs } = await (this.supabase
+            .from('session_logs') as any)
+            .select('current_url, step_number')
+            .eq('session_id', sessionId)
+            .not('current_url', 'is', null)
+            .order('step_number', { ascending: true });
+
+        const visited = new Set<string>(
+            (logs || []).map((l: any) => this.normalizeUrl(l.current_url)).filter(Boolean)
+        );
+
+        const lastLog = (logs || []).at(-1);
+        const resumeUrl = lastLog?.current_url ?? null;
+
+        console.log(`♻️  Resume: ${visited.size} pages already done, re-entering at: ${resumeUrl}`);
+        return { visited, resumeUrl };
+    }
+
     // ─── Serial traversal ─────────────────────────────────────────────────────
 
     private async runTraversal(
         sessionId: string,
         startUrl: string,
         persona: PersonaProfile,
-        executionMode: string
+        executionMode: string,
+        resume?: { visited: Set<string>; resumeUrl: string | null } | null
     ) {
-        // Serial queue: process one page at a time in discovery order
-        const queue: string[] = [startUrl];
-        const visited = new Set<string>();
+        // On resume: restore visited set and re-enter at the last page so its
+        // links get harvested and unvisited pages continue to be explored.
+        const visited = resume?.visited ?? new Set<string>();
+        const queue: string[] = resume?.resumeUrl && resume.resumeUrl !== startUrl
+            ? [resume.resumeUrl, startUrl]  // re-harvest last page first, then fall back
+            : [startUrl];
         const history: Action[] = [];
         const triedElementsOnUrl = new Map<string, Set<string>>();
         const blacklistedActions = new Set<string>();

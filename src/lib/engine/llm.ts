@@ -471,15 +471,208 @@ Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy
     }
 }
 
+// ─── OpenRouter Provider ──────────────────────────────────────────────────────
+// Unified gateway to 100+ models via OpenAI-compatible API.
+// User picks any vision model from openrouter.ai/models?input_modalities=image
+
+export class OpenRouterProvider implements LLMProvider {
+    private client: OpenAI;
+    private modelName: string;
+
+    constructor(apiKey: string, modelName: string) {
+        this.client = new OpenAI({
+            apiKey,
+            baseURL: 'https://openrouter.ai/api/v1',
+            defaultHeaders: {
+                'HTTP-Referer': 'https://specter.app',
+                'X-Title': 'Specter UX Testing'
+            }
+        });
+        this.modelName = modelName;
+    }
+
+    private getContent(res: any): string {
+        const content = res?.choices?.[0]?.message?.content;
+        if (!content) {
+            // Surface the actual error from OpenRouter if present
+            const errMsg = res?.error?.message || res?.message || 'No response from model';
+            throw new Error(`OpenRouter error: ${errMsg}`);
+        }
+        return content;
+    }
+
+    private isNoVisionError(err: any): boolean {
+        const msg: string = err?.message ?? '';
+        return (err?.status === 404 || err?.code === 404) && msg.toLowerCase().includes('image input');
+    }
+
+    private async withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                return await fn();
+            } catch (err: any) {
+                const status = err?.status ?? err?.code;
+                if (status === 429 && attempt < retries) {
+                    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                    console.warn(`⚠️ OpenRouter 429 rate limit — retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+                throw err;
+            }
+        }
+        throw new Error('Max retries exceeded');
+    }
+
+    async decideNextAction(
+        observation: Observation,
+        persona: PersonaProfile,
+        history: Action[],
+        blacklist: string[] = [],
+        triedElements: string[] = []
+    ): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
+        const makeRequest = (withImage: boolean) => this.client.chat.completions.create({
+            model: this.modelName,
+            max_tokens: 600,
+            messages: [
+                { role: 'system', content: 'Synthetic UX persona. Return ONLY valid JSON. No markdown.' },
+                {
+                    role: 'user', content: withImage
+                        ? [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${observation.screenshot}`, detail: 'low' } }
+                        ]
+                        : prompt
+                }
+            ],
+            response_format: { type: 'json_object' }
+        });
+
+        let response: any;
+        try {
+            response = await this.withRetry(() => makeRequest(true));
+        } catch (err: any) {
+            if (this.isNoVisionError(err)) {
+                console.warn(`⚠️ Model ${this.modelName} doesn't support vision — retrying text-only`);
+                response = await this.withRetry(() => makeRequest(false));
+            } else throw err;
+        }
+
+        const action = JSON.parse(this.getContent(response));
+        if (!Array.isArray(action.possible_paths)) {
+            action.possible_paths = typeof action.possible_paths === 'string' ? [action.possible_paths] : [];
+        }
+        return action;
+    }
+
+    async analyzePageSections(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile
+    ): Promise<PageScanAnalysis> {
+        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
+        const makeRequest = (withImages: boolean) => {
+            const content: any[] = [{ type: 'text', text: prompt }];
+            if (withImages) {
+                for (const section of sections) {
+                    content.push({
+                        type: 'image_url',
+                        image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' }
+                    });
+                }
+            }
+            return this.client.chat.completions.create({
+                model: this.modelName,
+                max_tokens: 1000,
+                messages: [
+                    { role: 'system', content: 'UX auditor. Return ONLY valid JSON. No markdown.' },
+                    { role: 'user', content: withImages ? content : prompt }
+                ],
+                response_format: { type: 'json_object' }
+            });
+        };
+
+        let response: any;
+        try {
+            response = await this.withRetry(() => makeRequest(true));
+        } catch (err: any) {
+            if (this.isNoVisionError(err)) {
+                console.warn(`⚠️ Model ${this.modelName} doesn't support vision — retrying text-only`);
+                response = await this.withRetry(() => makeRequest(false));
+            } else throw err;
+        }
+        try {
+            return JSON.parse(this.getContent(response));
+        } catch {
+            return {
+                sections: sections.map(s => ({
+                    label: s.label || 'Section',
+                    ux_feedback: 'Analysis unavailable',
+                    emotional_state: 'neutral',
+                    emotional_intensity: 0.3
+                })),
+                overall_emotion: 'neutral',
+                overall_intensity: 0.3,
+                page_summary: 'Analysis unavailable'
+            };
+        }
+    }
+
+    async generateSummary(prompt: string): Promise<string> {
+        const res = await this.withRetry(() => this.client.chat.completions.create({
+            model: this.modelName,
+            max_tokens: 500,
+            messages: [{ role: 'user', content: prompt }]
+        }));
+        return this.getContent(res);
+    }
+
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const res = await this.withRetry(() => this.client.chat.completions.create({
+            model: this.modelName,
+            max_tokens: 800,
+            messages: [{
+                role: 'user',
+                content: `UX Researcher. Generate 5 user persona categories for: ${siteContext}.
+Constraints: ${userPrompt || 'none'}. Archetypes: ${archetypes.join(', ')}.
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }
+Use role names not human names (e.g. "Budget Traveler", not "John Doe").`
+            }],
+            response_format: { type: 'json_object' }
+        }));
+        const parsed = JSON.parse(this.getContent(res));
+        return parsed.personas || [];
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const res = await this.withRetry(() => this.client.chat.completions.create({
+            model: this.modelName,
+            max_tokens: 400,
+            messages: [{
+                role: 'user',
+                content: `Suggest 6 user archetypes for this site. Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }
+icon_type must be one of: users, zap, user, check, globe, x, shopping-cart, home, settings
+Site: ${siteContext}`
+            }],
+            response_format: { type: 'json_object' }
+        }));
+        const parsed = JSON.parse(this.getContent(res));
+        return parsed.archetypes || [];
+    }
+}
+
 // ─── LLMService facade ────────────────────────────────────────────────────────
 
 export class LLMService {
     private provider: LLMProvider;
 
-    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai'; apiKey?: string }) {
+    constructor(config?: { provider: 'ollama' | 'gemini' | 'openai' | 'openrouter'; apiKey?: string; modelName?: string }) {
         const type = config?.provider || 'gemini'; // Default to Gemini (free tier)
         if (type === 'openai') this.provider = new OpenAIProvider();
         else if (type === 'gemini') this.provider = new GeminiProvider(config?.apiKey);
+        else if (type === 'openrouter') this.provider = new OpenRouterProvider(config?.apiKey || '', config?.modelName || 'anthropic/claude-3-5-sonnet');
         else this.provider = new OllamaProvider();
     }
 
