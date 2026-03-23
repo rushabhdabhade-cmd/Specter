@@ -49,6 +49,7 @@ export default function NewTestRunPage() {
   const [llmProvider, setLlmProvider] = useState<'gemini' | 'openrouter' | 'ollama'>('gemini');
   const [llmApiKey, setLlmApiKey] = useState('');
   const [llmModelName, setLlmModelName] = useState('');
+  const [personaPrompt, setPersonaPrompt] = useState('');
   const [showLibrary, setShowLibrary] = useState(false);
 
   const [isLaunching, setIsLaunching] = useState(false);
@@ -100,7 +101,7 @@ export default function NewTestRunPage() {
       const generated = await generateAIPersonas({
         url,
         archetypes: archetypeIds,
-        userPrompt: '',
+        userPrompt: personaPrompt,
         llmProvider,
         llmApiKey: llmApiKey || undefined,
         llmModelName: llmModelName || undefined,
@@ -439,6 +440,24 @@ export default function NewTestRunPage() {
                   </div>
                 </div>
               )}
+
+              {/* Custom Persona Prompt */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Custom Persona Instructions</label>
+                  <span className="text-[10px] text-slate-600 italic">Optional</span>
+                </div>
+                <textarea
+                  value={personaPrompt}
+                  onChange={(e) => setPersonaPrompt(e.target.value)}
+                  placeholder="e.g. Focus on first-time users who are non-technical, aged 40+, and skeptical of new software..."
+                  rows={3}
+                  className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/30 transition-all shadow-inner resize-none text-sm leading-relaxed"
+                />
+                <p className="text-[10px] text-slate-600 leading-relaxed">
+                  Guide the AI when generating your persona cohort. Leave blank to let the engine decide automatically.
+                </p>
+              </div>
 
             </div>
 
