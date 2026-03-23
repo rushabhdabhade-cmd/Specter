@@ -50,7 +50,7 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
 };
 
 function IntensityBadge({ intensity }: { intensity: number }) {
-    const pct = Math.round(intensity * 100);
+    const pct = Math.min(100, Math.round(intensity * 100));
     const color = intensity > 0.7 ? 'text-white' : 'text-slate-500';
     return <span className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest ${color}`}>Intensity: {pct}%</span>;
 }
@@ -117,10 +117,16 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
 
                         {/* Gradient footer on screenshot */}
                         <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black via-black/60 to-transparent flex items-end px-4 pb-4 z-[5]">
-                            <div className="flex items-center gap-1.5 opacity-60 group-hover/card:opacity-100 transition-opacity">
+                            <a
+                                href={step.current_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                className="flex items-center gap-1.5 opacity-60 group-hover/card:opacity-100 transition-opacity hover:opacity-100 cursor-pointer"
+                            >
                                 <Navigation className="h-3 w-3 text-slate-400" />
-                                <p className="text-[10px] font-mono text-white/80 truncate max-w-[320px]">{step.current_url}</p>
-                            </div>
+                                <p className="text-[10px] font-mono text-white/80 truncate max-w-[320px] hover:underline">{step.current_url}</p>
+                            </a>
                         </div>
                     </div>
                 )}
@@ -158,17 +164,17 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
                     {hasScreenshot && (
                         <div className="flex items-center justify-between border-b border-white/5 pb-4">
                             <div className="flex items-center gap-2">
-                                <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 shadow-sm ${cfg.bg} ${cfg.text}`}>
+                                {/* <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 shadow-sm ${cfg.bg} ${cfg.text}`}>
                                     {cfg.label}
-                                </span>
+                                </span> */}
                                 {step.action_taken?.specific_emotion && (
                                     <span className="px-2.5 py-1 rounded-xl text-[9px] font-bold text-slate-400 bg-white/5 border border-white/5 italic">
                                         &ldquo;{step.action_taken.specific_emotion}&rdquo;
                                     </span>
                                 )}
-                                <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 bg-white/5 text-slate-300`}>
+                                {/* <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 bg-white/5 text-slate-300`}>
                                     {ACTION_ICONS[actionType]} {actionType}
-                                </span>
+                                </span> */}
                             </div>
                             <IntensityBadge intensity={intensity} />
                         </div>
