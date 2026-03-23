@@ -115,7 +115,8 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
             const uxNote = log.action_taken?.ux_feedback
                 ? ` | ${String(log.action_taken.ux_feedback).slice(0, 120)}`
                 : '';
-            qualitativeData.push(`  S${log.step_number}[${log.emotion_tag}] ${log.current_url}: ${String(log.inner_monologue || '').slice(0, 150)}${uxNote}`);
+            // Format: [PersonaName]S{step} so the LLM can reference steps by persona
+            qualitativeData.push(`  [${personaName}]S${log.step_number}[${log.emotion_tag}] ${log.current_url}: ${String(log.inner_monologue || '').slice(0, 150)}${uxNote}`);
         });
     }
 
@@ -160,9 +161,9 @@ Write in Markdown:
 
 Then output action items in EXACTLY this format:
 [ACTION_ITEMS]
-- (Priority: High/Medium/Low) | Fix: [title] | Detail: [specific recommendation]
+- (Priority: High/Medium/Low) | Fix: [title] | Detail: [specific recommendation] | Steps: PersonaName#3, OtherPersona#7
 [/ACTION_ITEMS]
-Max 5 items.`;
+Max 5 items. For Steps, cite the persona name and step number(s) from the session data above that most directly evidence the issue. Use the exact persona name as shown (e.g. "Sarah#3"). Omit Steps field if no specific step applies.`;
 
         try {
             console.log(`🤖 Synthesizing report with ${synthProvider}...`);
@@ -182,10 +183,22 @@ Max 5 items.`;
                 .map(item => {
                     const clean = item.replace(/^- /, '').trim();
                     const parts = clean.split('|').map(p => p.trim());
+                    const stepsRaw = parts.find(p => /^Steps:/i.test(p));
+                    const stepRefs: { personaName: string; stepNumber: number }[] = [];
+                    if (stepsRaw) {
+                        const refsStr = stepsRaw.replace(/^Steps:\s*/i, '');
+                        refsStr.split(',').forEach(ref => {
+                            const match = ref.trim().match(/^(.+?)#(\d+)$/);
+                            if (match) {
+                                stepRefs.push({ personaName: match[1].trim(), stepNumber: parseInt(match[2], 10) });
+                            }
+                        });
+                    }
                     return {
                         priority: parts[0]?.replace(/^Priority:\s*/i, '') || 'Medium',
                         title: parts[1]?.replace(/^Fix:\s*/i, '') || 'Improve Flow',
-                        detail: parts[2]?.replace(/^Detail:\s*/i, '') || clean
+                        detail: parts[2]?.replace(/^Detail:\s*/i, '') || clean,
+                        stepRefs: stepRefs.length > 0 ? stepRefs : undefined,
                     };
                 })
                 .slice(0, 5);
