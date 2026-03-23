@@ -20,7 +20,7 @@ export interface ReportSummary {
 
 export async function generateAndStoreReport(testRunId: string, force = false) {
     const supabase = createAdminClient();
-    console.log(`📊 Generating report for Test Run: ${testRunId} (force=${force})`);
+    console.log(`Generating report for Test Run: ${testRunId} (force=${force})`);
 
     // ── Skip if a valid summary already exists ──────────────────────────────
     const { data: existingReport } = await (supabase.from('reports') as any)
@@ -40,7 +40,7 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         !PLACEHOLDER_MARKERS.some(m => existingReport.executive_summary.includes(m));
 
     if (summaryAlreadyExists) {
-        console.log('✅ Summary already exists — skipping. Pass force=true to regenerate.');
+        console.log('Summary already exists — skipping. Pass force=true to regenerate.');
         return;
     }
 
@@ -60,7 +60,7 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
 
     const sessions = data as any[];
     if (sError || !sessions?.length) {
-        console.error('❌ Failed to fetch sessions:', sError);
+        console.error('Failed to fetch sessions:', sError);
         return;
     }
 
@@ -166,11 +166,11 @@ Then output action items in EXACTLY this format:
 Max 5 items. For Steps, cite the persona name and step number(s) from the session data above that most directly evidence the issue. Use the exact persona name as shown (e.g. "Sarah#3"). Omit Steps field if no specific step applies.`;
 
         try {
-            console.log(`🤖 Synthesizing report with ${synthProvider}...`);
+            console.log(`Synthesizing report with ${synthProvider}...`);
             aiSynthesis = await llm.generateSummary(synthesisPrompt);
-            console.log('✅ Synthesis complete.');
+            console.log('Synthesis complete.');
         } catch (err: any) {
-            console.error('❌ Synthesis failed:', err?.message ?? err);
+            console.error('Synthesis failed:', err?.message ?? err);
             aiSynthesis = `### Summary\n${sessions.length} personas tested. ${completedCount} completed. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis failed: ${err?.message ?? 'unknown error'}*`;
         }
 
@@ -216,7 +216,7 @@ Max 5 items. For Steps, cite the persona name and step number(s) from the sessio
                 feedbackSummary = await llm.generateSummary(
                     `Summarize these UX feedback points in 2–3 concise professional sentences. Focus on recurring themes and overall sentiment:\n\n${Array.from(allFeedback).join('\n')}`
                 );
-                console.log('✅ Feedback summary complete.');
+                console.log('Feedback summary complete.');
             } catch (_) { }
         }
     }
@@ -275,7 +275,7 @@ Max 5 items. For Steps, cite the persona name and step number(s) from the sessio
     }, { onConflict: 'test_run_id' });
 
     if (rError) {
-        console.error('❌ Error storing report:', rError);
+        console.error('Error storing report:', rError);
         return;
     }
 
@@ -286,7 +286,7 @@ Max 5 items. For Steps, cite the persona name and step number(s) from the sessio
         completed_at: new Date().toISOString()
     }).eq('id', testRunId);
 
-    console.log(`✅ Report stored for Test Run ${testRunId}`);
+    console.log(`Report stored for test run ${testRunId}`);
 }
 
 export async function checkAndFinalizeTestRun(testRunId: string) {
@@ -297,7 +297,7 @@ export async function checkAndFinalizeTestRun(testRunId: string) {
         .eq('test_run_id', testRunId);
 
     if (error || !sessions) {
-        console.error('❌ Error checking sessions:', error);
+        console.error('Error checking sessions:', error);
         return;
     }
 
@@ -309,7 +309,7 @@ export async function checkAndFinalizeTestRun(testRunId: string) {
         if (session.status === 'running' || session.status === 'queued') {
             const lastUpdate = new Date(session.updated_at || session.created_at).getTime();
             if (now - lastUpdate > STALE_THRESHOLD_MS) {
-                console.warn(`⚠️ Session ${session.id} stale — abandoning.`);
+                console.warn(`Session ${session.id} stale — abandoning.`);
                 await (supabase.from('persona_sessions') as any)
                     .update({ status: 'abandoned', exit_reason: 'Stale — auto abandoned' })
                     .eq('id', session.id);
@@ -325,9 +325,9 @@ export async function checkAndFinalizeTestRun(testRunId: string) {
     const active = (refreshed as any[]).filter(s => s.status === 'running' || s.status === 'queued');
 
     if (active.length === 0) {
-        console.log(`🎯 All sessions done for ${testRunId}. Generating report...`);
+        console.log(`All sessions done for ${testRunId}. Generating report...`);
         await generateAndStoreReport(testRunId);
     } else {
-        console.log(`⏳ ${active.length} session(s) still active for ${testRunId}.`);
+        console.log(`${active.length} session(s) still active for ${testRunId}.`);
     }
 }

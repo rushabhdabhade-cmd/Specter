@@ -41,7 +41,7 @@ export class BrowserService {
     // ─── Reconnect ──────────────────────────────────────────────────────────────
 
     private async reconnect(): Promise<void> {
-        console.warn('🔄 CDP dropped — reconnecting to Browserless...');
+        console.warn('CDP dropped — reconnecting to Browserless...');
         try { await this.stagehand?.close(); } catch { /* already dead */ }
         this.stagehand = null;
         this.page = null;
@@ -49,15 +49,15 @@ export class BrowserService {
         if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
 
         this.stagehand = new Stagehand(this.savedConfig);
-        console.log('🎬 Re-initializing Stagehand...');
+        console.log('Re-initializing Stagehand...');
         await this.stagehand.init();
         await this.setupPage();
 
         if (this.lastKnownUrl) {
-            console.log(`🔁 Restoring to: ${this.lastKnownUrl}`);
+            console.log(`Restoring to: ${this.lastKnownUrl}`);
             await this.navigate(this.lastKnownUrl);
         }
-        console.log('✅ Reconnected.');
+        console.log('Reconnected.');
     }
 
     // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
@@ -67,7 +67,7 @@ export class BrowserService {
             return await fn();
         } catch (err: any) {
             if (BrowserService.isCdpError(err)) {
-                console.warn(`⚡ CDP error: "${err.message}" — attempting reconnect...`);
+                console.warn(`CDP error: "${err.message}" — attempting reconnect...`);
                 await this.reconnect();
                 return await fn();  // retry once on fresh connection
             }
@@ -110,7 +110,7 @@ export class BrowserService {
                 const raw = process.env.BROWSERLESS_WS_URL!;
                 // Normalize: add wss:// if the user omitted the protocol
                 const wsUrl = /^wss?:\/\//i.test(raw) ? raw : `wss://${raw}`;
-                console.log(`🔌 Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
+                console.log(`Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
                 stagehandConfig.localBrowserLaunchOptions = {
                     cdpUrl: wsUrl,
                     viewport: { width: 1280, height: 800 },
@@ -134,12 +134,12 @@ export class BrowserService {
             this.savedConfig = stagehandConfig; // save for reconnect
             this.stagehand = new Stagehand(stagehandConfig);
 
-            console.log('🎬 Initializing Stagehand...');
+            console.log('Initializing Stagehand...');
             await this.stagehand.init();
             await this.setupPage();
-            console.log('✅ Stagehand ready.');
+            console.log('Stagehand ready.');
         } catch (err: any) {
-            console.error('❌ Stagehand init failed:', err.message);
+            console.error('Stagehand init failed:', err.message);
             throw err;
         }
     }
@@ -154,7 +154,7 @@ export class BrowserService {
         this.page = (context.activePage ? context.activePage() : null) || allPages[0];
 
         if (!this.page) {
-            console.log('🚀 Forcing newPage()...');
+            console.log('Forcing newPage()...');
             this.page = await context.newPage();
         }
 
@@ -162,7 +162,7 @@ export class BrowserService {
         if (pwContext && typeof pwContext.on === 'function') {
             this.attachNetworkListeners(pwContext);
             pwContext.on('page', async (newPage: any) => {
-                console.log(`✨ New tab: ${newPage.url()}. Switching...`);
+                console.log(`New tab: ${newPage.url()}. Switching...`);
                 this.page = newPage;
                 await newPage.bringToFront().catch(() => { });
                 await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
@@ -194,7 +194,7 @@ export class BrowserService {
                 try {
                     const url = typeof request.url === 'function' ? request.url() : 'unknown';
                     const err = typeof request.failure === 'function' ? request.failure()?.errorText : 'unknown';
-                    console.warn(`🚦 Request failed: ${url} — ${err}`);
+                    console.warn(`Request failed: ${url} — ${err}`);
                 } catch (_) { }
             });
         } catch (_) { }
@@ -427,7 +427,7 @@ export class BrowserService {
                         ? `Click on: ${action.text || action.reasoning}`
                         : `Type "${action.text}" into the field for: ${action.reasoning}`;
 
-                    console.log(`🤖 Stagehand: ${instruction}`);
+                    console.log(`Stagehand: ${instruction}`);
                     const t0 = Date.now();
                     await this.stagehand.act(instruction, { page: this.page });
                     this.metrics.action_latency.push(Date.now() - t0);

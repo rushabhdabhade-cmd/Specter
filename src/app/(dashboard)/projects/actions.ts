@@ -139,13 +139,13 @@ export async function createTestRun(formData: {
                 goal_prompt: p.prompt,
             } as any;
 
-            console.log(`🚀 Launching Orchestrator for session ${session.id}...`);
+            console.log(`Launching orchestrator for session ${session.id}...`);
             orchestrator.runSession(session.id, formData.url, personaProfile, {
                 provider: formData.llmProvider,
                 apiKey: llmApiKey,
                 modelName: formData.llmModelName,
             }).catch((err: any) => {
-                console.error(`❌ Autonomous session ${session.id} failed:`, err);
+                console.error(`Autonomous session ${session.id} failed:`, err);
             });
         }
     }
@@ -173,7 +173,7 @@ export async function suggestAudienceArchetypes(formData: {
             .single();
 
         if (cached && cached.payload) {
-            console.log('✅ Found cached archetypes for URL:', formData.url);
+            console.log('Found cached archetypes for URL:', formData.url);
             return cached.payload;
         }
     } catch (err) {
@@ -193,9 +193,9 @@ export async function suggestAudienceArchetypes(formData: {
         if (observation.sections) {
             siteContext += observation.sections.map((s: any, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
         }
-        console.log('📄 Site context captured successfully.');
+        console.log('Site context captured successfully.');
     } catch (err) {
-        console.error('⚠️ Browser discovery failed for archetype suggestion fallback to URL:', err);
+        console.error('Browser discovery failed for archetype suggestion fallback to URL:', err);
         siteContext = `URL: ${formData.url}`;
     } finally {
         await browser.close();
@@ -206,7 +206,7 @@ export async function suggestAudienceArchetypes(formData: {
     const llm = new LLMService({ provider, apiKey, modelName: formData.llmModelName });
 
     const suggested = await llm.suggestArchetypes(siteContext);
-    console.log(`🤖 LLM suggested ${(suggested as any).length || 0} archetypes.`);
+    console.log(`LLM suggested ${(suggested as any).length || 0} archetypes.`);
 
     // Cache the result
     try {
@@ -246,14 +246,14 @@ export async function generateAIPersonas(formData: {
                 .single();
 
             if (cached && cached.payload) {
-                console.log('✅ Found cached personas for:', normalizedUrl);
+                console.log('Found cached personas for:', normalizedUrl);
                 return cached.payload;
             }
         } catch (err) {
             // Proceed on cache miss
         }
     } else {
-        console.log('⚡ Custom persona prompt provided — skipping cache.');
+        console.log('Custom persona prompt provided — skipping cache.');
     }
 
     // Browser scraping always uses env Gemini key (Stagehand requirement)
@@ -281,7 +281,7 @@ export async function generateAIPersonas(formData: {
     const llm = new LLMService({ provider, apiKey, modelName: formData.llmModelName });
 
     const personas = await llm.generatePersonas(siteContext, formData.userPrompt, formData.archetypes);
-    console.log(`👥 LLM generated ${personas.length} personas.`);
+    console.log(`LLM generated ${personas.length} personas.`);
 
     const result = personas.map((p: any, idx: number) => ({
         id: idx + 1,

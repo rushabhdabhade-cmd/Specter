@@ -126,7 +126,7 @@ export async function stopTestRun(runId: string) {
 
     const adminSupabase = createAdminClient();
 
-    console.log(`🛑 Stopping test run ${runId}...`);
+    console.log(`Stopping test run ${runId}...`);
 
     // Update all non-finished sessions to abandoned
     const { error: sessionError } = await (adminSupabase

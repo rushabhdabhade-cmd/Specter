@@ -278,7 +278,7 @@ async function withGeminiRetry<T>(fn: () => Promise<T>, maxRetries = 4): Promise
                 || err?.message?.includes('Too Many Requests');
 
             if (is429 && attempt < maxRetries) {
-                console.warn(`⏳ Gemini 429 — retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+                console.warn(`Gemini 429 — retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
                 await new Promise(r => setTimeout(r, delay));
                 delay = Math.min(delay * 2, 60_000); // cap at 60s
             } else {
@@ -540,7 +540,7 @@ export class OpenRouterProvider implements LLMProvider {
                 const status = err?.status ?? err?.code;
                 if (status === 429 && attempt < retries) {
                     const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-                    console.warn(`⚠️ OpenRouter 429 rate limit — retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
+                    console.warn(`OpenRouter 429 rate limit — retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
                     await new Promise(r => setTimeout(r, delay));
                     continue;
                 }
@@ -580,7 +580,7 @@ export class OpenRouterProvider implements LLMProvider {
             response = await this.withRetry(() => makeRequest(true));
         } catch (err: any) {
             if (this.isNoVisionError(err)) {
-                console.warn(`⚠️ Model ${this.modelName} doesn't support vision — retrying text-only`);
+                console.warn(`Model ${this.modelName} does not support vision — retrying text-only`);
                 response = await this.withRetry(() => makeRequest(false));
             } else throw err;
         }
@@ -625,7 +625,7 @@ export class OpenRouterProvider implements LLMProvider {
             response = await this.withRetry(() => makeRequest(true));
         } catch (err: any) {
             if (this.isNoVisionError(err)) {
-                console.warn(`⚠️ Model ${this.modelName} doesn't support vision — retrying text-only`);
+                console.warn(`Model ${this.modelName} does not support vision — retrying text-only`);
                 response = await this.withRetry(() => makeRequest(false));
             } else throw err;
         }
