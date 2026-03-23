@@ -24,8 +24,9 @@ Browserless runs as a separate Docker container exposing a CDP WebSocket.
    CONCURRENT=5
    TIMEOUT=1800000
    ```
-3. Railway assigns it a public domain, e.g. `browserless-xyz.railway.app`
-4. Set on the **app** service:
+3. In Public Networking → Generate Domain, set the internal port to **8080** (Browserless listens on 8080)
+4. Railway assigns a public domain, e.g. `browserless-xyz.railway.app`
+5. Set on the **app** service:
    ```
    BROWSERLESS_WS_URL=wss://browserless-xyz.railway.app?token=<your-secret-token>
    ```

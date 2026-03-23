@@ -50,7 +50,9 @@ export class BrowserService {
             } else if (useBrowserless) {
                 // Pass cdpUrl directly — Stagehand connects to Browserless natively.
                 // No local Chromium binary needed on the app server.
-                const wsUrl = process.env.BROWSERLESS_WS_URL!;
+                const raw = process.env.BROWSERLESS_WS_URL!;
+                // Normalize: add wss:// if the user omitted the protocol
+                const wsUrl = /^wss?:\/\//i.test(raw) ? raw : `wss://${raw}`;
                 console.log(`🔌 Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
                 stagehandConfig.localBrowserLaunchOptions = {
                     cdpUrl: wsUrl,
