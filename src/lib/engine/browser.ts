@@ -2,12 +2,6 @@ import { Stagehand } from '@browserbasehq/stagehand';
 import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
 import { chromium } from 'playwright-core';
 
-// Interactive roles worth sending to the LLM — everything else is structural noise
-const INTERACTIVE_ROLES = new Set([
-    'link', 'button', 'textbox', 'searchbox', 'combobox', 'listbox',
-    'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'spinbutton',
-    'slider', 'option', 'treeitem', 'menuitemcheckbox', 'menuitemradio'
-]);
 
 export class BrowserService {
     private stagehand: Stagehand | null = null;
@@ -15,7 +9,8 @@ export class BrowserService {
     private savedConfig: any = null;       // saved for reconnect
     private lastKnownUrl: string = '';     // last navigated URL, restored after reconnect
     private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
-    private reconnecting = false;  // prevents concurrent reconnect attempts
+    private reconnecting = false;          // prevents concurrent reconnect attempts
+    private reconnectGeneration = 0;       // incremented each time a reconnect completes
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -45,6 +40,7 @@ export class BrowserService {
     private async reconnect(): Promise<void> {
         if (this.reconnecting) return;
         this.reconnecting = true;
+        this.reconnectGeneration++;
         console.warn('CDP dropped — reconnecting to Browserless...');
         this.stopKeepalive();
         try {
@@ -76,18 +72,28 @@ export class BrowserService {
     // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
 
     private async withReconnect<T>(fn: () => Promise<T>): Promise<T> {
-        // If keepalive already triggered a reconnect, wait for it to finish first
+        // If keepalive already triggered a reconnect, wait for it to finish then retry
         if (this.reconnecting) {
             await new Promise<void>(resolve => {
                 const check = setInterval(() => {
                     if (!this.reconnecting) { clearInterval(check); resolve(); }
                 }, 200);
             });
+            return await fn();
         }
+
+        // Snapshot generation before running fn — if it changes, keepalive already reconnected
+        const genBefore = this.reconnectGeneration;
         try {
             return await fn();
         } catch (err: any) {
             if (BrowserService.isCdpError(err)) {
+                if (this.reconnectGeneration !== genBefore) {
+                    // Keepalive already established a fresh connection while fn() was running —
+                    // just retry on the new page, no second reconnect needed.
+                    console.warn('Reconnect already completed — retrying on fresh connection...');
+                    return await fn();
+                }
                 console.warn(`CDP error: "${err.message}" — attempting reconnect...`);
                 await this.reconnect();
                 return await fn();  // retry once on fresh connection
