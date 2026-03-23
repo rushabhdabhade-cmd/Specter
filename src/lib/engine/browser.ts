@@ -61,7 +61,11 @@ export class BrowserService {
 
             if (this.lastKnownUrl) {
                 console.log(`Restoring to: ${this.lastKnownUrl}`);
-                await this.navigate(this.lastKnownUrl);
+                // Use page.goto() directly — calling this.navigate() here would deadlock
+                // because withReconnect() waits for this.reconnecting to become false.
+                await this.page.goto(this.lastKnownUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch((e: any) => {
+                    console.warn(`Restore navigation failed: ${e.message}`);
+                });
             }
             console.log('Reconnected.');
         } finally {
@@ -200,17 +204,20 @@ export class BrowserService {
         if (!this.savedConfig?.localBrowserLaunchOptions?.cdpUrl && this.savedConfig?.env !== 'BROWSERBASE') return;
 
         this.keepaliveTimer = setInterval(async () => {
+            if (!this.page || this.reconnecting) return;
             try {
-                if (this.page) await this.page.evaluate(() => 1);
+                // Race the ping against a 5s timeout — if Railway killed the WebSocket
+                // the evaluate() hangs forever instead of throwing, so we must timeout it.
+                await Promise.race([
+                    this.page.evaluate(() => 1),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('keepalive timeout')), 5_000))
+                ]);
             } catch (err: any) {
-                if (BrowserService.isCdpError(err) && !this.reconnecting) {
-                    // Proactively reconnect while LLM is thinking — so the browser
-                    // is ready when the next browser operation comes in.
-                    console.warn('Keepalive detected CDP drop — triggering proactive reconnect...');
-                    this.reconnect().catch(e => console.error('Proactive reconnect failed:', e.message));
-                }
+                // Any failure (CDP error OR timeout) means the connection is dead.
+                console.warn(`Keepalive failed (${err.message}) — triggering proactive reconnect...`);
+                this.reconnect().catch(e => console.error('Proactive reconnect failed:', e.message));
             }
-        }, 25_000); // 25s — well under Railway's ~60s idle timeout
+        }, 25_000); // 25s interval — ping detects drops well before they cause hangs
     }
 
     private stopKeepalive() {
