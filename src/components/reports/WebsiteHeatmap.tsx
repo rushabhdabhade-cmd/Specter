@@ -66,28 +66,68 @@ function HeatmapCanvas({ steps, width, height, showPotential = false }: HeatmapC
             s => s.action_taken?.type === 'click' || s.action_taken?.type === 'type'
         );
 
-        // Pass 1: Draw potential clicks (Ambient heat map layer)
+        // Pass 1: Draw potential interactive elements
         if (showPotential) {
+            const scale = width / 1280;
+            const ROLE_COLOR: Record<string, string> = {
+                link: '#60a5fa',       // blue
+                button: '#fb923c',     // orange
+                textbox: '#34d399',    // green
+                searchbox: '#34d399',
+                combobox: '#a78bfa',   // purple
+                checkbox: '#f472b6',   // pink
+                radio: '#f472b6',
+            };
+
+            // Deduplicate elements by rounded position across all steps
+            const seen = new Set<string>();
+            const allElements: any[] = [];
             steps.forEach(step => {
-                const potentials = (step.action_taken as any)?.potential_clicks || [];
-                potentials.forEach((click: any) => {
-                    if (typeof click.x === 'number' && typeof click.y === 'number') {
-                        const scale = width / 1280;
-                        const px = Math.round(click.x * scale);
-                        const py = Math.round(click.y * scale);
-                        const radius = 20; // Ambient radius
-                        const alphaWeight = 0.06; // Highly blendable
-
-                        const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
-                        grad.addColorStop(0, `rgba(0,0,0,${alphaWeight})`);
-                        grad.addColorStop(1, 'rgba(0,0,0,0)');
-
-                        ctx.beginPath();
-                        ctx.arc(px, py, radius, 0, Math.PI * 2);
-                        ctx.fillStyle = grad;
-                        ctx.fill();
+                const elems = (step.action_taken as any)?.potential_elements || [];
+                elems.forEach((el: any) => {
+                    const key = `${Math.round(el.x / 10)},${Math.round(el.y / 10)}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        allElements.push(el);
                     }
                 });
+            });
+
+            allElements.forEach(el => {
+                const px = Math.round(el.x * scale);
+                const py = Math.round(el.y * scale);
+                const pw = Math.round((el.w || 80) * scale);
+                const ph = Math.round((el.h || 24) * scale);
+                const color = ROLE_COLOR[el.role] || '#94a3b8';
+
+                // Filled rect with low opacity
+                ctx.fillStyle = color.replace(')', ', 0.08)').replace('rgb', 'rgba').replace('#', 'rgba(').replace('rgba(', 'rgba(') ;
+                // Use a simple approach: parse hex to rgba
+                const r = parseInt(color.slice(1, 3), 16);
+                const g = parseInt(color.slice(3, 5), 16);
+                const b = parseInt(color.slice(5, 7), 16);
+
+                ctx.fillStyle = `rgba(${r},${g},${b},0.10)`;
+                ctx.fillRect(px, py, pw, ph);
+
+                // Border
+                ctx.strokeStyle = `rgba(${r},${g},${b},0.55)`;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+
+                // Dot at center-left
+                ctx.beginPath();
+                ctx.arc(px + 6, py + ph / 2, 3, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${r},${g},${b},0.85)`;
+                ctx.fill();
+
+                // Label text
+                if (el.text && pw > 30) {
+                    ctx.font = 'bold 8px monospace';
+                    ctx.fillStyle = `rgba(${r},${g},${b},0.90)`;
+                    const label = el.text.slice(0, Math.floor(pw / 5));
+                    ctx.fillText(label, px + 12, py + ph / 2 + 3);
+                }
             });
         }
 
@@ -335,6 +375,11 @@ export function WebsiteHeatmap({ steps, dropOffStats = {}, totalSessions = 1 }: 
                                             </div>
                                         ))}
                                         <span className="text-[9px] text-slate-700 ml-2 border-l border-white/5 pl-2">White dots = step actions.</span>
+                                        {showPotential && (
+                                            <span className="text-[9px] text-orange-500/70 border-l border-white/5 pl-2">
+                                                Outlined boxes = interactive elements the persona could have clicked.
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
