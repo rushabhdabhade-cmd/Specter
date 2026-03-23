@@ -21,11 +21,16 @@ interface ReportsListProps {
 }
 
 export function ReportsList({ initialReports }: ReportsListProps) {
+    const [reports, setReports] = useState(initialReports);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'high' | 'low'>('all');
 
+    const handleDelete = (id: string) => {
+        setReports(prev => prev.filter(r => r.id !== id));
+    };
+
     const filteredReports = useMemo(() => {
-        return initialReports.filter(report => {
+        return reports.filter(report => {
             const matchesSearch = report.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 report.url.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -36,7 +41,7 @@ export function ReportsList({ initialReports }: ReportsListProps) {
 
             return matchesSearch && matchesFilter;
         });
-    }, [initialReports, searchQuery, filterMode]);
+    }, [reports, searchQuery, filterMode]);
 
     return (
         <div className="space-y-8">
@@ -86,7 +91,7 @@ export function ReportsList({ initialReports }: ReportsListProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {filteredReports.length > 0 ? (
                     filteredReports.map((report) => (
-                        <ReportCard key={report.id} report={report} />
+                        <ReportCard key={report.id} report={report} onDelete={handleDelete} />
                     ))
                 ) : (
                     <div className="col-span-full flex flex-col items-center justify-center rounded-[48px] border border-dashed border-white/5 bg-white/[0.01] py-32 text-center transition-all animate-in fade-in zoom-in-95 duration-700">
