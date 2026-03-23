@@ -1,4 +1,5 @@
-# Lightweight Node.js image — no local Chromium needed (BrowserBase handles browser on Railway)
+# Lightweight Node.js image — no local Chromium needed.
+# Production uses Browserless (separate Railway service) via BROWSERLESS_WS_URL.
 FROM node:20-slim
 
 WORKDIR /app

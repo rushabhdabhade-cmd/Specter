@@ -24,7 +24,8 @@ export class BrowserService {
 
     async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
-            const useBrowserBase = !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
+            const useBrowserless = !!process.env.BROWSERLESS_WS_URL;
+            const useBrowserBase = !useBrowserless && !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
 
             const isGemini = modelName.includes('gemini');
             const resolvedApiKey = isGemini
@@ -46,9 +47,20 @@ export class BrowserService {
                 stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
                 // 30 min timeout — enough for 15-page traversal with LLM inference
                 stagehandConfig.browserbaseSessionCreateParams = { timeout: 1800 };
+            } else if (useBrowserless) {
+                // Pass cdpUrl directly — Stagehand connects to Browserless natively.
+                // No local Chromium binary needed on the app server.
+                const raw = process.env.BROWSERLESS_WS_URL!;
+                // Normalize: add wss:// if the user omitted the protocol
+                const wsUrl = /^wss?:\/\//i.test(raw) ? raw : `wss://${raw}`;
+                console.log(`🔌 Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
+                stagehandConfig.localBrowserLaunchOptions = {
+                    cdpUrl: wsUrl,
+                    viewport: { width: 1280, height: 800 },
+                    ignoreHTTPSErrors: true,
+                };
             } else {
-                // Resolve the Playwright Chromium path so chrome-launcher can find it
-                // in Docker/Railway where Chrome isn't at a standard system path
+                // LOCAL: launch Playwright's bundled Chromium directly on this machine
                 let executablePath: string | undefined;
                 try {
                     executablePath = chromium.executablePath();
@@ -78,7 +90,6 @@ export class BrowserService {
                 this.page = await context.newPage();
             }
 
-            // Listen for new tabs
             const pwContext = this.page?.context ? this.page.context() : context;
             if (pwContext && typeof pwContext.on === 'function') {
                 this.attachNetworkListeners(pwContext);

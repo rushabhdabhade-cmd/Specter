@@ -263,6 +263,32 @@ Site: ${siteContext}`
     }
 }
 
+// ─── Gemini retry helper ──────────────────────────────────────────────────────
+// Free tier: 15 RPM. On 429, back off and retry up to 4 times.
+
+async function withGeminiRetry<T>(fn: () => Promise<T>, maxRetries = 4): Promise<T> {
+    let delay = 10_000; // start at 10s — enough to clear a free-tier RPM window
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (err: any) {
+            const is429 = err?.status === 429
+                || err?.message?.includes('429')
+                || err?.message?.includes('Resource exhausted')
+                || err?.message?.includes('Too Many Requests');
+
+            if (is429 && attempt < maxRetries) {
+                console.warn(`⏳ Gemini 429 — retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+                await new Promise(r => setTimeout(r, delay));
+                delay = Math.min(delay * 2, 60_000); // cap at 60s
+            } else {
+                throw err;
+            }
+        }
+    }
+    throw new Error('Gemini retry limit exceeded');
+}
+
 // ─── Gemini Provider ──────────────────────────────────────────────────────────
 // Uses gemini-2.0-flash for everything — free tier available, fast, vision-capable
 
@@ -288,10 +314,10 @@ export class GeminiProvider implements LLMProvider {
         triedElements: string[] = []
     ): Promise<Action> {
         const prompt = buildActionPrompt(observation, persona, history, blacklist, triedElements);
-        const result = await this.flashModel.generateContent([
+        const result = await withGeminiRetry(() => this.flashModel.generateContent([
             prompt,
             { inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } }
-        ]);
+        ]));
         const action = JSON.parse(result.response.text());
 
         // Normalize possible_paths
@@ -318,7 +344,7 @@ export class GeminiProvider implements LLMProvider {
             parts.push({ inlineData: { data: section.screenshot, mimeType: 'image/jpeg' } });
         }
 
-        const result = await this.flashModel.generateContent(parts);
+        const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
         try {
             return JSON.parse(result.response.text());
         } catch {
@@ -338,7 +364,7 @@ export class GeminiProvider implements LLMProvider {
 
     async generateSummary(prompt: string): Promise<string> {
         const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-        const res = await model.generateContent(prompt);
+        const res = await withGeminiRetry(() => model.generateContent(prompt));
         return res.response.text();
     }
 
@@ -347,7 +373,7 @@ export class GeminiProvider implements LLMProvider {
 Archetypes: ${archetypes.join(', ')}. Constraints: ${userPrompt || 'none'}.
 Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }
 Use role names not human names.`;
-        const res = await this.flashModel.generateContent(prompt);
+        const res = await withGeminiRetry(() => this.flashModel.generateContent(prompt));
         try {
             const parsed = JSON.parse(res.response.text());
             return parsed.personas || (Array.isArray(parsed) ? parsed : []);
@@ -361,7 +387,7 @@ Use role names not human names.`;
 Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }
 icon_type must be one of: users, zap, user, check, globe, x, shopping-cart, home, settings
 Site: ${siteContext}`;
-        const res = await this.flashModel.generateContent(prompt);
+        const res = await withGeminiRetry(() => this.flashModel.generateContent(prompt));
         try {
             const parsed = JSON.parse(res.response.text());
             return (parsed.archetypes || []).map((a: any, i: number) => ({
