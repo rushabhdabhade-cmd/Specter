@@ -71,33 +71,62 @@ export class BrowserService {
 
     // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
 
+    private async waitForReconnect(): Promise<void> {
+        await new Promise<void>(resolve => {
+            const check = setInterval(() => {
+                if (!this.reconnecting) { clearInterval(check); resolve(); }
+            }, 200);
+        });
+    }
+
     private async withReconnect<T>(fn: () => Promise<T>): Promise<T> {
-        // If keepalive already triggered a reconnect, wait for it to finish then retry
+        // If a reconnect is already in progress, wait for it then retry immediately
         if (this.reconnecting) {
-            await new Promise<void>(resolve => {
-                const check = setInterval(() => {
-                    if (!this.reconnecting) { clearInterval(check); resolve(); }
-                }, 200);
-            });
+            await this.waitForReconnect();
             return await fn();
         }
 
-        // Snapshot generation before running fn — if it changes, keepalive already reconnected
+        // Race fn() against a generation-change signal.
+        // When the keepalive reconnects, it increments reconnectGeneration.
+        // Any fn() that was hung on the dead WebSocket will be abandoned here
+        // and retried on the fresh page — without spawning a second reconnect.
         const genBefore = this.reconnectGeneration;
+        let signalInterval: ReturnType<typeof setInterval>;
+        const reconnectSignal = new Promise<never>((_, reject) => {
+            signalInterval = setInterval(() => {
+                if (this.reconnectGeneration !== genBefore) {
+                    clearInterval(signalInterval);
+                    reject(new Error('reconnect:generation-changed'));
+                }
+            }, 300);
+        });
+
         try {
-            return await fn();
+            const result = await Promise.race([fn(), reconnectSignal]);
+            clearInterval(signalInterval!);
+            return result;
         } catch (err: any) {
+            clearInterval(signalInterval!);
+
+            if (err.message === 'reconnect:generation-changed') {
+                // Keepalive already reconnected while fn() was hung — wait if still
+                // in progress, then retry on the new page.
+                if (this.reconnecting) await this.waitForReconnect();
+                console.warn('Keepalive reconnected while operation was hung — retrying on fresh connection...');
+                return await fn();
+            }
+
             if (BrowserService.isCdpError(err)) {
                 if (this.reconnectGeneration !== genBefore) {
-                    // Keepalive already established a fresh connection while fn() was running —
-                    // just retry on the new page, no second reconnect needed.
+                    // Keepalive already established a fresh connection
                     console.warn('Reconnect already completed — retrying on fresh connection...');
                     return await fn();
                 }
                 console.warn(`CDP error: "${err.message}" — attempting reconnect...`);
                 await this.reconnect();
-                return await fn();  // retry once on fresh connection
+                return await fn();
             }
+
             throw err;
         }
     }
