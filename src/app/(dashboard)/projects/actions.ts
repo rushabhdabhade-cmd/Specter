@@ -237,19 +237,23 @@ export async function generateAIPersonas(formData: {
     const normalizedUrl = new URL(formData.url).href;
     const cacheKey = `personas:${normalizedUrl}`;
 
-    try {
-        const { data: cached } = await (adminSupabase
-            .from('ai_caches') as any)
-            .select('payload')
-            .eq('cache_key', cacheKey)
-            .single();
+    if (!formData.userPrompt) {
+        try {
+            const { data: cached } = await (adminSupabase
+                .from('ai_caches') as any)
+                .select('payload')
+                .eq('cache_key', cacheKey)
+                .single();
 
-        if (cached && cached.payload) {
-            console.log('✅ Found cached personas for:', normalizedUrl);
-            return cached.payload;
+            if (cached && cached.payload) {
+                console.log('✅ Found cached personas for:', normalizedUrl);
+                return cached.payload;
+            }
+        } catch (err) {
+            // Proceed on cache miss
         }
-    } catch (err) {
-        // Proceed on cache miss
+    } else {
+        console.log('⚡ Custom persona prompt provided — skipping cache.');
     }
 
     // Browser scraping always uses env Gemini key (Stagehand requirement)
