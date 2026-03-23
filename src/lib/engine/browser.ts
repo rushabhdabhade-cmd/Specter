@@ -12,6 +12,8 @@ const INTERACTIVE_ROLES = new Set([
 export class BrowserService {
     private stagehand: Stagehand | null = null;
     private page: any = null;
+    private savedConfig: any = null;       // saved for reconnect
+    private lastKnownUrl: string = '';     // last navigated URL, restored after reconnect
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -20,12 +22,67 @@ export class BrowserService {
         last_load_time: 0
     };
 
+    // ─── CDP error detection ────────────────────────────────────────────────────
+
+    private static isCdpError(err: any): boolean {
+        const msg: string = (err?.message || err?.toString() || '').toLowerCase();
+        return (
+            msg.includes('cdp transport closed') ||
+            msg.includes('websocket') ||
+            msg.includes('fin must be set') ||
+            msg.includes('socket-error') ||
+            msg.includes('econnreset') ||
+            msg.includes('econnrefused') ||
+            msg.includes('target closed') ||
+            msg.includes('session closed')
+        );
+    }
+
+    // ─── Reconnect ──────────────────────────────────────────────────────────────
+
+    private async reconnect(): Promise<void> {
+        console.warn('🔄 CDP dropped — reconnecting to Browserless...');
+        try { await this.stagehand?.close(); } catch { /* already dead */ }
+        this.stagehand = null;
+        this.page = null;
+
+        if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
+
+        this.stagehand = new Stagehand(this.savedConfig);
+        console.log('🎬 Re-initializing Stagehand...');
+        await this.stagehand.init();
+        await this.setupPage();
+
+        if (this.lastKnownUrl) {
+            console.log(`🔁 Restoring to: ${this.lastKnownUrl}`);
+            await this.navigate(this.lastKnownUrl);
+        }
+        console.log('✅ Reconnected.');
+    }
+
+    // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
+
+    private async withReconnect<T>(fn: () => Promise<T>): Promise<T> {
+        try {
+            return await fn();
+        } catch (err: any) {
+            if (BrowserService.isCdpError(err)) {
+                console.warn(`⚡ CDP error: "${err.message}" — attempting reconnect...`);
+                await this.reconnect();
+                return await fn();  // retry once on fresh connection
+            }
+            throw err;
+        }
+    }
+
     // ─── Init ───────────────────────────────────────────────────────────────────
 
     async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
             const useBrowserless = !!process.env.BROWSERLESS_WS_URL;
-            const useBrowserBase = !useBrowserless && !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
+            // Browserbase requires explicit opt-in via USE_BROWSERBASE=true.
+            // Having API keys alone is not enough — prevents accidental usage in local dev.
+            const useBrowserBase = !useBrowserless && process.env.USE_BROWSERBASE === 'true' && !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
 
             const isGemini = modelName.includes('gemini');
             const resolvedApiKey = isGemini
@@ -74,40 +131,46 @@ export class BrowserService {
                 };
             }
 
+            this.savedConfig = stagehandConfig; // save for reconnect
             this.stagehand = new Stagehand(stagehandConfig);
 
             console.log('🎬 Initializing Stagehand...');
             await this.stagehand.init();
-
-            const context = (this.stagehand as any).context;
-            if (!context) throw new Error('Stagehand failure: Context not found after init.');
-
-            const allPages = context.pages ? context.pages() : [];
-            this.page = (context.activePage ? context.activePage() : null) || allPages[0];
-
-            if (!this.page) {
-                console.log('🚀 Forcing newPage()...');
-                this.page = await context.newPage();
-            }
-
-            const pwContext = this.page?.context ? this.page.context() : context;
-            if (pwContext && typeof pwContext.on === 'function') {
-                this.attachNetworkListeners(pwContext);
-                pwContext.on('page', async (newPage: any) => {
-                    console.log(`✨ New tab: ${newPage.url()}. Switching...`);
-                    this.page = newPage;
-                    await newPage.bringToFront().catch(() => { });
-                    await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
-                });
-            }
-
-            if (!this.page) throw new Error('Stagehand failure: Page object not found.');
-            await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+            await this.setupPage();
             console.log('✅ Stagehand ready.');
         } catch (err: any) {
             console.error('❌ Stagehand init failed:', err.message);
             throw err;
         }
+    }
+
+    // ─── Page setup (shared by init and reconnect) ──────────────────────────────
+
+    private async setupPage(): Promise<void> {
+        const context = (this.stagehand as any).context;
+        if (!context) throw new Error('Stagehand failure: Context not found after init.');
+
+        const allPages = context.pages ? context.pages() : [];
+        this.page = (context.activePage ? context.activePage() : null) || allPages[0];
+
+        if (!this.page) {
+            console.log('🚀 Forcing newPage()...');
+            this.page = await context.newPage();
+        }
+
+        const pwContext = this.page?.context ? this.page.context() : context;
+        if (pwContext && typeof pwContext.on === 'function') {
+            this.attachNetworkListeners(pwContext);
+            pwContext.on('page', async (newPage: any) => {
+                console.log(`✨ New tab: ${newPage.url()}. Switching...`);
+                this.page = newPage;
+                await newPage.bringToFront().catch(() => { });
+                await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+            });
+        }
+
+        if (!this.page) throw new Error('Stagehand failure: Page object not found.');
+        await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
     }
 
     // ─── Network ────────────────────────────────────────────────────────────────
@@ -143,11 +206,14 @@ export class BrowserService {
         if (!this.page) return;
         const start = Date.now();
         try {
-            await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await this.withReconnect(() =>
+                this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+            );
             await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
             const duration = Date.now() - start;
             this.metrics.navigation_latency.push(duration);
             this.metrics.last_load_time = duration;
+            this.lastKnownUrl = url;
         } catch (err: any) {
             console.error(`Navigation to ${url} failed:`, err.message);
         }
@@ -261,6 +327,11 @@ export class BrowserService {
      *  - sections = [Top, Mid?, Bottom?] — all passed to analyzePageSections() in ONE call
      */
     async observeFullPage(): Promise<Observation> {
+        if (!this.page || !this.stagehand) return this.emptyObservation();
+        return this.withReconnect(() => this._observeFullPage()).catch(() => this.emptyObservation());
+    }
+
+    private async _observeFullPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) {
             return this.emptyObservation();
         }
@@ -312,16 +383,17 @@ export class BrowserService {
 
     async observe(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
-
-        const slice = await this.captureSlice('Current', true);
-        return {
-            screenshot: slice.screenshot,
-            domContext: slice.domContext,
-            url: this.page.url(),
-            title: await this.page.title(),
-            dimensions: { width: 1280, height: 800 },
-            sections: [slice]
-        };
+        return this.withReconnect(async () => {
+            const slice = await this.captureSlice('Current', true);
+            return {
+                screenshot: slice.screenshot,
+                domContext: slice.domContext,
+                url: this.page.url(),
+                title: await this.page.title(),
+                dimensions: { width: 1280, height: 800 },
+                sections: [slice]
+            };
+        }).catch(() => this.emptyObservation());
     }
 
     private emptyObservation(): Observation {
@@ -337,6 +409,11 @@ export class BrowserService {
     // ─── Actions ────────────────────────────────────────────────────────────────
 
     async perform(action: Action) {
+        if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
+        return this.withReconnect(() => this._perform(action));
+    }
+
+    private async _perform(action: Action) {
         if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
 
         const oldUrl = this.page.url();
@@ -386,6 +463,8 @@ export class BrowserService {
                     break;
             }
         } catch (err) {
+            // Re-throw CDP errors so withReconnect can catch and handle them
+            if (BrowserService.isCdpError(err)) throw err;
             console.warn(`Stagehand action "${action.type}" failed:`, err);
             // Fallback: direct selector click
             if (action.type === 'click' && action.selector) {
@@ -397,6 +476,7 @@ export class BrowserService {
         const newPageCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
             await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
+            this.lastKnownUrl = this.page.url();
         }
         await this.page.waitForTimeout(300);
     }

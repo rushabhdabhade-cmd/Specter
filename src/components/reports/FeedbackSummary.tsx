@@ -4,8 +4,7 @@ import {
     PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
     AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine,
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-    BarChart, Bar, ScatterChart, Scatter, ZAxis, LabelList,
-    Treemap
+    BarChart, Bar, LabelList,
 } from 'recharts';
 import {
     TrendingUp, TrendingDown, Minus, Info, Sparkles
@@ -91,15 +90,6 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
         }));
 }
 
-function categorizeFeedback(text: string): string {
-    const t = text.toLowerCase();
-    if (t.includes('link') || t.includes('navigat') || t.includes('menu') || t.includes('redirect')) return 'Navigation';
-    if (t.includes('text') || t.includes('read') || t.includes('inform') || t.includes('content')) return 'Content';
-    if (t.includes('button') || t.includes('click') || t.includes('action')) return 'Interactive';
-    if (t.includes('color') || t.includes('layout') || t.includes('design') || t.includes('look')) return 'Visuals';
-    if (t.includes('load') || t.includes('slow') || t.includes('wait') || t.includes('speed')) return 'Speed';
-    return 'Other';
-}
 
 /* Custom tooltip for pie */
 const PieTooltip = ({ active, payload }: any) => {
@@ -153,35 +143,6 @@ const ScatterTooltip = ({ active, payload }: any) => {
     );
 };
 
-const TreemapContent = (props: any) => {
-    const { x, y, width, height, index, name } = props;
-    const colors = ['#ef444490', '#3b82f690', '#fbbf2490', '#818cf890', '#94a3b890', '#f8717190'];
-    return (
-        <g>
-            <rect
-                x={x} y={y} width={width} height={height}
-                style={{
-                    fill: colors[index % colors.length],
-                    stroke: '#000000',
-                    strokeWidth: 2,
-                    strokeOpacity: 0.2,
-                }}
-            />
-            {width > 40 && height > 20 && (
-                <text
-                    x={x + width / 2} y={y + height / 2 + 5}
-                    textAnchor="middle"
-                    fill="#fff"
-                    fontSize={10}
-                    fontWeight="bold"
-                    className="select-none pointer-events-none"
-                >
-                    {name}
-                </text>
-            )}
-        </g>
-    );
-};
 
 export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     // Emotion distribution for pie chart
@@ -254,35 +215,9 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
             return { step: l.step_number, health: Math.round(currentHealth), emotion: l.emotion_tag };
         });
 
-    // Scatter Data (Friction vs Delight Matrix)
-    const frictionEmotions = ['confusion', 'frustration', 'boredom', 'disappointment'];
-    const delightEmotions = ['delight', 'satisfaction', 'curiosity', 'surprise'];
 
-    const scatterData = logs.map(l => {
-        const i = l.action_taken?.emotional_intensity;
-        const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
-        const isFriction = frictionEmotions.includes(l.emotion_tag);
-        const isDelight = delightEmotions.includes(l.emotion_tag);
 
-        return {
-            x: isFriction ? intensity * 100 : 0,
-            y: isDelight ? intensity * 100 : 0,
-            name: l.emotion_tag,
-            step: l.step_number
-        };
-    }).filter(d => d.x > 0 || d.y > 0);
-
-    // Treemap Data (Issue Hierarchy)
-    const issueFreq: Record<string, number> = {};
-    logs.forEach(l => {
-        if (frictionEmotions.includes(l.emotion_tag)) {
-            const cat = categorizeFeedback(String(l.action_taken?.ux_feedback || ''));
-            issueFreq[cat] = (issueFreq[cat] || 0) + 1;
-        }
-    });
-    const treemapData = Object.entries(issueFreq).map(([name, size]) => ({ name, size }));
-
-    // Top UX feedback phrases
+// Top UX feedback phrases
     const phrases = topPhrases(logs);
 
     // All UX feedback quotes (non-empty, deduplicated)
@@ -301,16 +236,20 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
                 {/* Radar chart */}
-                <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
+                <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
                     <div>
                         <h3 className="text-base font-bold text-white">Sentiment Pulse</h3>
                         <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Emotional intensity mapping</p>
                     </div>
-                    <div className="h-48">
+                    <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                            <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
                                 <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 7, fontWeight: 800 }} />
+                                <PolarAngleAxis
+                                    dataKey="subject"
+                                    tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }}
+                                    tickLine={false}
+                                />
                                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                                 <Radar
                                     name="Pulse"
@@ -318,43 +257,15 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                                     stroke="#6366f1"
                                     strokeWidth={2}
                                     fill="#6366f1"
-                                    fillOpacity={0.4}
-                                    dot={{ r: 2, fill: '#6366f1' }}
+                                    fillOpacity={0.35}
+                                    dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }}
                                 />
                             </RadarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                {/* Friction vs Delight Matrix */}
-                <div className="lg:col-span-3 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
-                    <div>
-                        <h3 className="text-base font-bold text-white">Friction vs Delight Matrix</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Interaction mapping by psychological impact</p>
-                    </div>
-                    <div className="h-48 relative">
-                        {/* Quadrant Labels */}
-                        <div className="absolute top-0 right-0 text-[8px] font-black text-emerald-500/40 uppercase p-2 tracking-tighter">Sweet Spots</div>
-                        <div className="absolute bottom-0 left-0 text-[8px] font-black text-red-500/40 uppercase p-2 tracking-tighter">Pain Points</div>
 
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis type="number" dataKey="x" name="Friction" domain={[0, 100]} hide />
-                                <YAxis type="number" dataKey="y" name="Delight" domain={[0, 100]} hide />
-                                <ZAxis type="number" range={[50, 400]} />
-                                <Tooltip content={<ScatterTooltip />} />
-                                <ReferenceLine x={50} stroke="rgba(255,255,255,0.1)" />
-                                <ReferenceLine y={50} stroke="rgba(255,255,255,0.1)" />
-                                <Scatter name="Interactions" data={scatterData}>
-                                    {scatterData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.y > entry.x ? '#10b981' : '#ef4444'} />
-                                    ))}
-                                </Scatter>
-                            </ScatterChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
 
                 {/* Waterfall Impact chart */}
                 <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
@@ -440,26 +351,6 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                     ))}
                 </div>
 
-                {/* Issue Treemap */}
-                {treemapData.length > 0 && (
-                    <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
-                        <div>
-                            <h3 className="text-base font-bold text-white">Issue Hierarchy</h3>
-                            <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Categorized Friction points</p>
-                        </div>
-                        <div className="h-48">
-                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                                <Treemap
-                                    data={treemapData}
-                                    dataKey="size"
-                                    aspectRatio={4 / 3}
-                                    stroke="#fff"
-                                    content={<TreemapContent />}
-                                />
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* AI-Generated Feedback Summary — Concise Executive Insight */}

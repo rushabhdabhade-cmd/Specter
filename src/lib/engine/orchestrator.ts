@@ -371,6 +371,22 @@ export class Orchestrator {
                     clickCoords = await this.resolveCoords(action, actionObservation.domContext);
                 }
 
+                // Parse interactive elements from domContext for "Show Potential Clicks" overlay
+                let potentialElements: any[] = [];
+                try {
+                    const parsed: any[] = JSON.parse(actionObservation.domContext || '[]');
+                    potentialElements = parsed
+                        .filter(el => el.coordinates && typeof el.coordinates.x === 'number')
+                        .map(el => ({
+                            x: el.coordinates.x,
+                            y: el.coordinates.y,
+                            w: el.coordinates.w,
+                            h: el.coordinates.h,
+                            role: el.role,
+                            text: (el.text || '').slice(0, 30),
+                        }));
+                } catch { /* ignore parse errors */ }
+
                 // Execute
                 this.updateLiveStatus(sessionId, `Page ${visited.size} | ${action.type}: ${action.text || ''}`);
                 await this.browser.perform(action);
@@ -387,6 +403,7 @@ export class Orchestrator {
                     {
                         ...action,
                         coordinates: clickCoords,
+                        potential_elements: potentialElements,
                         local_screenshot_path: localPath,
                         technical_metrics: {
                             latency_ms: metrics.last_load_time,
