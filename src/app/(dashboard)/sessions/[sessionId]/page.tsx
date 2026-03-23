@@ -188,7 +188,7 @@ export default function SessionPage() {
     const actionProgress = effectivePages > 0 ? currentPageAction / MAX_ACTIONS_PAGE : 0;
     const overallPct = session?.status === 'completed' ? 100
         : session?.status === 'error' ? Math.round(pageProgress * 100)
-        : Math.min(Math.round((pageProgress * 0.7 + actionProgress * 0.3) * 100), 99);
+            : Math.min(Math.round((pageProgress * 0.7 + actionProgress * 0.3) * 100), 99);
 
     if (loading) return (
         <div className="flex items-center justify-center p-20 animate-pulse text-slate-500 font-bold uppercase tracking-widest text-xs">
@@ -273,10 +273,9 @@ export default function SessionPage() {
                         <span className="text-slate-500">
                             <span className="text-white">{stepsCompleted}</span> steps
                         </span>
-                        <span className={`text-lg font-black tabular-nums ${
-                            session?.status === 'completed' ? 'text-emerald-400' :
-                            session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
-                        }`}>{overallPct}%</span>
+                        <span className={`text-lg font-black tabular-nums ${session?.status === 'completed' ? 'text-emerald-400' :
+                                session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
+                            }`}>{overallPct}%</span>
                     </div>
                 </div>
 
@@ -284,11 +283,10 @@ export default function SessionPage() {
                 <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden relative">
                     {/* Pages filled */}
                     <div
-                        className={`h-full rounded-full transition-all duration-700 ease-out ${
-                            session?.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' :
-                            session?.status === 'error'     ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]' :
-                            'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.5)]'
-                        }`}
+                        className={`h-full rounded-full transition-all duration-700 ease-out ${session?.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' :
+                                session?.status === 'error' ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]' :
+                                    'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.5)]'
+                            }`}
                         style={{ width: `${overallPct}%` }}
                     />
                     {/* Shimmer on active */}
@@ -302,13 +300,12 @@ export default function SessionPage() {
                     {Array.from({ length: MAX_PAGES }).map((_, i) => (
                         <div
                             key={i}
-                            className={`h-1 flex-1 rounded-sm transition-all duration-500 ${
-                                i < effectivePages
+                            className={`h-1 flex-1 rounded-sm transition-all duration-500 ${i < effectivePages
                                     ? session?.status === 'completed' ? 'bg-emerald-500/60' : 'bg-indigo-500/60'
                                     : i === effectivePages && session?.status === 'running'
-                                    ? 'bg-indigo-500/30 animate-pulse'
-                                    : 'bg-white/5'
-                            }`}
+                                        ? 'bg-indigo-500/30 animate-pulse'
+                                        : 'bg-white/5'
+                                }`}
                         />
                     ))}
                 </div>
@@ -316,10 +313,10 @@ export default function SessionPage() {
                     {session?.status === 'completed'
                         ? `Completed — ${stepsCompleted} total interactions across ${effectivePages} pages`
                         : session?.status === 'error'
-                        ? 'Session ended with an error'
-                        : effectivePages === 0
-                        ? 'Starting up...'
-                        : `Exploring page ${effectivePages} of ${MAX_PAGES} — ${MAX_PAGES - effectivePages} page${MAX_PAGES - effectivePages !== 1 ? 's' : ''} remaining`
+                            ? 'Session ended with an error'
+                            : effectivePages === 0
+                                ? 'Starting up...'
+                                : `Exploring page ${effectivePages} of ${MAX_PAGES} — ${MAX_PAGES - effectivePages} page${MAX_PAGES - effectivePages !== 1 ? 's' : ''} remaining`
                     }
                 </p>
             </div>
@@ -340,9 +337,9 @@ export default function SessionPage() {
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Mission Mirror v1.0</span>
                             </div>
                             {latestLog?.current_url && (
-                                <a 
-                                    href={latestLog.current_url} 
-                                    target="_blank" 
+                                <a
+                                    href={latestLog.current_url}
+                                    target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] text-slate-400 font-mono hover:bg-white/10 hover:border-white/10 hover:text-white transition-all cursor-pointer"
                                 >
@@ -589,7 +586,7 @@ export default function SessionPage() {
             {/* Live Diagnostics Terminal */}
             <div className="rounded-[40px] border border-white/5 bg-[#080808] p-8 space-y-4 shadow-2xl relative overflow-hidden group/terminal backdrop-blur-3xl">
                 <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
-                
+
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
@@ -605,7 +602,7 @@ export default function SessionPage() {
                 <div className="mt-4 bg-[#040404] rounded-3xl p-6 font-mono text-xs text-emerald-400/90 space-y-1.5 h-44 overflow-y-auto custom-scrollbar border border-white/5 shadow-inner">
                     {terminalLines.map((line, i) => (
                         <div key={i} className="flex items-start gap-2 animate-in fade-in slide-in-from-left-1 duration-300">
-                            <span className="text-emerald-500/60 font-black">📡</span>
+
                             <span className="leading-relaxed break-all font-medium">{line}</span>
                         </div>
                     ))}
