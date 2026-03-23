@@ -15,6 +15,7 @@ export class BrowserService {
     private savedConfig: any = null;       // saved for reconnect
     private lastKnownUrl: string = '';     // last navigated URL, restored after reconnect
     private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+    private reconnecting = false;  // prevents concurrent reconnect attempts
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -42,29 +43,43 @@ export class BrowserService {
     // ─── Reconnect ──────────────────────────────────────────────────────────────
 
     private async reconnect(): Promise<void> {
+        if (this.reconnecting) return;
+        this.reconnecting = true;
         console.warn('CDP dropped — reconnecting to Browserless...');
         this.stopKeepalive();
-        try { await this.stagehand?.close(); } catch { /* already dead */ }
-        this.stagehand = null;
-        this.page = null;
+        try {
+            try { await this.stagehand?.close(); } catch { /* already dead */ }
+            this.stagehand = null;
+            this.page = null;
 
-        if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
+            if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
 
-        this.stagehand = new Stagehand(this.savedConfig);
-        console.log('Re-initializing Stagehand...');
-        await this.stagehand.init();
-        await this.setupPage();
+            this.stagehand = new Stagehand(this.savedConfig);
+            console.log('Re-initializing Stagehand...');
+            await this.stagehand.init();
+            await this.setupPage();
 
-        if (this.lastKnownUrl) {
-            console.log(`Restoring to: ${this.lastKnownUrl}`);
-            await this.navigate(this.lastKnownUrl);
+            if (this.lastKnownUrl) {
+                console.log(`Restoring to: ${this.lastKnownUrl}`);
+                await this.navigate(this.lastKnownUrl);
+            }
+            console.log('Reconnected.');
+        } finally {
+            this.reconnecting = false;
         }
-        console.log('Reconnected.');
     }
 
     // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
 
     private async withReconnect<T>(fn: () => Promise<T>): Promise<T> {
+        // If keepalive already triggered a reconnect, wait for it to finish first
+        if (this.reconnecting) {
+            await new Promise<void>(resolve => {
+                const check = setInterval(() => {
+                    if (!this.reconnecting) { clearInterval(check); resolve(); }
+                }, 200);
+            });
+        }
         try {
             return await fn();
         } catch (err: any) {
@@ -187,8 +202,13 @@ export class BrowserService {
         this.keepaliveTimer = setInterval(async () => {
             try {
                 if (this.page) await this.page.evaluate(() => 1);
-            } catch {
-                // Silently swallow — withReconnect on the next real call will handle recovery
+            } catch (err: any) {
+                if (BrowserService.isCdpError(err) && !this.reconnecting) {
+                    // Proactively reconnect while LLM is thinking — so the browser
+                    // is ready when the next browser operation comes in.
+                    console.warn('Keepalive detected CDP drop — triggering proactive reconnect...');
+                    this.reconnect().catch(e => console.error('Proactive reconnect failed:', e.message));
+                }
             }
         }, 25_000); // 25s — well under Railway's ~60s idle timeout
     }
