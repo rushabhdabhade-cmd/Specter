@@ -160,7 +160,7 @@ export async function suggestAudienceArchetypes(formData: {
 
         siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
         if (observation.sections) {
-            siteContext += observation.sections.map((s: any, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
+            siteContext += observation.sections.map((s: { domContext: string }, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
         }
     } catch (err) {
         console.error('Browser discovery failed for archetype suggestion:', err);
