@@ -100,7 +100,7 @@ export default function AboutPage() {
     );
 }
 
-function ValueItem({ icon: Icon, title, desc }: { icon: any, title: string, desc: string }) {
+function ValueItem({ icon: Icon, title, desc }: { icon: import('react').ElementType, title: string, desc: string }) {
     return (
         <div className="space-y-3">
             <div className="flex items-center gap-3 text-emerald-400">
