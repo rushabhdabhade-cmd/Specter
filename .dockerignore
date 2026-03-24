@@ -22,6 +22,9 @@ README.md
 PRODUCT_OVERVIEW.md
 ENGINE_OVERVIEW.md
 
+# CDK infrastructure (not part of the app build)
+infra
+
 # Test/CI
 coverage
 .nyc_output

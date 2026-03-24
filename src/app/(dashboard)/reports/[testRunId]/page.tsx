@@ -13,6 +13,7 @@ import {
 import { RefreshButton } from '@/components/reports/RefreshButton';
 import { SentimentTimeline } from '@/components/reports/SentimentTimeline';
 import { StepFeedbackCard } from '@/components/reports/StepFeedbackCard';
+import { AuditTrail } from '@/components/reports/AuditTrail';
 import { FeedbackSummary } from '@/components/reports/FeedbackSummary';
 import { WebsiteHeatmap } from '@/components/reports/WebsiteHeatmap';
 import { ActionItems } from '@/components/reports/ActionItems';
@@ -31,16 +32,16 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
   const [runRes, reportRes, sessionsRes] = await Promise.all([
     userId
       ? supabase
-          .from('test_runs')
-          .select(`*, projects!inner(*)`)
-          .eq('id', testRunId)
-          .eq('projects.user_id', userId)
-          .single()
+        .from('test_runs')
+        .select(`*, projects!inner(*)`)
+        .eq('id', testRunId)
+        .eq('projects.user_id', userId)
+        .single()
       : supabase
-          .from('test_runs')
-          .select(`*, projects(*)`)
-          .eq('id', testRunId)
-          .single(),
+        .from('test_runs')
+        .select(`*, projects(*)`)
+        .eq('id', testRunId)
+        .single(),
 
     supabase
       .from('reports')
@@ -114,12 +115,12 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
       {/* ── Header — Premium High-Impact Project Summary ────────────────────────── */}
       <div className="flex flex-col space-y-8">
-        <Link href="/dashboard" className="no-print flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-colors w-fit">
+        <Link href="/dashboard" className="no-print flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white hover:bg-white/10 transition-colors w-fit">
           <ChevronLeft className="h-3 w-3" />
           Back to Dashboard
         </Link>
 
-        <div className="group relative rounded-3xl md:rounded-[48px] border border-white/5 bg-[#0a0a0a] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)]">
+        <div className="group relative rounded-3xl md:rounded-[48px] border border-white/20 bg-[#0a0a0a] overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)]">
           {/* mesh gradient bg */}
           <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-transparent opacity-50" />
 
@@ -148,7 +149,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                   <div className="flex items-center justify-center sm:justify-start gap-3 text-slate-400 min-w-0">
                     <Layers className="h-4 w-4 text-indigo-500/30 flex-shrink-0" />
                     <p className="text-lg font-medium tracking-tight min-w-0">
-                      Strategic analysis for <span className="text-indigo-400 select-all font-bold underline decoration-indigo-500/30 underline-offset-4 cursor-pointer hover:text-indigo-300 transition-colors uppercase tracking-widest text-xs break-all">{run.projects?.target_url?.replace(/</g, '&lt;')}</span>
+                      Strategic analysis for <a href={run.projects?.target_url} target="_blank" rel="noopener noreferrer" className="text-indigo-400 select-all font-bold underline decoration-indigo-500/30 underline-offset-4 hover:text-indigo-300 transition-colors uppercase tracking-widest text-xs break-all">{run.projects?.target_url}</a>
                     </p>
                   </div>
 
@@ -163,9 +164,9 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
               </div>
 
               {/* High-End Global Score Panel */}
-              <div className="flex-shrink-0 bg-white/[0.03] border border-white/5 rounded-[40px] p-4 sm:p-8 md:p-10 text-center min-w-[220px] backdrop-blur-3xl relative group/score transition-all hover:bg-white/[0.05]">
+              <div className="flex-shrink-0 bg-white/[0.03] border border-white/20 rounded-[40px] p-4 sm:p-8 md:p-10 text-center min-w-[220px] backdrop-blur-3xl relative group/score transition-all hover:bg-white/[0.05]">
                 <div className="absolute inset-0 bg-indigo-500/5 rounded-[40px] blur-3xl opacity-0 group-hover/score:opacity-100 transition-opacity" />
-                <p className="relative text-[11px] font-black uppercase tracking-[0.3em] text-slate-500 mb-3">Overall UX Health</p>
+                <p className="relative text-[11px] font-black uppercase tracking-[0.3em] text-slate-300 mb-3">Overall UX Health</p>
                 <div className="relative flex items-end justify-center gap-1">
                   <span className="text-7xl font-black tracking-tighter leading-none" style={{ color: uxScore >= 75 ? '#10b981' : uxScore >= 50 ? '#f59e0b' : '#ef4444' }}>
                     {uxScore}
@@ -186,8 +187,8 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
           { label: 'Total Steps', value: totalLogs, icon: Zap, color: '#f59e0b' },
           { label: 'Friction Events', value: totalFrictionEvents, icon: AlertTriangle, color: '#ef4444' },
         ].map((stat, i) => (
-          <div key={i} className="group relative overflow-hidden rounded-[32px] border border-white/5 bg-white/[0.02] p-4 sm:p-6 md:p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-indigo-500/5">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">{stat.label}</p>
+          <div key={i} className="group relative overflow-hidden rounded-[32px] border border-white/20 bg-white/[0.02] p-4 sm:p-6 md:p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-indigo-500/5">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-4">{stat.label}</p>
             <div className="flex items-end justify-center gap-1">
               <span className={`${stat.isStatus ? 'text-2xl' : 'text-4xl'} font-black tracking-tighter leading-none`} style={{ color: stat.color }}>{stat.value}</span>
             </div>
@@ -233,7 +234,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
       </div>
 
       {/* ── Cohort Segmentation Profiling ─────────────────────────────────── */}
-      <div className="rounded-3xl md:rounded-[40px] border border-white/5 bg-[#0d0d0d] p-5 md:p-10 space-y-6 md:space-y-12 shadow-2xl">
+      <div className="rounded-3xl md:rounded-[40px] border border-white/20 bg-[#0d0d0d] p-5 md:p-10 space-y-6 md:space-y-12 shadow-2xl">
         <div className="space-y-1">
           <h2 className="text-2xl font-bold text-white">Participant Profile Segmentation</h2>
           <p className="text-sm text-slate-500 font-medium">Understanding performance by Technical Literacy.</p>
@@ -255,7 +256,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
 
           return (
             <div key={literacy} className="space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-white/5">
+              <div className="flex items-center justify-between pb-4 border-b border-white/20">
                 <div className="flex items-center gap-3">
                   <div className={`h-2.5 w-2.5 rounded-full ${literacy === 'High' ? 'bg-emerald-500' : literacy === 'Medium' ? 'bg-blue-500' : 'bg-red-500'} shadow-[0_0_10px_rgba(255,255,255,0.1)]`} />
                   <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{literacy} Tech Literacy Segment</h3>
@@ -274,7 +275,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                   const score = sessionScores[sIdx];
                   const scoreColor = score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
                   return (
-                    <div key={session.id} className="p-6 rounded-3xl bg-white/[0.03] border border-white/5 space-y-4 group hover:border-white/10 transition-all">
+                    <div key={session.id} className="p-6 rounded-3xl bg-white/[0.03] border border-white/20 space-y-4 group hover:border-white/10 transition-all">
                       <div className="flex items-start justify-between">
                         <div className="min-w-0">
                           <p className="text-base font-bold text-white leading-tight truncate">{session.persona_configs?.name}</p>
@@ -332,19 +333,19 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                       <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500 mt-1">{literacy} Tech Literacy &bull; Journey Profile</p>
                     </div>
                   </div>
-                  <p className="text-lg font-medium text-slate-400 italic max-w-2xl leading-relaxed">
+                  <p className="text-lg font-medium text-slate-300 italic max-w-2xl leading-relaxed">
                     &ldquo;{goalPrompt}&rdquo;
                   </p>
                 </div>
 
-                <div className="flex flex-wrap md:flex-nowrap items-center gap-6 md:gap-12 bg-white/[0.02] border border-white/5 rounded-2xl px-5 py-4 md:px-10 md:py-6">
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-6 md:gap-12 bg-white/[0.02] border border-white/20 rounded-2xl px-5 py-4 md:px-10 md:py-6">
                   <div className="text-center">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Success Rate</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-300 mb-1">Success Rate</p>
                     <p className="text-2xl font-black text-white">{isCompleted ? '100%' : 'Abandoned'}</p>
                   </div>
                   <div className="h-8 w-px bg-white/5" />
                   <div className="text-center">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Persona Score</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-300 mb-1">Persona Score</p>
                     <p className="text-3xl font-black" style={{ color: score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444' }}>{score}</p>
                   </div>
                 </div>
@@ -360,12 +361,12 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                 ].map((s, i) => {
                   const pct = scoreResult.emotionScores[s.label.toLowerCase()] || 0;
                   return (
-                    <div key={i} className={`rounded-3xl ${s.bg} border border-white/5 p-6 space-y-3`}>
+                    <div key={i} className={`rounded-3xl ${s.bg} border border-white/20 p-6 space-y-3`}>
                       <div className="flex items-center justify-between">
                         <s.icon className="h-5 w-5" style={{ color: s.color }} />
                         <span className="text-base font-black text-white">{pct}%</span>
                       </div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">{s.label}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">{s.label}</p>
                     </div>
                   );
                 })}
@@ -379,18 +380,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
               />
 
               {/* Audit Trail for this persona */}
-              <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                  <div className="h-px flex-1 bg-white/5" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">Detailed Journey Audit</span>
-                  <div className="h-px flex-1 bg-white/5" />
-                </div>
-                <div className="grid grid-cols-1 gap-6">
-                  {logs.map((log: any) => (
-                    <StepFeedbackCard key={log.id} step={log} personaName={session.persona_configs?.name} />
-                  ))}
-                </div>
-              </div>
+              <AuditTrail logs={logs} personaName={session.persona_configs?.name} />
             </div>
           );
         })}

@@ -1,16 +1,10 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
-import { chromium } from 'playwright-core';
 
 
 export class BrowserService {
     private stagehand: Stagehand | null = null;
     private page: any = null;
-    private savedConfig: any = null;       // saved for reconnect
-    private lastKnownUrl: string = '';     // last navigated URL, restored after reconnect
-    private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
-    private reconnecting = false;          // prevents concurrent reconnect attempts
-    private reconnectGeneration = 0;       // incremented each time a reconnect completes
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -19,177 +13,50 @@ export class BrowserService {
         last_load_time: 0
     };
 
-    // ─── CDP error detection ────────────────────────────────────────────────────
-
-    private static isCdpError(err: any): boolean {
-        const msg: string = (err?.message || err?.toString() || '').toLowerCase();
-        return (
-            msg.includes('cdp transport closed') ||
-            msg.includes('websocket') ||
-            msg.includes('fin must be set') ||
-            msg.includes('socket-error') ||
-            msg.includes('econnreset') ||
-            msg.includes('econnrefused') ||
-            msg.includes('target closed') ||
-            msg.includes('session closed')
-        );
-    }
-
-    // ─── Reconnect ──────────────────────────────────────────────────────────────
-
-    private async reconnect(): Promise<void> {
-        if (this.reconnecting) return;
-        this.reconnecting = true;
-        this.reconnectGeneration++;
-        console.warn('CDP dropped — reconnecting to Browserless...');
-        this.stopKeepalive();
-        try {
-            try { await this.stagehand?.close(); } catch { /* already dead */ }
-            this.stagehand = null;
-            this.page = null;
-
-            if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
-
-            this.stagehand = new Stagehand(this.savedConfig);
-            console.log('Re-initializing Stagehand...');
-            await this.stagehand.init();
-            await this.setupPage();
-
-            if (this.lastKnownUrl) {
-                console.log(`Restoring to: ${this.lastKnownUrl}`);
-                // Use page.goto() directly — calling this.navigate() here would deadlock
-                // because withReconnect() waits for this.reconnecting to become false.
-                await this.page.goto(this.lastKnownUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch((e: any) => {
-                    console.warn(`Restore navigation failed: ${e.message}`);
-                });
-            }
-            console.log('Reconnected.');
-        } finally {
-            this.reconnecting = false;
-        }
-    }
-
-    // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
-
-    private async waitForReconnect(): Promise<void> {
-        await new Promise<void>(resolve => {
-            const check = setInterval(() => {
-                if (!this.reconnecting) { clearInterval(check); resolve(); }
-            }, 200);
-        });
-    }
-
-    private async withReconnect<T>(fn: () => Promise<T>): Promise<T> {
-        // If a reconnect is already in progress, wait for it then retry immediately
-        if (this.reconnecting) {
-            await this.waitForReconnect();
-            return await fn();
-        }
-
-        // Race fn() against a generation-change signal.
-        // When the keepalive reconnects, it increments reconnectGeneration.
-        // Any fn() that was hung on the dead WebSocket will be abandoned here
-        // and retried on the fresh page — without spawning a second reconnect.
-        const genBefore = this.reconnectGeneration;
-        let signalInterval: ReturnType<typeof setInterval>;
-        const reconnectSignal = new Promise<never>((_, reject) => {
-            signalInterval = setInterval(() => {
-                if (this.reconnectGeneration !== genBefore) {
-                    clearInterval(signalInterval);
-                    reject(new Error('reconnect:generation-changed'));
-                }
-            }, 300);
-        });
-
-        try {
-            const result = await Promise.race([fn(), reconnectSignal]);
-            clearInterval(signalInterval!);
-            return result;
-        } catch (err: any) {
-            clearInterval(signalInterval!);
-
-            if (err.message === 'reconnect:generation-changed') {
-                // Keepalive already reconnected while fn() was hung — wait if still
-                // in progress, then retry on the new page.
-                if (this.reconnecting) await this.waitForReconnect();
-                console.warn('Keepalive reconnected while operation was hung — retrying on fresh connection...');
-                return await fn();
-            }
-
-            if (BrowserService.isCdpError(err)) {
-                if (this.reconnectGeneration !== genBefore) {
-                    // Keepalive already established a fresh connection
-                    console.warn('Reconnect already completed — retrying on fresh connection...');
-                    return await fn();
-                }
-                console.warn(`CDP error: "${err.message}" — attempting reconnect...`);
-                await this.reconnect();
-                return await fn();
-            }
-
-            throw err;
-        }
-    }
-
     // ─── Init ───────────────────────────────────────────────────────────────────
 
     async init(modelName: string = 'google/gemini-2.0-flash', apiKey?: string) {
         try {
-            const useBrowserless = !!process.env.BROWSERLESS_WS_URL;
-            // Browserbase requires explicit opt-in via USE_BROWSERBASE=true.
-            // Having API keys alone is not enough — prevents accidental usage in local dev.
-            const useBrowserBase = !useBrowserless && process.env.USE_BROWSERBASE === 'true' && !!(process.env.BROWSERBASE_API_KEY && process.env.BROWSERBASE_PROJECT_ID);
-
             const isGemini = modelName.includes('gemini');
             const resolvedApiKey = isGemini
                 ? (apiKey || process.env.GEMINI_API_KEY)
                 : (apiKey || process.env.OPENAI_API_KEY);
 
             const stagehandConfig: any = {
-                env: useBrowserBase ? 'BROWSERBASE' : 'LOCAL',
+                env: 'LOCAL',
                 verbose: 0,
                 disableAPI: true,
                 model: {
                     modelName,
                     apiKey: resolvedApiKey,
                 },
+                localBrowserLaunchOptions: {
+                    headless: true,
+                    viewport: { width: 1280, height: 800 },
+                    args: [
+                        // Required for Docker/ECS containers
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        // Memory reduction
+                        '--disable-extensions',
+                        '--disable-plugins',
+                        '--disable-background-networking',
+                        '--disable-background-timer-throttling',
+                        '--disable-sync',
+                        '--disable-translate',
+                        '--disable-default-apps',
+                        '--disable-notifications',
+                        '--disable-hang-monitor',
+                        '--no-first-run',
+                        '--mute-audio',
+                        '--disable-component-update',
+                    ]
+                }
             };
 
-            if (useBrowserBase) {
-                stagehandConfig.apiKey = process.env.BROWSERBASE_API_KEY;
-                stagehandConfig.projectId = process.env.BROWSERBASE_PROJECT_ID;
-                // 30 min timeout — enough for 15-page traversal with LLM inference
-                stagehandConfig.browserbaseSessionCreateParams = { timeout: 1800 };
-            } else if (useBrowserless) {
-                // Pass cdpUrl directly — Stagehand connects to Browserless natively.
-                // No local Chromium binary needed on the app server.
-                const raw = process.env.BROWSERLESS_WS_URL!;
-                // Normalize: add wss:// if the user omitted the protocol
-                const wsUrl = /^wss?:\/\//i.test(raw) ? raw : `wss://${raw}`;
-                console.log(`Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
-                stagehandConfig.localBrowserLaunchOptions = {
-                    cdpUrl: wsUrl,
-                    viewport: { width: 1280, height: 800 },
-                    ignoreHTTPSErrors: true,
-                };
-            } else {
-                // LOCAL: launch Playwright's bundled Chromium directly on this machine
-                let executablePath: string | undefined;
-                try {
-                    executablePath = chromium.executablePath();
-                } catch {
-                    // Falls back to chrome-launcher's auto-discovery (local dev)
-                }
-                stagehandConfig.localBrowserLaunchOptions = {
-                    headless: true,
-                    executablePath,
-                    viewport: { width: 1280, height: 800 }
-                };
-            }
-
-            this.savedConfig = stagehandConfig; // save for reconnect
             this.stagehand = new Stagehand(stagehandConfig);
-
             console.log('Initializing Stagehand...');
             await this.stagehand.init();
             await this.setupPage();
@@ -200,7 +67,7 @@ export class BrowserService {
         }
     }
 
-    // ─── Page setup (shared by init and reconnect) ──────────────────────────────
+    // ─── Page setup ─────────────────────────────────────────────────────────────
 
     private async setupPage(): Promise<void> {
         const context = (this.stagehand as any).context;
@@ -227,39 +94,6 @@ export class BrowserService {
 
         if (!this.page) throw new Error('Stagehand failure: Page object not found.');
         await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
-
-        this.startKeepalive();
-    }
-
-    // ─── Keepalive — prevents Railway proxy from dropping idle WebSocket ─────────
-
-    private startKeepalive() {
-        this.stopKeepalive();
-        // Only needed when using a remote browser over WebSocket (Browserless/Browserbase)
-        if (!this.savedConfig?.localBrowserLaunchOptions?.cdpUrl && this.savedConfig?.env !== 'BROWSERBASE') return;
-
-        this.keepaliveTimer = setInterval(async () => {
-            if (!this.page || this.reconnecting) return;
-            try {
-                // Race the ping against a 5s timeout — if Railway killed the WebSocket
-                // the evaluate() hangs forever instead of throwing, so we must timeout it.
-                await Promise.race([
-                    this.page.evaluate(() => 1),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('keepalive timeout')), 5_000))
-                ]);
-            } catch (err: any) {
-                // Any failure (CDP error OR timeout) means the connection is dead.
-                console.warn(`Keepalive failed (${err.message}) — triggering proactive reconnect...`);
-                this.reconnect().catch(e => console.error('Proactive reconnect failed:', e.message));
-            }
-        }, 25_000); // 25s interval — ping detects drops well before they cause hangs
-    }
-
-    private stopKeepalive() {
-        if (this.keepaliveTimer) {
-            clearInterval(this.keepaliveTimer);
-            this.keepaliveTimer = null;
-        }
     }
 
     // ─── Network ────────────────────────────────────────────────────────────────
@@ -295,14 +129,11 @@ export class BrowserService {
         if (!this.page) return;
         const start = Date.now();
         try {
-            await this.withReconnect(() =>
-                this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
-            );
+            await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
             const duration = Date.now() - start;
             this.metrics.navigation_latency.push(duration);
             this.metrics.last_load_time = duration;
-            this.lastKnownUrl = url;
         } catch (err: any) {
             console.error(`Navigation to ${url} failed:`, err.message);
         }
@@ -330,12 +161,10 @@ export class BrowserService {
                 const role = (ob.method || 'element').toLowerCase();
                 const key = `${role}::${text}`;
 
-                // Skip structural noise and duplicates
                 if (!text || seen.has(key)) continue;
                 if (text.length < 2) continue;
                 seen.add(key);
 
-                // Resolve coordinates
                 let coords: any = null;
                 try {
                     coords = await this.page.evaluate((sel: string) => {
@@ -344,7 +173,6 @@ export class BrowserService {
                             : document.querySelector(sel) as HTMLElement;
                         if (!el) return null;
                         const r = el.getBoundingClientRect();
-                        // Exclude off-screen elements
                         if (r.width === 0 || r.height === 0) return null;
                         if (r.bottom < 0 || r.top > window.innerHeight) return null;
                         return {
@@ -375,11 +203,6 @@ export class BrowserService {
 
     // ─── Capture a single viewport slice ────────────────────────────────────────
 
-    /**
-     * Captures screenshot + interactive elements at the current scroll position.
-     * Uses quality=40 for section scans (good enough for vision analysis)
-     * and quality=60 for the primary decision-making screenshot.
-     */
     private async captureSlice(label: string, highQuality = false): Promise<ObservationSection> {
         if (!this.page) throw new Error('Browser not initialized');
 
@@ -389,10 +212,9 @@ export class BrowserService {
         const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
         const screenshot = await this.page.screenshot({
             type: 'jpeg',
-            quality: highQuality ? 60 : 40  // 40% is plenty for multi-section visual analysis
+            quality: highQuality ? 60 : 40
         });
 
-        // Only extract DOM on the primary (high-quality) slice to avoid redundant Stagehand calls
         const domContext = highQuality
             ? JSON.stringify(await this.extractInteractiveElements())
             : '[]';
@@ -407,32 +229,20 @@ export class BrowserService {
 
     // ─── Full-page scan: Top / Mid / Bottom + primary view ──────────────────────
 
-    /**
-     * Captures up to 3 viewport slices across the full page height,
-     * then returns to the top for a primary high-quality capture.
-     *
-     * Returns an Observation where:
-     *  - screenshot / domContext = primary top-view (for LLM decision)
-     *  - sections = [Top, Mid?, Bottom?] — all passed to analyzePageSections() in ONE call
-     */
     async observeFullPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
-        return this.withReconnect(() => this._observeFullPage()).catch(() => this.emptyObservation());
+        return this._observeFullPage().catch(() => this.emptyObservation());
     }
 
     private async _observeFullPage(): Promise<Observation> {
-        if (!this.page || !this.stagehand) {
-            return this.emptyObservation();
-        }
+        if (!this.page || !this.stagehand) return this.emptyObservation();
 
         const sections: ObservationSection[] = [];
 
-        // Top
         await this.page.evaluate(() => window.scrollTo(0, 0));
         await this.page.waitForTimeout(300);
         sections.push(await this.captureSlice('Top'));
 
-        // Mid and Bottom (only if page is tall enough to warrant it)
         const { vh, dh } = await this.page.evaluate(() => ({
             vh: window.innerHeight,
             dh: document.documentElement.scrollHeight
@@ -450,12 +260,10 @@ export class BrowserService {
             sections.push(await this.captureSlice('Bottom'));
         }
 
-        // Return to top and do the primary rich capture (with DOM)
         await this.page.evaluate(() => window.scrollTo(0, 0));
         await this.page.waitForTimeout(300);
         const primary = await this.captureSlice('Primary', true);
 
-        // Replace the low-quality Top screenshot with the high-quality primary
         if (sections.length > 0) sections[0] = { ...primary, label: 'Top' };
 
         return {
@@ -472,7 +280,7 @@ export class BrowserService {
 
     async observe(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
-        return this.withReconnect(async () => {
+        try {
             const slice = await this.captureSlice('Current', true);
             return {
                 screenshot: slice.screenshot,
@@ -482,7 +290,9 @@ export class BrowserService {
                 dimensions: { width: 1280, height: 800 },
                 sections: [slice]
             };
-        }).catch(() => this.emptyObservation());
+        } catch {
+            return this.emptyObservation();
+        }
     }
 
     private emptyObservation(): Observation {
@@ -499,7 +309,7 @@ export class BrowserService {
 
     async perform(action: Action) {
         if (!this.page || !this.stagehand) throw new Error('Browser not initialized');
-        return this.withReconnect(() => this._perform(action));
+        return this._perform(action);
     }
 
     private async _perform(action: Action) {
@@ -521,7 +331,6 @@ export class BrowserService {
                     await this.stagehand.act(instruction, { page: this.page });
                     this.metrics.action_latency.push(Date.now() - t0);
 
-                    // Wait for navigation or new tab
                     for (let i = 0; i < 5; i++) {
                         await this.page.waitForTimeout(800);
                         const newCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
@@ -552,10 +361,7 @@ export class BrowserService {
                     break;
             }
         } catch (err) {
-            // Re-throw CDP errors so withReconnect can catch and handle them
-            if (BrowserService.isCdpError(err)) throw err;
             console.warn(`Stagehand action "${action.type}" failed:`, err);
-            // Fallback: direct selector click
             if (action.type === 'click' && action.selector) {
                 await this.page.click(action.selector, { timeout: 5000 }).catch(() => { });
             }
@@ -565,18 +371,12 @@ export class BrowserService {
         const newPageCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
             await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
-            this.lastKnownUrl = this.page.url();
         }
         await this.page.waitForTimeout(300);
     }
 
     // ─── Link harvesting ────────────────────────────────────────────────────────
 
-    /**
-     * Returns same-origin links that look like meaningful page content.
-     * Filters out: assets, auth paths, pagination query params, hash links,
-     * and known utility paths that add no UX value.
-     */
     async getContentLinks(maxLinks = 20): Promise<string[]> {
         if (!this.page) return [];
         const origin = new URL(this.page.url()).origin;
@@ -602,7 +402,6 @@ export class BrowserService {
                     });
             }, origin);
 
-            // Apply server-side filters and deduplicate by pathname (strip query params)
             const seenPaths = new Set<string>();
             const filtered: string[] = [];
 
@@ -613,7 +412,7 @@ export class BrowserService {
                     const path = u.pathname.replace(/\/$/, '').toLowerCase();
                     if (seenPaths.has(path)) continue;
                     seenPaths.add(path);
-                    filtered.push(`${u.origin}${u.pathname}`); // strip query params for dedup
+                    filtered.push(`${u.origin}${u.pathname}`);
                     if (filtered.length >= maxLinks) break;
                 } catch (_) { }
             }
@@ -636,7 +435,6 @@ export class BrowserService {
     }
 
     async close() {
-        this.stopKeepalive();
         if (this.stagehand) await this.stagehand.close().catch(() => { });
         this.page = null;
         this.stagehand = null;

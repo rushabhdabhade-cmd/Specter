@@ -60,10 +60,7 @@ export default async function ReportsPage() {
             {/* ── INTELLIGENCE HEADER ────────────────────────────────────────── */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
                 <div className="space-y-4">
-                    <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
-                        <Activity className="h-3.5 w-3.5" />
-                        Analytical Intelligence Hub
-                    </div>
+
                     <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white leading-tight">
                         Intelligence <br /> <span className="italic opacity-50">Briefing.</span>
                     </h1>
@@ -72,14 +69,14 @@ export default async function ReportsPage() {
                     </p>
                 </div>
 
-                <div className="flex-shrink-0 bg-[#0a0a0a] border border-white/5 rounded-[32px] px-10 py-8 backdrop-blur-3xl group transition-all hover:border-white/10">
+                <div className="flex-shrink-0 bg-[#0a0a0a] border border-white/20 rounded-[32px] px-10 py-8 backdrop-blur-3xl group transition-all hover:border-white/10">
                     <div className="flex items-center gap-6">
                         <div className="h-14 w-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                             <Cpu className="h-7 w-7 text-indigo-400" />
                         </div>
                         <div>
                             <p className="text-3xl font-black tracking-tighter text-white">{reports.length}</p>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-700">Total Datasets</p>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Total Datasets</p>
                         </div>
                     </div>
                 </div>
