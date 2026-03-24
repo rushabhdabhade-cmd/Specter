@@ -19,7 +19,7 @@ const ActionSchema = z.object({
 /** Trim history to only the essential fields to save tokens. */
 function trimHistory(history: Action[]): string {
     return JSON.stringify(
-        history.slice(-4).map(a => ({
+        history.slice(-10).map(a => ({
             t: a.type,
             s: a.selector,
             url: a.current_url,
@@ -29,7 +29,7 @@ function trimHistory(history: Action[]): string {
 }
 
 /** Truncate DOM context to a max number of elements and chars. */
-function truncateDom(domContext: string | undefined, maxElements = 40, maxChars = 2000): string {
+function truncateDom(domContext: string | undefined, maxElements = 60, maxChars = 3000): string {
     if (!domContext) return '[]';
     try {
         const elements = JSON.parse(domContext);
@@ -45,26 +45,59 @@ function truncateDom(domContext: string | undefined, maxElements = 40, maxChars 
 function buildActionPrompt(
     observation: Observation,
     persona: PersonaProfile,
-    history: Action[]
+    history: Action[],
+    blockedPaths: string[] = []
 ): string {
     const lastAction = history[history.length - 1];
     const isStuck = lastAction &&
         (lastAction.type === 'click' || lastAction.type === 'type') &&
         lastAction.current_url === observation.url;
     const stuckNote = isStuck
-        ? `⚠️ STUCK: Last ${lastAction.type} on ${lastAction.selector || '?'} did not navigate. Try something different.\n`
+        ? `⚠️ STUCK: Last ${lastAction.type} on ${lastAction.selector || '?'} did not change the page. 
+Suggestions:
+- Try a DIFFERENT element (e.g. a link in the footer or a mobile menu icon).
+- SCROLL down to see if the page content changed below the fold.
+- Check if you need to click a parent container instead.\n`
         : '';
 
-    return `You are ${persona.name}, a synthetic user (tech: ${persona.tech_literacy}).
+    return `You are ${persona.name}, a synthetic user (tech literacy: ${persona.tech_literacy}).
 Goal: ${persona.goal_prompt}
-URL: ${observation.url}
+Current URL: ${observation.url}
 ${stuckNote}
-DOM (interactive elements, capped): ${truncateDom(observation.domContext)}
-History (last 4): ${trimHistory(history)}
 
-Reason as your persona — show emotions. Think: 1)What do you see? 2)What are your options? 3)What will you do?
-Rules: Never repeat a selector that didn't change the URL. Prefer scroll/different element when stuck. Max 1 wait per 5 steps.
-If goal reached → complete. If totally stuck → fail.
+VISUAL GUIDANCE:
+The provided image has indigo labels like [0], [1], etc. these correspond EXACTLY to the "index" in the JSON below.
+
+INTERACTIVE ELEMENTS (JSON):
+${truncateDom(observation.domContext)}
+
+HISTORY (Last 10):
+${trimHistory(history)}
+
+${blockedPaths.length > 0 ? `🚫 PREVIOUSLY FAILED PATHS (Identity: Text:URL):
+${blockedPaths.join('\n')}\n` : ''}
+
+TASK:
+1) Analyze the screenshot and JSON. Note the location of labels.
+2) Use IDs/Classes in the JSON to identify structural components (e.g., "login-btn").
+3) Decide the NEXT action to move toward your goal.
+4) Provide qualitative UX feedback in 'ux_feedback'.
+
+Rules:
+- [CRITICAL] ALWAYS use the labels in brackets, e.g., "[index]", for the 'selector' field. 
+- [FORBIDDEN] Do NOT use CSS selectors, IDs, or classes in the 'selector' field.
+- Do NOT attempt any elements that match the FAILED PATHS listed above (even if they have a different index now).
+- Never repeat an index click that didn't change the state/URL.
+- Max 1 wait per 5 actions.
+
+EMOTIONAL STATE:
+- Delight: High satisfaction. Use this if navigation is fast, clear, matches your expectation, or feels premium. **Mandatory if you describe the step as "clear", "straightforward", "logical", or "easy".**
+- Neutral: Standard interaction with no specific positive or negative feedback.
+- Confusion: Lost, unsure where to click, or UI is ambiguous.
+- Frustration: Stuck, broken UI, repeated failures, or loops.
+
+[CRITICAL] Reward smooth, logical navigation by selecting 'Delight'. 
+[CRITICAL] If you state that the UI is "clear" or "straightforward" in your reasoning/feedback, you MUST return 'delight' in the 'emotional_state' field.
 
 Return JSON: { "type","selector"?,"text"?,"reasoning","emotional_state","ux_feedback","possible_paths":[] }`;
 }
@@ -78,8 +111,8 @@ export class OpenAIProvider implements LLMProvider {
         this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist);
 
         const response = await this.client.chat.completions.create({
             model: 'gpt-4o',
@@ -118,8 +151,8 @@ export class GeminiProvider implements LLMProvider {
         this.genAI = new GoogleGenerativeAI(key);
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist);
 
         const screenshotSize = observation.screenshot?.length || 0;
         if (screenshotSize < 100) {
@@ -215,8 +248,8 @@ export class OllamaProvider implements LLMProvider {
         }
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        const prompt = buildActionPrompt(observation, persona, history);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
+        const prompt = buildActionPrompt(observation, persona, history, blacklist);
         console.log(`🤖 Ollama inference (${this.models.join(', ')})...`);
         console.time('inference_total');
 
@@ -306,8 +339,8 @@ export class LLMService {
         }
     }
 
-    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[]): Promise<Action> {
-        return this.provider.decideNextAction(observation, persona, history);
+    async decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist: string[] = []): Promise<Action> {
+        return this.provider.decideNextAction(observation, persona, history, blacklist);
     }
 
     async generateSummary(prompt: string): Promise<string> {
