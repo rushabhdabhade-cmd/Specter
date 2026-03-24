@@ -264,7 +264,7 @@ export async function checkAndFinalizeTestRun(testRunId: string) {
     // 1. Fetch sessions with their last log time to detect staleness
     const { data: sessions, error } = await supabase
         .from('persona_sessions')
-        .select('id, status, created_at')
+        .select('id, status, created_at, updated_at')
         .eq('test_run_id', testRunId);
 
     if (error || !sessions) {
