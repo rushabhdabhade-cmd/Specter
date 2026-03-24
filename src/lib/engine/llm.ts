@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Observation, Action, PersonaProfile, LLMProvider } from './types';
+import { Observation, Action, PersonaProfile, LLMProvider, Archetype } from './types';
 
 const ActionSchema = z.object({
     type: z.enum(['click', 'type', 'scroll', 'wait', 'complete', 'fail']),
@@ -23,6 +23,25 @@ const SectionAnalysisSchema = z.object({
     emotional_intensity: z.number().min(0).max(1),
     proposed_solution: z.string().optional()
 });
+
+const PersonaSchema = z.object({
+    name: z.string(),
+    age_range: z.string(),
+    geolocation: z.string(),
+    tech_literacy: z.enum(['low', 'medium', 'high']),
+    domain_familiarity: z.string(),
+    goal_prompt: z.string()
+});
+
+const PersonaCohortSchema = z.array(PersonaSchema);
+
+const ArchetypeSchema = z.object({
+    id: z.string(),
+    icon_type: z.enum(['users', 'zap', 'user', 'check', 'globe', 'x', 'shopping-cart', 'home', 'settings']),
+    desc: z.string()
+});
+
+const ArchetypeCohortSchema = z.array(ArchetypeSchema);
 
 // ─── Token-saving helpers ─────────────────────────────────────────────────────
 
@@ -247,6 +266,62 @@ Provide your findings in the requested JSON format.`;
         });
         return response.choices[0].message.content || '';
     }
+
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const prompt = `You are a world-class UX Researcher and Behavioral Psychologist. 
+Based on the website context provided below, generate 5 distinct user persona CATEGORIES (e.g., "Skeptical Enterprise Buyer", "First-time Direct Consumer") that represent the core audience segments.
+
+CRITICAL REQUIREMENTS:
+1. NAME: Use a descriptive category/segment name. DO NOT use human names like "John" or "Sarah".
+2. GOAL PROMPT: This is the mindset for an AI agent. Make it highly detailed and instructional.
+   - Describe their mental model and what they value.
+   - Specify exactly what they are looking for on this specific site.
+   - Define their behavioral triggers (e.g., "Ignores marketing fluff, looks immediately for documentation/pricing").
+   - Include their level of technical scrutiny and patience.
+
+Archetypes to focus on: ${archetypes.join(', ')}
+User Preferences for this project: ${userPrompt}
+
+Site Context:
+${siteContext}
+
+Return a JSON array of personas following the PersonaProfile schema.`;
+
+        const response = await this.client.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" }
+        });
+
+        const content = response.choices[0].message.content || '{"personas": []}';
+        const parsed = JSON.parse(content);
+        const result = PersonaCohortSchema.safeParse(parsed.personas || parsed);
+        return result.success ? result.data : [];
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const prompt = `Analyze this website context and suggest 6 diverse user archetypes that would likely visit this site.
+For each archetype, provide:
+- id: A short, descriptive name (e.g., "Bargain Hunter", "Enterprise Buyer")
+- icon_type: Choose from [users, zap, user, check, globe, x, shopping-cart, home, settings]
+- desc: A one-sentence description of their goals.
+
+Site Context:
+${siteContext}
+
+Return a JSON array of archetypes.`;
+
+        const response = await this.client.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" }
+        });
+
+        const content = response.choices[0].message.content || '{"archetypes": []}';
+        const parsed = JSON.parse(content);
+        const result = ArchetypeCohortSchema.safeParse(parsed.archetypes || parsed);
+        return result.success ? result.data : [];
+    }
 }
 
 export class GeminiProvider implements LLMProvider {
@@ -355,6 +430,96 @@ Return JSON: { "ux_feedback", "emotional_state", "emotional_intensity", "propose
             }
         }
         throw lastError || new Error('All Gemini models failed for summary');
+    }
+
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const model = this.genAI.getGenerativeModel({
+            model: "gemini-2.0-flash",
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "object",
+                    properties: {
+                        personas: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    name: { type: "string" },
+                                    geolocation: { type: "string" },
+                                    age_range: { type: "string" },
+                                    tech_literacy: { type: "string", enum: ["low", "medium", "high"] },
+                                    domain_familiarity: { type: "string" },
+                                    goal_prompt: { type: "string" }
+                                },
+                                required: ["name", "geolocation", "age_range", "tech_literacy", "domain_familiarity", "goal_prompt"]
+                            }
+                        }
+                    }
+                } as any
+            }
+        });
+
+        const prompt = `You are a world-class UX Researcher and Behavioral Psychologist. Build a cohort of 5 realistic user segment categories to audit this website.
+
+CRITICAL REQUIREMENTS:
+1. NAME: Use a descriptive category name (e.g., "Price-Sensitive Explorer", "Technical Integration Lead"). NO human names.
+2. GOAL PROMPT: Provide a deeply specific mindset and behavioral guide.
+   - Detail what they expect to find and what will frustrate them.
+   - Define their navigation strategy (e.g., "Uses search immediately", "Scrolls to footer for trust signals").
+   - Explain their emotional state and technical literacy in the context of their goal.
+
+Target Archetypes: ${archetypes.join(', ')}
+Additional Project Context: ${userPrompt}
+
+Site Content & Context:
+${siteContext}
+
+Focus on diversity in technical literacy and domain familiarity. Return a JSON array of 5 personas.`;
+
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const text = response.text();
+        const parsed = JSON.parse(text);
+        return parsed.personas || parsed;
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const model = this.genAI.getGenerativeModel({
+            model: "gemini-2.0-flash",
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "object",
+                    properties: {
+                        archetypes: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    id: { type: "string" },
+                                    icon_type: { type: "string", enum: ["users", "zap", "user", "check", "globe", "x", "shopping-cart", "home", "settings"] },
+                                    desc: { type: "string" }
+                                },
+                                required: ["id", "icon_type", "desc"]
+                            }
+                        }
+                    }
+                } as any
+            }
+        });
+
+        const prompt = `Analyze this website context and suggest 6 diverse user archetypes that would likely visit this site.
+Site Context:
+${siteContext}
+
+Return a JSON array of archetypes with a short id, a descriptive icon_type, and a one-sentence goal description.`;
+
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const text = response.text();
+        const parsed = JSON.parse(text);
+        return parsed.archetypes || parsed;
     }
 }
 
@@ -473,6 +638,52 @@ export class OllamaProvider implements LLMProvider {
         }
     }
 
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        const prompt = `Generate 5 diverse user category personas for website testing.
+DO NOT use individual human names. Use category names (e.g., "Mobile-First Teenager", "Cautious Elderly Investor").
+
+Mindset Requirements:
+Provide a detailed 'goal_prompt' for each. Explain exactly how this user category interacts with the site, what they look for, and their specific pain points.
+
+Context: ${siteContext}
+Archetypes: ${archetypes.join(', ')}
+User Preferences: ${userPrompt}
+
+Return JSON: { "personas": [{ "name", "age_range", "geolocation", "tech_literacy", "domain_familiarity", "goal_prompt" }] }`;
+
+        try {
+            const result = await this.fetchWithRetry(
+                this.models[0],
+                prompt,
+                [],
+                new AbortController().signal
+            );
+            const parsed = JSON.parse(result.response);
+            return parsed.personas || [];
+        } catch (e) {
+            console.error('Ollama persona generation failed:', e);
+            return [];
+        }
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        const prompt = `Analyze this website context and suggest 6 diverse user archetypes in JSON format.\nContext:\n${siteContext}
+Return JSON: { "archetypes": [{ "id", "icon_type", "desc" }] }`;
+
+        try {
+            const result = await this.fetchWithRetry(
+                this.models[0],
+                prompt,
+                [],
+                new AbortController().signal
+            );
+            const parsed = JSON.parse(result.response);
+            return parsed.archetypes || [];
+        } catch (e) {
+            console.error('Ollama archetype suggestion failed:', e);
+            return [];
+        }
+    }
     async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
         const prompt = `[UX SPECIALIST AUDIT: ${sectionLabel.toUpperCase()}]
 Goal: ${persona.goal_prompt}
@@ -548,5 +759,13 @@ export class LLMService {
 
     async generateSummary(prompt: string): Promise<string> {
         return this.provider.generateSummary(prompt);
+    }
+
+    async generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]> {
+        return this.provider.generatePersonas(siteContext, userPrompt, archetypes);
+    }
+
+    async suggestArchetypes(siteContext: string): Promise<Archetype[]> {
+        return this.provider.suggestArchetypes(siteContext);
     }
 }

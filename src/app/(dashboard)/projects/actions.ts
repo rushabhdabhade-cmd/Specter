@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
 import { Orchestrator } from '@/lib/engine/orchestrator';
+import { BrowserService } from '@/lib/engine/browser';
+import { LLMService } from '@/lib/engine/llm';
+import { PersonaProfile } from '@/lib/engine/types';
 import { encrypt } from '@/lib/utils/vault';
 
 export async function createTestRun(formData: {
@@ -138,4 +141,86 @@ export async function createTestRun(formData: {
     }
 
     redirect(`/test-runs/${(testRun as any).id}`);
+}
+
+export async function suggestAudienceArchetypes(formData: {
+    url: string;
+    geminiKey?: string;
+}) {
+    const { userId } = await auth();
+    if (!userId) throw new Error('Unauthorized');
+
+    const browser = new BrowserService();
+    let siteContext = "";
+
+    try {
+        await browser.init("google/gemini-2.0-flash", formData.geminiKey);
+        await browser.navigate(formData.url);
+        const observation = await browser.observe([], true);
+
+        siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
+        if (observation.sections) {
+            siteContext += observation.sections.map((s: { domContext: string }, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
+        }
+    } catch (err) {
+        console.error('Browser discovery failed for archetype suggestion:', err);
+        siteContext = `URL: ${formData.url}`;
+    } finally {
+        await browser.close();
+    }
+
+    const llm = new LLMService({
+        provider: 'gemini',
+        apiKey: formData.geminiKey
+    });
+
+    return llm.suggestArchetypes(siteContext);
+}
+
+export async function generateAIPersonas(formData: {
+    url: string;
+    archetypes: string[];
+    userPrompt: string;
+    geminiKey?: string;
+}) {
+    const { userId } = await auth();
+    if (!userId) throw new Error('Unauthorized');
+
+    const browser = new BrowserService();
+    let siteContext = "";
+
+    try {
+        await browser.init("google/gemini-2.0-flash", formData.geminiKey);
+        await browser.navigate(formData.url);
+        const observation = await browser.observe([], true); // Full scan
+
+        siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
+        if (observation.sections) {
+            siteContext += observation.sections.map((s: any, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
+        }
+    } catch (err) {
+        console.error('Browser discovery failed for persona generation:', err);
+        // Fallback context if browser fails
+        siteContext = `URL: ${formData.url} (Manual discovery failed, using URL only)`;
+    } finally {
+        await browser.close();
+    }
+
+    const llm = new LLMService({
+        provider: 'gemini',
+        apiKey: formData.geminiKey
+    });
+
+    const personas = await llm.generatePersonas(siteContext, formData.userPrompt, formData.archetypes);
+
+    return personas.map((p: PersonaProfile, idx: number) => ({
+        id: Date.now() + idx,
+        name: p.name,
+        geolocation: p.geolocation,
+        ageRange: p.age_range,
+        techLiteracy: p.tech_literacy.charAt(0).toUpperCase() + p.tech_literacy.slice(1),
+        domainFamiliarity: p.domain_familiarity,
+        prompt: p.goal_prompt,
+        personaCount: 1
+    }));
 }
