@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
-    History, Target, Users, Sparkles,
-    ArrowRight, Globe, ShieldCheck, Heart
+    Target, Sparkles,
+    ShieldCheck
 } from 'lucide-react';
 
 export default function AboutPage() {
