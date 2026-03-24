@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import {
-    Book, ChevronRight, Search,
+    Book, Search,
     Terminal, Code, Zap, Shield,
     Settings, Users, Activity, ArrowRight
 } from 'lucide-react';
