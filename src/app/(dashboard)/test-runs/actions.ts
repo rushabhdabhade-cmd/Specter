@@ -83,9 +83,11 @@ export async function rerunTestRun(runId: string) {
             goal_prompt: s.persona_configs.goal_prompt,
         } as any;
 
-        orchestrator.runSession(newSession.id, originalRun.projects.target_url, personaProfile).catch(err => {
+        try {
+            await orchestrator.runSession(newSession.id, originalRun.projects.target_url, personaProfile);
+        } catch (err) {
             console.error(`Rerun session ${newSession.id} failed:`, err);
-        });
+        }
     }
 
     redirect(`/test-runs/${newRun.id}`);

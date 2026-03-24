@@ -18,7 +18,7 @@ export class BrowserService {
         if (!this.page) throw new Error('Browser not initialized');
         try {
             // Wait for main 'load' state (fast and reliable)
-            await this.page.goto(url, { waitUntil: 'load', timeout: 30000 });
+            await this.page.goto(url, { waitUntil: 'load', timeout: 60000 });
 
             // Attempt to wait for network idle (reduced for Fast Mode)
             await this.page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => {
@@ -92,7 +92,7 @@ export class BrowserService {
         const screenshot = await this.page.screenshot({
             type: 'jpeg',
             quality: 40, // Optimized for local LLM processing
-            timeout: 15000
+            timeout: 30000
         });
         const url = this.page.url();
         const title = await this.page.title();

@@ -28,12 +28,23 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         .eq('test_run_id', testRunId)
         .maybeSingle();
 
-    const summaryAlreadyExists = !force && existingReport?.executive_summary &&
+    console.log(`🔍 Checking if summary exists for run ${testRunId}...`);
+    if (existingReport?.executive_summary) {
+        console.log(`🔍 Existing summary length: ${existingReport.executive_summary.length}`);
+        console.log(`🔍 Existing summary snippet: "${existingReport.executive_summary.substring(0, 50)}..."`);
+    }
+
+    const summaryAlreadyExists = !force &&
+        existingReport?.executive_summary &&
+        existingReport.executive_summary.trim().length > 10 &&
         !existingReport.executive_summary.includes('*AI synthesis unavailable*') &&
-        !existingReport.executive_summary.includes('*AI synthesis failed');
+        !existingReport.executive_summary.includes('*AI synthesis failed') &&
+        !existingReport.executive_summary.includes('Synthesis in progress');
 
     if (summaryAlreadyExists) {
         console.log('✅ AI summary already exists — skipping synthesis. Use force=true to regenerate.');
+    } else if (existingReport?.executive_summary) {
+        console.log('⚠️ Existing summary is empty, too short, or a placeholder — triggering synthesis...');
     }
 
     // 1. Fetch project config directly from test_run (reliable — no nested join needed)
@@ -134,7 +145,7 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
             console.log(`🤖 Synthesizing report with ${project.llm_provider} using ${allUserFeedback.size} feedback points...`);
 
             const prompt = `UX Report Synthesis. 
-Goal: Provide a SIMPLE, easy-to-understand executive conclusion.
+Goal: Provide a CONCISE, high-impact executive conclusion for stakeholders.
 
 Stats: ${sessions.length} personas, ${funnelRate.toFixed(1)}% success rate, usability score ${averageScore}/100.
 
@@ -145,13 +156,15 @@ Key session logs detail:
 ${qualitativeData.join('\n')}
 
 Write a professional UX report in Markdown with:
-# SIMPLE CONCLUSION
-(Write a 2-3 sentence extremely simple summary of if the site worked or failed for users)
+# STRATEGIC SUMMARY
+(Write a high-impact, 3-5 sentence executive conclusion based on the full raw feedback. State clearly if the site worked or failed for the cohort and why. Do NOT use multiple headers or complex sections.)
 
-## Overall UX Health
-## Friction Points
-## Persona Sentiment
-## Recommendations (3-5 bullets)`;
+Finally, provide a SEPARATE section for automated parsing:
+[ACTION_ITEMS]
+- (Priority: High/Medium/Low) | Fix: [Short title] | Detail: [1 sentence]
+...
+(Max 5 items)
+[/ACTION_ITEMS]`;
 
             try {
                 aiSynthesis = await llm.generateSummary(prompt);
@@ -160,6 +173,27 @@ Write a professional UX report in Markdown with:
                 console.error('❌ Synthesis LLM call failed:', e);
                 aiSynthesis = `### 📋 Summary\n${sessions.length} personas. ${completedCount} succeeded. Score: **${averageScore}/100**, funnel: **${funnelRate.toFixed(1)}%**.\n\n*AI synthesis failed. Raw data available in session logs.*`;
             }
+
+            // ── Parse Action Items from Synthesis ────────────────────────────
+            const actionMatch = aiSynthesis.match(/\[?ACTION_ITEMS\]?([\s\S]*?)\[\/?ACTION_ITEMS\]?/i);
+            const rawActionItems = actionMatch ? actionMatch[1].trim().split('\n').filter(l => l.trim().startsWith('-')) : [];
+            const actionItems = rawActionItems.map(item => {
+                const cleanItem = item.replace(/^- /, '').trim();
+                const parts = cleanItem.split('|').map(p => p.trim());
+                return {
+                    priority: parts[0]?.replace(/^Priority:\s*/i, '') || 'Medium',
+                    title: parts[1]?.replace(/^Fix:\s*/i, '') || 'Improve Flow',
+                    detail: parts[2]?.replace(/^Detail:\s*/i, '') || cleanItem
+                };
+            }).slice(0, 5);
+
+            // Clean up the synthesis text: remove tags and redundant Strategic Summary headers
+            aiSynthesis = aiSynthesis
+                .replace(/\[?ACTION_ITEMS\]?[\s\S]*?\[\/?ACTION_ITEMS\]?/gi, '')
+                .replace(/^#+\s*STRATEGIC\s*SUMMARY\s*\n+/i, '')
+                .trim();
+
+            (emotionStats as any).actionItems = actionItems;
 
             // ── Secondary Synthesis: Feedback Log Summary ──────────────────
             console.log('🤖 Characterizing raw feedback log...');
@@ -192,7 +226,16 @@ Write a professional UX report in Markdown with:
             emotionStats,
             sessionScores,
             totalLogs: Array.from(allUserFeedback).length,
-            feedbackSummary: (emotionStats as any).feedbackSummary || null
+            feedbackSummary: (emotionStats as any).feedbackSummary || null,
+            actionItems: (emotionStats as any).actionItems || [],
+            dropOffStats: sessions.reduce((acc: any, s: any) => {
+                if (s.status !== 'completed' && s.session_logs?.length > 0) {
+                    const lastLog = s.session_logs.sort((a: any, b: any) => b.step_number - a.step_number)[0];
+                    const url = lastLog.current_url;
+                    if (url) acc[url] = (acc[url] || 0) + 1;
+                }
+                return acc;
+            }, {})
         },
         heatmap_data_url: null,
         created_at: new Date().toISOString()

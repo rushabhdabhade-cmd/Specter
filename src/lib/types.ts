@@ -213,6 +213,38 @@ export interface Database {
                     created_at?: string
                 }
             }
+            reports: {
+                Row: {
+                    id: string
+                    test_run_id: string
+                    product_opportunity_score: number | null
+                    executive_summary: string | null
+                    funnel_completion_rate: number | null
+                    heatmap_data_url: string | null
+                    report_data: Json | null
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    test_run_id: string
+                    product_opportunity_score?: number | null
+                    executive_summary?: string | null
+                    funnel_completion_rate?: number | null
+                    heatmap_data_url?: string | null
+                    report_data?: Json | null
+                    created_at?: string
+                }
+                Update: {
+                    id?: string
+                    test_run_id?: string
+                    product_opportunity_score?: number | null
+                    executive_summary?: string | null
+                    funnel_completion_rate?: number | null
+                    heatmap_data_url?: string | null
+                    report_data?: Json | null
+                    created_at?: string
+                }
+            }
         }
     }
 }

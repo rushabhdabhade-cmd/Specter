@@ -18,6 +18,7 @@ interface FeedbackLog {
 interface FeedbackSummaryProps {
     logs: FeedbackLog[];
     summary?: string;
+    id?: string;
 }
 
 const EMOTION_COLORS = {
@@ -96,7 +97,7 @@ const LineTooltip = ({ active, payload, label }: any) => {
     );
 };
 
-export function FeedbackSummary({ logs, summary }: FeedbackSummaryProps) {
+export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     // Emotion distribution for pie chart
     const emotionCounts = { delight: 0, neutral: 0, confusion: 0, frustration: 0 };
     logs.forEach(l => { if (l.emotion_tag in emotionCounts) emotionCounts[l.emotion_tag as keyof typeof emotionCounts]++; });
@@ -207,7 +208,7 @@ export function FeedbackSummary({ logs, summary }: FeedbackSummaryProps) {
                                 <Line
                                     type="monotone"
                                     dataKey="score"
-                                    stroke="url(#scoreGradient)"
+                                    stroke={`url(#scoreGradient-${id || 'default'})`}
                                     strokeWidth={2.5}
                                     dot={(props: any) => {
                                         const { cx, cy, payload } = props;
@@ -216,7 +217,7 @@ export function FeedbackSummary({ logs, summary }: FeedbackSummaryProps) {
                                     }}
                                 />
                                 <defs>
-                                    <linearGradient id="scoreGradient" x1="0" y1="0" x2="1" y2="0">
+                                    <linearGradient id={`scoreGradient-${id || 'default'}`} x1="0" y1="0" x2="1" y2="0">
                                         <stop offset="0%" stopColor="#6366f1" />
                                         <stop offset="100%" stopColor="#10b981" />
                                     </linearGradient>
