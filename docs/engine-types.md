@@ -29,3 +29,9 @@ const actionType = step.action_taken?.type ?? 'system';
 ```
 
 `'system'` is not a real `ActionType` — it is a UI-only fallback used when `action_taken` is `null` (e.g. the very first step before any action, or a log entry generated outside the agent loop).
+
+
+
+
+
+free open-source models (Llama, Qwen) are fundamentally unreliable for this schema. If you want OpenRouter to actually work consistently, openai/gpt-4o-mini at ~$0.15/1M tokens is the cheapest model that reliably follows JSON instructions and has vision.

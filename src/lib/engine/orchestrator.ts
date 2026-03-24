@@ -142,8 +142,14 @@ export class Orchestrator {
                 this.updateLiveStatus(sessionId, `Error: ${err.message}`);
 
                 const isTimeout = this.isBrowserbaseTimeout(err);
+                // Permanent errors where retrying won't help:
+                // - wrong model ID / model not on OpenRouter
+                // - model that doesn't follow JSON output format instructions
+                const isConfigError = err.message?.includes('model not found')
+                    || err.message?.includes('No endpoints found')
+                    || err.message?.includes('non-JSON response');
 
-                if (attempt < MAX_RETRIES) {
+                if (attempt < MAX_RETRIES && !isConfigError) {
                     await this.browser.close().catch(() => { });
                     await this.flushLogs();
                     if (isTimeout) {

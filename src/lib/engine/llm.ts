@@ -527,9 +527,62 @@ export class OpenRouterProvider implements LLMProvider {
         return content;
     }
 
+    // Free/open models often return prose, markdown, or JS object syntax instead of strict JSON.
+    // Extract and normalize the first valid {...} block from the raw response.
+    private extractJson(raw: string): string {
+        // Strip markdown code fences
+        const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+        const candidate = fenceMatch ? fenceMatch[1].trim() : (() => {
+            const start = raw.indexOf('{');
+            const end = raw.lastIndexOf('}');
+            return (start !== -1 && end > start) ? raw.slice(start, end + 1) : null;
+        })();
+
+        if (candidate) {
+            // 1. Try as-is (valid JSON)
+            try { JSON.parse(candidate); return candidate; } catch { /* fall through */ }
+            // 2. Try fixing unquoted keys: { type: "x" } → { "type": "x" }
+            const fixed = candidate.replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
+            try { JSON.parse(fixed); return fixed; } catch { /* fall through */ }
+        }
+
+        throw new Error(`Model returned non-JSON response: ${raw.slice(0, 120)}`);
+    }
+
+    // Normalize field variations that free/open models commonly produce.
+    private normalizeAction(raw: any): Action {
+        const VALID_TYPES = ['click', 'type', 'scroll', 'wait', 'complete', 'fail', 'skip_node'];
+        const VALID_EMOTIONS = ['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment'];
+
+        // Field name aliases
+        const type = raw.type || raw.action || raw.action_type || 'skip_node';
+        const selector = raw.selector || raw.sel || raw.css_selector || raw.xpath || undefined;
+
+        return {
+            type: VALID_TYPES.includes(type) ? type : 'skip_node',
+            selector: selector ? String(selector) : undefined,
+            text: raw.text ? String(raw.text) : undefined,
+            reasoning: raw.reasoning || raw.reason || raw.thought || raw.explanation || '',
+            emotional_state: VALID_EMOTIONS.includes(raw.emotional_state) ? raw.emotional_state : 'neutral',
+            emotional_intensity: typeof raw.emotional_intensity === 'number'
+                ? Math.max(0, Math.min(1, raw.emotional_intensity)) : 0.5,
+            specific_emotion: raw.specific_emotion || undefined,
+            ux_feedback: raw.ux_feedback || raw.feedback || raw.critique || '',
+            proposed_solution: raw.proposed_solution || raw.solution || undefined,
+            possible_paths: Array.isArray(raw.possible_paths)
+                ? raw.possible_paths.map((p: any) => typeof p === 'object' ? (p.path_name || p.description || JSON.stringify(p)) : String(p))
+                : typeof raw.possible_paths === 'string' ? [raw.possible_paths] : []
+        };
+    }
+
     private isNoVisionError(err: any): boolean {
         const msg: string = err?.message ?? '';
         return (err?.status === 404 || err?.code === 404) && msg.toLowerCase().includes('image input');
+    }
+
+    private isModelNotFoundError(err: any): boolean {
+        const msg: string = err?.message ?? '';
+        return (err?.status === 404 || err?.code === 404) && msg.toLowerCase().includes('no endpoints found');
     }
 
     private async withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
@@ -538,9 +591,21 @@ export class OpenRouterProvider implements LLMProvider {
                 return await fn();
             } catch (err: any) {
                 const status = err?.status ?? err?.code;
-                if (status === 429 && attempt < retries) {
-                    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-                    console.warn(`OpenRouter 429 rate limit — retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
+                const msg: string = err?.message ?? '';
+                // Model not found — fail immediately, no point retrying a bad model ID
+                if (this.isModelNotFoundError(err)) {
+                    throw new Error(`OpenRouter model not found: "${this.modelName}". Check the model ID at openrouter.ai/models — free models require a :free suffix (e.g. google/gemini-2.0-flash-exp:free).`);
+                }
+                const isRateLimit = status === 429;
+                const isProviderError = status === 400 && msg.toLowerCase().includes('provider returned error');
+                if ((isRateLimit || isProviderError) && attempt < retries) {
+                    // 429s need long waits to clear the rate-limit window (15s, 30s, 60s)
+                    // 400 provider blips clear quickly (1s, 2s, 4s)
+                    const delay = isRateLimit
+                        ? Math.pow(2, attempt) * 15_000
+                        : Math.pow(2, attempt) * 1000;
+                    const reason = isRateLimit ? '429 rate limit' : '400 provider error';
+                    console.warn(`OpenRouter ${reason} — retrying in ${delay / 1000}s (attempt ${attempt + 1}/${retries})`);
                     await new Promise(r => setTimeout(r, delay));
                     continue;
                 }
@@ -562,7 +627,7 @@ export class OpenRouterProvider implements LLMProvider {
             model: this.modelName,
             max_tokens: 600,
             messages: [
-                { role: 'system', content: 'Synthetic UX persona. Return ONLY valid JSON. No markdown.' },
+                { role: 'system', content: 'You are a synthetic UX persona. You MUST respond with ONLY a valid JSON object. No prose, no markdown, no code fences, no explanation — just the raw JSON object starting with { and ending with }.' },
                 {
                     role: 'user', content: withImage
                         ? [
@@ -585,11 +650,7 @@ export class OpenRouterProvider implements LLMProvider {
             } else throw err;
         }
 
-        const action = JSON.parse(this.getContent(response));
-        if (!Array.isArray(action.possible_paths)) {
-            action.possible_paths = typeof action.possible_paths === 'string' ? [action.possible_paths] : [];
-        }
-        return action;
+        return this.normalizeAction(JSON.parse(this.extractJson(this.getContent(response))));
     }
 
     async analyzePageSections(
@@ -630,7 +691,7 @@ export class OpenRouterProvider implements LLMProvider {
             } else throw err;
         }
         try {
-            return JSON.parse(this.getContent(response));
+            return JSON.parse(this.extractJson(this.getContent(response)));
         } catch {
             return {
                 sections: sections.map(s => ({
@@ -668,7 +729,7 @@ Use role names not human names (e.g. "Budget Traveler", not "John Doe").`
             }],
             response_format: { type: 'json_object' }
         }));
-        const parsed = JSON.parse(this.getContent(res));
+        const parsed = JSON.parse(this.extractJson(this.getContent(res)));
         return parsed.personas || [];
     }
 
@@ -684,7 +745,7 @@ Site: ${siteContext}`
             }],
             response_format: { type: 'json_object' }
         }));
-        const parsed = JSON.parse(this.getContent(res));
+        const parsed = JSON.parse(this.extractJson(this.getContent(res)));
         return parsed.archetypes || [];
     }
 }
