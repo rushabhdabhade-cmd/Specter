@@ -70,45 +70,60 @@ export function LiveDashboardStats({ initialStats, userId }: LiveDashboardStatsP
 
     const statConfig = [
         {
-            label: 'Active Projects',
+            label: 'Network Projects',
             value: stats.projectsCount.toString(),
             icon: CheckCircle2,
-            color: 'text-emerald-500',
+            color: 'text-emerald-400',
             bgColor: 'bg-emerald-500/10',
+            trait: 'Architecture'
         },
         {
-            label: 'Total Test Runs',
+            label: 'Protocol Executions',
             value: stats.runsCount.toString(),
             icon: Play,
-            color: 'text-blue-500',
-            bgColor: 'bg-blue-500/10',
+            color: 'text-indigo-400',
+            bgColor: 'bg-indigo-500/10',
+            trait: 'Live Stream'
         },
         {
-            label: 'Personas Deployed',
+            label: 'Synthetic Cohorts',
             value: stats.personasCount.toString(),
             icon: Clock,
-            color: 'text-amber-500',
+            color: 'text-amber-400',
             bgColor: 'bg-amber-500/10',
+            trait: 'Behavioral'
         },
     ];
 
     return (
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-8 md:grid-cols-3">
             {statConfig.map((stat) => (
                 <div
                     key={stat.label}
-                    className="group relative overflow-hidden rounded-2xl border border-white/5 bg-[#0f0f0f] p-8 transition-all hover:border-white/10 hover:shadow-2xl hover:shadow-white/[0.02]"
+                    className="group relative overflow-hidden rounded-[40px] border border-white/5 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-y-[-4px]"
                 >
-                    <div className="mb-4 flex items-center justify-between">
-                        <span className="text-sm font-medium text-slate-400 transition-colors group-hover:text-slate-300">
-                            {stat.label}
-                        </span>
-                        <stat.icon className={`h-5 w-5 ${stat.color} opacity-80`} />
+                    <div className="flex items-center justify-between mb-10">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+                                {stat.label}
+                            </span>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic">
+                                {stat.trait}
+                            </span>
+                        </div>
+                        <div className={`h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center ${stat.color} transition-transform group-hover:scale-110`}>
+                            <stat.icon className="h-5 w-5" />
+                        </div>
                     </div>
-                    <div className="text-4xl font-bold tracking-tight text-white">{stat.value}</div>
 
+                    <div className="flex items-baseline gap-2">
+                        <div className="text-6xl font-black tracking-tighter text-white">{stat.value}</div>
+                        <span className="text-xs font-black uppercase tracking-widest text-slate-800">Units</span>
+                    </div>
+
+                    {/* Ambient Glow */}
                     <div
-                        className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${stat.bgColor} opacity-0 blur-[50px] transition-opacity duration-700 group-hover:opacity-100`}
+                        className={`absolute -right-10 -bottom-10 h-32 w-32 rounded-full ${stat.bgColor} opacity-0 blur-[60px] transition-opacity duration-1000 group-hover:opacity-100`}
                     />
                 </div>
             ))}

@@ -4,14 +4,23 @@ import SyncUser from '@/components/auth/SyncUser';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#050505] text-slate-50 selection:bg-indigo-500/30">
+    <div className="flex h-screen overflow-hidden bg-[#050505] text-slate-50 selection:bg-indigo-500/30 font-sans">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-[#0a0a0a]/30 pt-1 backdrop-blur-3xl relative">
+      <main className="flex-1 overflow-y-auto bg-[#080808] relative">
         <SyncUser />
-        <header className="absolute top-8 right-10 z-50">
+
+        {/* ── HEADER ──────────────────────────────────────────────────────── */}
+        <header className="sticky top-0 z-50 flex h-20 items-center justify-between px-10 bg-[#080808]/80 backdrop-blur-xl border-b border-white/5">
+          <div className="flex items-center gap-4">
+            <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">System Nominal</span>
+          </div>
           <UserMenu />
         </header>
-        <div className="mx-auto max-w-[1280px] p-10">{children}</div>
+
+        <div className="mx-auto max-w-[1400px] p-12 lg:p-16">
+          {children}
+        </div>
       </main>
     </div>
   );
