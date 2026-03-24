@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
-    Cpu, Zap, Shield, Database,
-    Layout, BarChart3, ArrowRight,
+    Cpu, Zap, Database,
+    BarChart3, ArrowRight,
     Monitor, Cloud, Search, Workflow
 } from 'lucide-react';
 
