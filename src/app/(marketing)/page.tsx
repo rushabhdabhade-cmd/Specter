@@ -250,7 +250,7 @@ export default function Home() {
   );
 }
 
-function FeatureCard({ icon: Icon, title, description, color }: { icon: any, title: string, description: string, color: 'indigo' | 'emerald' | 'amber' }) {
+function FeatureCard({ icon: Icon, title, description, color }: { icon: import('react').ElementType, title: string, description: string, color: 'indigo' | 'emerald' | 'amber' }) {
   const colors = {
     indigo: 'from-indigo-500/10 via-indigo-500/5 to-transparent border-indigo-500/20 text-indigo-400',
     emerald: 'from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/20 text-emerald-400',
