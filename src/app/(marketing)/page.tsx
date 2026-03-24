@@ -251,17 +251,17 @@ export default function Home() {
 }
 
 function FeatureCard({ icon: Icon, title, description, color }: { icon: import('react').ElementType, title: string, description: string, color: 'indigo' | 'emerald' | 'amber' }) {
-  const colors = {
-    indigo: 'from-indigo-500/10 via-indigo-500/5 to-transparent border-indigo-500/20 text-indigo-400',
-    emerald: 'from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/20 text-emerald-400',
-    amber: 'from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/20 text-amber-400',
+  const colorStyles = {
+    indigo: { bg: 'from-indigo-500/10 via-indigo-500/5 to-transparent border-indigo-500/20', text: 'text-indigo-400' },
+    emerald: { bg: 'from-emerald-500/10 via-emerald-500/5 to-transparent border-emerald-500/20', text: 'text-emerald-400' },
+    amber: { bg: 'from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/20', text: 'text-amber-400' },
   };
 
   return (
     <div className={`relative p-10 rounded-[48px] border border-white/5 bg-[#0a0a0a] group hover:border-white/20 transition-all duration-700 overflow-hidden`}>
-      <div className={`absolute inset-0 bg-gradient-to-br ${colors[color]} opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
+      <div className={`absolute inset-0 bg-gradient-to-br ${colorStyles[color].bg} opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
       <div className="relative z-10 space-y-8">
-        <div className={`h-16 w-16 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center ${colors[color].split(' ').pop()} group-hover:scale-110 group-hover:bg-white/[0.05] transition-all duration-500`}>
+        <div className={`h-16 w-16 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center ${colorStyles[color].text} group-hover:scale-110 group-hover:bg-white/[0.05] transition-all duration-500`}>
           <Icon className="h-8 w-8" />
         </div>
         <div className="space-y-4">
