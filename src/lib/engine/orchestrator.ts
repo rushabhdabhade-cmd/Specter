@@ -418,7 +418,7 @@ export class Orchestrator {
                     try {
                         await this.browser.perform({
                             type: 'click',
-                            selector: `[index="${link.index}"]`,
+                            selector: `[${link.index}]`,
                             reasoning: `Scouting sub-page: ${link.text}`,
                             emotional_state: 'curious'
                         });
