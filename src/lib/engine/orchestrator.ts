@@ -403,7 +403,7 @@ export class Orchestrator {
             const discoveryLinks = elements.filter((el: any) => {
                 if (el.tagName !== 'A' || !el.text) return false;
                 const text = el.text.toLowerCase();
-                const isNav = el.attributes?.role === 'menuitem' || el.attributes?.class?.toLowerCase().includes('nav') || el.attributes?.class?.toLowerCase().includes('header');
+                const isNav = el.role === 'menuitem' || el.classes?.toLowerCase().includes('nav') || el.classes?.toLowerCase().includes('header');
                 const hasKeyword = navKeywords.some(k => text.includes(k));
                 return isNav || (hasKeyword && text.length < 30);
             }).slice(0, 6); // Expanded scout limit
