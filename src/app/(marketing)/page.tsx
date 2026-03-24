@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
-  ArrowRight, Zap, Target, BrainCircuit,
-  ShieldCheck, Globe, Cpu, BarChart3,
+  ArrowRight, Target, BrainCircuit,
+  ShieldCheck, Globe, BarChart3,
   Sparkles, Layers, MousePointer2, Activity,
   Users, Clock
 } from 'lucide-react';
