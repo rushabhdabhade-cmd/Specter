@@ -89,7 +89,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
                             </p>
                             <div className="flex items-center gap-5">
                                 {[Twitter, Github, Linkedin].map((Icon, i) => (
-                                    <Link key={i} href="#" className="text-slate-600 hover:text-white transition-colors">
+                                    <Link key={Icon.displayName} href="#" className="text-slate-600 hover:text-white transition-colors">
                                         <Icon className="h-5 w-5" />
                                     </Link>
                                 ))}
