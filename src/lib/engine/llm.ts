@@ -99,7 +99,7 @@ EMOTIONAL STATE:
 [CRITICAL] Reward smooth, logical navigation by selecting 'Delight'. 
 [CRITICAL] If you state that the UI is "clear" or "straightforward" in your reasoning/feedback, you MUST return 'delight' in the 'emotional_state' field.
 
-Return JSON: { "type","selector","text"?,"reasoning","emotional_state","ux_feedback","possible_paths":[] }`;
+Return JSON: { "type","selector"?,"text"?,"reasoning","emotional_state","ux_feedback","possible_paths":[] }`;
 }
 
 // ─── Providers ────────────────────────────────────────────────────────────────
