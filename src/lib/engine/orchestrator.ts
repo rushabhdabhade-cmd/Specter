@@ -103,7 +103,7 @@ export class Orchestrator {
                 let consecutiveSameActions = 0;
                 let lastActionKey = '';
                 const selectorAttempts = new Map<string, number>();
-                const blacklist = new Set<string>(); // Legacy/Temporary index-based blacklist
+                const semanticBlacklist = new Set<string>(); // Stable keys: "tag:text:href"
                 const semanticBlacklist = new Set<string>(); // Stable keys: "tag:text:href"
                 let prevVisualHash = ''; // Track visual state for loop detection
 
