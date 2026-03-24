@@ -129,7 +129,7 @@ export default function ProductPage() {
     );
 }
 
-function FeatureItem({ icon: Icon, title, desc }: { icon: any, title: string, desc: string }) {
+function FeatureItem({ icon: Icon, title, desc }: { icon: import('react').ElementType, title: string, desc: string }) {
     return (
         <div className="space-y-6 p-8 rounded-[40px] border border-white/5 bg-zinc-900/20 hover:bg-zinc-900/40 transition-all group">
             <div className="h-12 w-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-500 group-hover:text-white transition-all">
