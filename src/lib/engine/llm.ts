@@ -371,7 +371,7 @@ export class OllamaProvider implements LLMProvider {
     private async fetchWithRetry(model: string, prompt: string, screenshots: string[], signal: AbortSignal, retries = 2): Promise<any> {
         for (let i = 0; i <= retries; i++) {
             try {
-                const response = await fetch(`${this.host} /api/generate`, {
+                const response = await fetch(`${this.host}/api/generate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
