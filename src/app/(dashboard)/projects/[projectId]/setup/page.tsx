@@ -76,7 +76,7 @@ export default function NewTestRunPage() {
 
   const addFromLibrary = (sample: SamplePersona) => {
     if (personas.length < 5) {
-      const newId = Math.max(...personas.map((p) => p.id), 0) + 1;
+      const newId = personas.length > 0 ? Math.max(...personas.map((p) => p.id), 0) + 1 : 1;
       const newPersona: Persona = {
         id: newId,
         name: sample.name,
