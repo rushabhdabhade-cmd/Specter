@@ -67,7 +67,7 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
 
     return (
         <>
-            <div className="group relative flex flex-col rounded-[48px] border border-white/5 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-y-[-4px] overflow-hidden">
+            <div className="group relative flex flex-col rounded-[48px] border border-white/20 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-y-[-4px] overflow-hidden">
                 {/* Ambient Glow */}
                 <div className={`absolute -right-20 -top-20 h-48 w-48 rounded-full blur-[100px] opacity-10 transition-opacity group-hover:opacity-20 ${report.usabilityScore >= 75 ? 'bg-emerald-500' : report.usabilityScore >= 50 ? 'bg-amber-500' : 'bg-red-500'
                     }`} />
@@ -80,10 +80,7 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                                 {report.projectName}
                             </h3>
                             <div className="flex flex-wrap items-center gap-4">
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
-                                    <Globe className="h-3.5 w-3.5" />
-                                    <span className="truncate max-w-[150px] italic">{report.url.replace(/^https?:\/\//, '')}</span>
-                                </div>
+
                                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
                                     <Calendar className="h-3.5 w-3.5 opacity-50" />
                                     <span>{report.completedAt}</span>
@@ -94,7 +91,7 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                     </div>
 
                     {/* Metrics */}
-                    <div className="grid grid-cols-2 gap-8 pt-4">
+                    <div className="grid grid-cols-2 gap-8">
                         <div className={`rounded-3xl border ${scoreBorder} ${scoreBg} p-8 space-y-4 relative overflow-hidden`}>
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">UX Health Score</p>
                             <div className="flex items-baseline gap-2">
@@ -113,16 +110,10 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                     </div>
 
                     {/* Bottom Section */}
-                    <div className="mt-auto pt-10 border-t border-white/5 flex items-center justify-between">
+                    <div className="mt-auto pt-2border-t border-white/5 flex items-center justify-between">
                         <div className="flex items-center gap-6">
                             <div className="flex -space-x-4">
-                                {report.sessionCount > 0 ? (
-                                    Array.from({ length: displayCount }).map((_, i) => (
-                                        <div key={i} className="h-10 w-10 rounded-2xl border-2 border-[#0a0a0a] bg-[#111111] border-white/5 flex items-center justify-center shadow-2xl transition-transform hover:-translate-y-2 hover:z-50 group/p">
-                                            <span className="text-[10px] font-black text-slate-700 group-hover/p:text-white transition-colors">P</span>
-                                        </div>
-                                    ))
-                                ) : null}
+
                                 {remainingCount > 0 && (
                                     <div className="h-10 w-10 rounded-2xl border-2 border-[#0a0a0a] bg-white/5 flex items-center justify-center shadow-2xl z-20">
                                         <span className="text-[10px] font-black text-slate-500">+{remainingCount}</span>
@@ -137,15 +128,15 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                         <div className="flex items-center gap-4">
                             <button
                                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowConfirm(true); }}
-                                className="p-4 rounded-2xl border border-white/5 bg-white/5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all active:scale-95"
+                                className="p-4 rounded-2xl border border-white/20 bg-white/5 text-slate-300 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all active:scale-95"
                             >
                                 <Trash2 className="h-5 w-5" />
                             </button>
                             <button
                                 onClick={handleShare}
                                 className={`p-4 rounded-2xl border transition-all active:scale-95 ${copied
-                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                    : 'bg-white/5 border-white/5 text-slate-600 hover:text-white hover:bg-white/10 hover:border-white/10'
+                                    ? 'bg-emerald-500/10 border-emerald-300/20 text-emerald-400'
+                                    : 'bg-white/5 border-white/20 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/10'
                                     }`}
                             >
                                 {copied ? <Check className="h-5 w-5" /> : <Share2 className="h-5 w-5" />}

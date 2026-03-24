@@ -29,9 +29,9 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Health Score Card */}
-                <div className="relative group overflow-hidden rounded-[32px] border border-white/5 bg-white/[0.02] p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04]">
+                <div className="relative group overflow-hidden rounded-[32px] border border-white/20 bg-white/[0.02] p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04]">
                     <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-50" />
-                    <p className="relative text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Usability Score</p>
+                    <p className="relative text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-4">Usability Score</p>
                     <div className="relative flex items-end justify-center gap-1">
                         <span className="text-5xl font-black tracking-tighter leading-none text-emerald-400">{healthScore}</span>
                         <span className="text-slate-600 font-bold text-sm mb-1">/100</span>
@@ -39,9 +39,9 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
                 </div>
 
                 {/* Performance Card */}
-                <div className="relative group overflow-hidden rounded-[32px] border border-white/5 bg-white/[0.02] p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04]">
+                <div className="relative group overflow-hidden rounded-[32px] border border-white/20 bg-white/[0.02] p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04]">
                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-50" />
-                    <p className="relative text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Slow Load Alerts</p>
+                    <p className="relative text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-4">Slow Load Alerts</p>
                     <div className="relative flex items-end justify-center gap-1">
                         <span className="text-5xl font-black tracking-tighter leading-none text-white">{data.slowPages?.length || 0}</span>
                         <Zap className="h-4 w-4 text-indigo-400 mb-2 ml-1" />
@@ -49,9 +49,9 @@ export const TechnicalAudit: React.FC<TechnicalAuditProps> = ({ data }) => {
                 </div>
 
                 {/* Broken Links Card */}
-                <div className="relative group overflow-hidden rounded-[32px] border border-white/5 bg-white/[0.02] p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04]">
+                <div className="relative group overflow-hidden rounded-[32px] border border-white/20 bg-white/[0.02] p-8 text-center backdrop-blur-xl transition-all hover:bg-white/[0.04]">
                     <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 via-transparent to-transparent opacity-50" />
-                    <p className="relative text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Critical 404 Errors</p>
+                    <p className="relative text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-4">Critical 404 Errors</p>
                     <div className="relative flex items-end justify-center gap-1">
                         <span className="text-5xl font-black tracking-tighter leading-none text-red-400">{data.brokenLinks?.length || 0}</span>
                         <Link2Off className="h-4 w-4 text-red-500 mb-2 ml-1" />

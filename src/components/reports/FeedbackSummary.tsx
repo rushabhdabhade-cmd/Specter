@@ -217,7 +217,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
 
 
 
-// Top UX feedback phrases
+    // Top UX feedback phrases
     const phrases = topPhrases(logs);
 
     // All UX feedback quotes (non-empty, deduplicated)
@@ -379,7 +379,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                 <div className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
                     <div>
                         <h3 className="text-base font-bold text-white">UX Feedback Log</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">All persona observations — unfiltered</p>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-0.5">All persona observations — unfiltered</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
@@ -391,7 +391,7 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                             return (
                                 <div
                                     key={i}
-                                    className="rounded-2xl p-4 border text-sm italic text-slate-300 leading-relaxed"
+                                    className="rounded-2xl p-4 border text-sm italic text-slate-200 leading-relaxed"
                                     style={{ borderColor: color + '25', background: color + '08' }}
                                 >
                                     <span style={{ color }} className="not-italic font-black mr-1">&ldquo;</span>

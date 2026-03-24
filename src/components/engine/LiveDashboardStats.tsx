@@ -73,24 +73,24 @@ export function LiveDashboardStats({ initialStats, userId }: LiveDashboardStatsP
             label: 'Network Projects',
             value: stats.projectsCount.toString(),
             icon: CheckCircle2,
-            color: 'text-emerald-400',
-            bgColor: 'bg-emerald-500/10',
+            color: 'text-slate-400',
+            bgColor: 'bg-white/5',
             trait: 'Architecture'
         },
         {
             label: 'Protocol Executions',
             value: stats.runsCount.toString(),
             icon: Play,
-            color: 'text-indigo-400',
-            bgColor: 'bg-indigo-500/10',
+            color: 'text-slate-400',
+            bgColor: 'bg-white/5',
             trait: 'Live Stream'
         },
         {
             label: 'Synthetic Cohorts',
             value: stats.personasCount.toString(),
             icon: Clock,
-            color: 'text-amber-400',
-            bgColor: 'bg-amber-500/10',
+            color: 'text-slate-400',
+            bgColor: 'bg-white/5',
             trait: 'Behavioral'
         },
     ];

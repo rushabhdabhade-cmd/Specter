@@ -21,10 +21,10 @@ export default async function PersonasPage() {
             {/* ── HEADER ────────────────────────────────────────────────────── */}
             <div className="flex flex-col space-y-8 md:flex-row md:items-end md:justify-between md:space-y-0">
                 <div className="space-y-4">
-                    <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+                    {/* <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
                         <Users className="h-3.5 w-3.5" />
                         Human Simulation Library
-                    </div>
+                    </div> */}
                     <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white">Persona <br /> <span className="italic opacity-50">Synthesis.</span></h1>
                     <p className="max-w-md text-sm font-medium text-slate-500 italic leading-relaxed">
                         Design and manage the psychological blueprints that drive your synthetic cohorts.
@@ -56,12 +56,12 @@ export default async function PersonasPage() {
                         >
                             {/* Accent Glow */}
                             <div className={`absolute -right-16 -top-16 h-48 w-48 rounded-full blur-[80px] opacity-10 transition-opacity group-hover:opacity-20 ${persona.tech_literacy === 'high' ? 'bg-indigo-500' :
-                                    persona.tech_literacy === 'low' ? 'bg-amber-500' : 'bg-emerald-500'
+                                persona.tech_literacy === 'low' ? 'bg-amber-500' : 'bg-emerald-500'
                                 }`} />
 
                             <div className="mb-10 flex items-start justify-between relative z-10">
                                 <div className={`flex h-20 w-20 items-center justify-center rounded-3xl border border-white/10 bg-white/5 transition-all group-hover:scale-110 ${persona.tech_literacy === 'high' ? 'text-indigo-400' :
-                                        persona.tech_literacy === 'low' ? 'text-amber-400' : 'text-emerald-400'
+                                    persona.tech_literacy === 'low' ? 'text-amber-400' : 'text-emerald-400'
                                     }`}>
                                     <BrainCircuit className="h-10 w-10" />
                                 </div>
@@ -117,9 +117,9 @@ export default async function PersonasPage() {
                                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-700 italic">
                                     Synced {new Date(persona.created_at).toLocaleDateString()}
                                 </span>
-                                <button className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-white hover:translate-x-1 transition-all">
+                                {/* <button className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-white hover:translate-x-1 transition-all">
                                     Launch Module <ArrowRight className="h-3.5 w-3.5" />
-                                </button>
+                                </button> */}
                             </div>
                         </div>
                     ))

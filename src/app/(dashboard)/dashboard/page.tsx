@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Plus, CheckCircle2, Play, Clock, Zap, History, ArrowUpRight, Cpu } from 'lucide-react';
+import { Plus, Zap, History, ArrowUpRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { auth } from '@clerk/nextjs/server';
 import { LiveDashboardStats } from '@/components/engine/LiveDashboardStats';
@@ -61,7 +61,7 @@ export default async function DashboardPage() {
       url: run.projects?.target_url || 'Unknown',
       date: new Date(run.created_at).toLocaleDateString(),
       status: run.status?.toUpperCase() || 'UNKNOWN',
-      statusColor: run.status === 'failed' ? 'text-red-400 border-red-500/20' : run.status === 'completed' ? 'text-emerald-400 border-emerald-500/20' : 'text-blue-400 border-blue-500/20',
+      statusColor: run.status === 'failed' ? 'text-slate-300 border-white/10' : run.status === 'completed' ? 'text-slate-300 border-white/10' : 'text-slate-300 border-white/10',
       totalSessions,
       completedSessions
     };
@@ -120,12 +120,12 @@ export default async function DashboardPage() {
               <Link
                 key={run.id}
                 href={`/test-runs/${run.id}`}
-                className="group flex flex-col md:flex-row md:items-center justify-between rounded-[32px] border border-white/5 bg-[#0a0a0a] p-8 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.01]"
+                className="group flex flex-col md:flex-row md:items-center justify-between rounded-[32px] border border-white/20 bg-[#0a0a0a] p-8 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.01]"
               >
                 <div className="flex items-center gap-8">
                   <div className="relative">
                     <div className="h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                      <Zap className={`h-5 w-5 ${run.status === 'COMPLETED' ? 'text-emerald-400' : run.status === 'FAILED' ? 'text-red-400' : 'text-blue-400'} group-hover:scale-110 transition-transform`} />
+                      <Zap className="h-5 w-5 text-slate-400 group-hover:scale-110 transition-transform" />
                     </div>
                   </div>
                   <div className="space-y-1">

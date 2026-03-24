@@ -72,10 +72,10 @@ export default async function TestRunsPage() {
             {/* ── HEADER ────────────────────────────────────────────────────── */}
             <div className="flex flex-col space-y-8 md:flex-row md:items-end md:justify-between md:space-y-0">
                 <div className="space-y-4">
-                    <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+                    {/* <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
                         <Zap className="h-3.5 w-3.5" />
                         Execution Protocol Logs
-                    </div>
+                    </div> */}
                     <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white">Test <br /> <span className="italic opacity-50">Protocol.</span></h1>
                     <p className="max-w-md text-sm font-medium text-slate-500 italic leading-relaxed">
                         Complete historical record of every synthetic user journey deployed across your infrastructure.
@@ -146,9 +146,9 @@ export default async function TestRunsPage() {
 
                             {/* Status Glow Bar */}
                             <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-20 rounded-r-full transition-all duration-700 ${run.status === 'completed' ? 'bg-emerald-500 shadow-[2px_0_20px_rgba(16,185,129,0.5)]' :
-                                    run.status === 'failed' ? 'bg-red-500 shadow-[2px_0_20px_rgba(239,68,68,0.5)]' :
-                                        run.status === 'running' ? 'bg-blue-500 shadow-[2px_0_20px_rgba(59,130,246,0.5)]' :
-                                            'bg-slate-800 opacity-20'
+                                run.status === 'failed' ? 'bg-red-500 shadow-[2px_0_20px_rgba(239,68,68,0.5)]' :
+                                    run.status === 'running' ? 'bg-blue-500 shadow-[2px_0_20px_rgba(59,130,246,0.5)]' :
+                                        'bg-slate-800 opacity-20'
                                 }`} />
                         </Link>
                     ))

@@ -12,14 +12,14 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const navItems = [
-    { name: 'Command Center', icon: LayoutDashboard, href: '/dashboard' },
-    { name: 'Test Protocol', icon: Zap, href: '/test-runs' },
-    { name: 'Persona Synthesis', icon: Users, href: '/personas' },
-    { name: 'Behavioral Reports', icon: BarChart3, href: '/reports' },
+    { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+    { name: 'Test Runs', icon: Zap, href: '/test-runs' },
+    { name: 'Personas', icon: Users, href: '/personas' },
+    { name: 'Reports', icon: BarChart3, href: '/reports' },
   ];
 
   return (
-    <div className="hidden md:flex h-screen w-72 flex-col border-r border-white/5 bg-[#050505] text-slate-400 relative z-[60]">
+    <div className="hidden md:flex h-screen w-72 flex-col border-r border-white/20 bg-[#050505]/[0.2] text-slate-400 relative z-[60]">
       {/* ── LOGO ────────────────────────────────────────────────────────── */}
       <Link href="/" className="flex h-24 items-center gap-4 px-8 border-b border-white/5 cursor-pointer group/logo">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-2xl transition-transform group-hover/logo:scale-105 active:scale-95">
@@ -34,7 +34,7 @@ export default function Sidebar() {
       {/* ── NAVIGATION ──────────────────────────────────────────────────── */}
       <nav className="flex-1 space-y-8 px-6 py-10 overflow-y-auto scrollbar-hide">
         <div className="space-y-2">
-          <h4 className="px-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-700 mb-4">Core Protocol</h4>
+
           {navItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
             return (
@@ -43,12 +43,12 @@ export default function Sidebar() {
                 href={item.href}
                 className={`group flex items-center justify-between rounded-xl px-4 py-3 text-xs font-black uppercase tracking-widest transition-all duration-300 border ${isActive
                   ? 'bg-white/5 text-white border-white/10 shadow-[0_10px_30px_-10px_rgba(99,102,241,0.3)]'
-                  : 'text-slate-500 border-transparent hover:bg-white/[0.02] hover:text-slate-300'
+                  : 'text-slate-400 border-transparent hover:bg-white/[0.2] hover:text-slate-300'
                   }`}
               >
                 <div className="flex items-center gap-4">
                   <item.icon
-                    className={`h-4.5 w-4.5 transition-colors ${isActive ? 'text-indigo-400' : 'text-slate-600 group-hover:text-slate-400'}`}
+                    className={`h-4.5 w-4.5 transition-colors ${isActive ? 'text-indigo-400' : 'text-slate-400 group-hover:text-slate-400'}`}
                   />
                   {item.name}
                 </div>

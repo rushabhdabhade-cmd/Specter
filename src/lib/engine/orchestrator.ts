@@ -6,6 +6,11 @@ import { generateAndStoreReport, checkAndFinalizeTestRun } from './reporter';
 import * as fs from 'fs';
 import * as path from 'path';
 import { decrypt } from '../utils/vault';
+import { acquireBrowser, releaseBrowser } from './semaphore';
+
+// Stagehand registers process signal listeners per instance.
+// Raise the limit once at module level to suppress false-positive warnings.
+process.setMaxListeners(50);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,14 +34,6 @@ export class Orchestrator {
 
     constructor() {
         this.browser = new BrowserService();
-        this.registerCleanup();
-    }
-
-    private registerCleanup() {
-        const cleanup = async () => { await this.browser.close().catch(() => { }); };
-        process.on('exit', cleanup);
-        process.on('SIGINT', cleanup);
-        process.on('SIGTERM', cleanup);
     }
 
     // ─── Main entry ───────────────────────────────────────────────────────────
@@ -54,6 +51,7 @@ export class Orchestrator {
         const MAX_RETRIES = 2;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            let browserAcquired = false;
             try {
                 // ── 0. Fetch session config ──────────────────────────────────
                 await this.log(sessionId, url, 'neutral', `Mission started for ${persona.name}.`, { type: 'system', info: 'session_started' });
@@ -105,22 +103,16 @@ export class Orchestrator {
                 this.updateLiveStatus(sessionId, 'Initializing browser...');
                 await this.log(sessionId, url, 'neutral', 'Initializing browser engine.', { type: 'system', info: 'browser_init' });
 
-                // Stagehand model for browser automation — separate from the LLM reasoning model.
-                // OpenRouter users: Stagehand still uses Gemini via env key (OpenRouter key is for reasoning only).
-                const stagehandModel =
-                    provider === 'openai' ? 'gpt-4o' :
-                        provider === 'openrouter' ? 'google/gemini-2.0-flash' :
-                            provider === 'gemini' ? 'google/gemini-2.0-flash' : 'gpt-4o';
-
-                const stagehandApiKey = provider === 'openrouter'
-                    ? (process.env.GEMINI_API_KEY || apiKey)
-                    : apiKey;
-
-                await this.browser.init(stagehandModel, stagehandApiKey);
+                // Wait for a browser slot — caps concurrent Chromium instances to avoid OOM.
+                await acquireBrowser();
+                browserAcquired = true;
+                // Stagehand always uses Gemini for browser automation (DOM observation, act).
+                // The user's provider/key only drives the LLM reasoning layer.
+                await this.browser.init('google/gemini-2.0-flash', process.env.GEMINI_API_KEY);
 
                 // ── 2. Serial page traversal ─────────────────────────────────
-                // On retries after a BrowserBase timeout, restore already-visited
-                // pages from logs so we skip them and resume from the last page.
+                // On retry, restore already-visited pages from logs so we skip
+                // them and resume from the last page.
                 const resumeState = attempt > 1 ? await this.buildResumeState(sessionId) : null;
                 await this.runTraversal(sessionId, url, persona, executionMode, resumeState);
 
@@ -141,7 +133,6 @@ export class Orchestrator {
                 console.error(`Session ${sessionId} attempt ${attempt} failed:`, err.message);
                 this.updateLiveStatus(sessionId, `Error: ${err.message}`);
 
-                const isTimeout = this.isBrowserbaseTimeout(err);
                 // Permanent errors where retrying won't help:
                 // - wrong model ID / model not on OpenRouter
                 // - model that doesn't follow JSON output format instructions
@@ -152,11 +143,6 @@ export class Orchestrator {
                 if (attempt < MAX_RETRIES && !isConfigError) {
                     await this.browser.close().catch(() => { });
                     await this.flushLogs();
-                    if (isTimeout) {
-                        await this.log(sessionId, url, 'neutral',
-                            'BrowserBase session timed out — opening a new browser session and resuming from last page.',
-                            { type: 'system', info: 'session_retry' });
-                    }
                     continue;
                 }
                 await (this.supabase.from('persona_sessions') as any).update({
@@ -166,18 +152,13 @@ export class Orchestrator {
                 }).eq('id', sessionId);
             } finally {
                 await this.browser.close().catch(() => { });
+                if (browserAcquired) releaseBrowser();
                 await this.flushLogs();
                 if (testRunId) await checkAndFinalizeTestRun(testRunId).catch(() => { });
             }
         }
     }
 
-    // ─── BrowserBase timeout detection ────────────────────────────────────────
-
-    private isBrowserbaseTimeout(err: any): boolean {
-        const msg: string = (err?.message ?? '').toLowerCase();
-        return msg.includes('timed out') || msg.includes('socket-close') || msg.includes('cdp transport closed');
-    }
 
     // ─── Resume state reconstruction ──────────────────────────────────────────
 
@@ -535,10 +516,34 @@ export class Orchestrator {
     // ─── Screenshot persistence ───────────────────────────────────────────────
 
     private async saveScreenshot(sessionId: string, step: number, base64: string): Promise<string> {
+        const file = `step_${step}.jpg`;
+        const key = `screenshots/${sessionId}/${file}`;
+
+        if (process.env.S3_BUCKET_NAME) {
+            try {
+                const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+                const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+                const s3 = new S3Client({ region: process.env.S3_REGION ?? 'ap-south-1' });
+                const cmd = new PutObjectCommand({
+                    Bucket: process.env.S3_BUCKET_NAME,
+                    Key: key,
+                    Body: Buffer.from(base64, 'base64'),
+                    ContentType: 'image/jpeg',
+                });
+                await s3.send(cmd);
+                // Presigned GET URL valid for 7 days — stored in DB so frontend can <img src> it directly
+                const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+                const getCmd = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
+                return await getSignedUrl(s3, getCmd, { expiresIn: 60 * 60 * 24 * 7 });
+            } catch (_) {
+                return '';
+            }
+        }
+
+        // Local fallback (dev / no S3 configured)
         try {
             const dir = path.join(process.cwd(), 'public', 'screenshots', sessionId);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            const file = `step_${step}.jpg`;
             fs.writeFileSync(path.join(dir, file), Buffer.from(base64, 'base64'));
             return `/screenshots/${sessionId}/${file}`;
         } catch (_) {

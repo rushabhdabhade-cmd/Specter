@@ -12,8 +12,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* ── HEADER ──────────────────────────────────────────────────────── */}
         <header className="sticky top-0 z-50 flex h-20 items-center justify-between px-10 bg-[#080808]/80 backdrop-blur-xl border-b border-white/5">
           <div className="flex items-center gap-4">
-            <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">System Nominal</span>
+
           </div>
           <UserMenu />
         </header>

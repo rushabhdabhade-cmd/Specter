@@ -56,7 +56,7 @@ export function ReportsList({ initialReports }: ReportsListProps) {
                         placeholder="Search projects or URLs..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full h-12 bg-[#0d0d0d] border border-white/5 rounded-2xl pl-12 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                        className="w-full h-12 bg-[#0d0d0d] border border-white/20 rounded-2xl pl-12 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                     />
                 </div>
 
@@ -118,7 +118,7 @@ export function ReportsList({ initialReports }: ReportsListProps) {
                                 Clear All Filters
                             </button>
                             <div className="h-4 w-px bg-white/10" />
-                            <Link href="/dashboard" className="text-xs font-black uppercase tracking-[0.2em] text-white hover:opacity-80 transition-opacity">
+                            <Link href="/dashboard" className="text-xs  uppercase tracking-[0.2em] text-white hover:opacity-80 transition-opacity">
                                 Back to Dashboard
                             </Link>
                         </div>
