@@ -16,7 +16,7 @@ interface FeedbackLog {
 }
 
 interface FeedbackSummaryProps {
-    logs: any[];
+    logs: FeedbackLog[];
     summary?: string;
 }
 

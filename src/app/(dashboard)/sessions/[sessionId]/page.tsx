@@ -15,7 +15,8 @@ import {
     Frown,
     Meh,
     Activity,
-    AlertCircle
+    AlertCircle,
+    BarChart3
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -56,7 +57,7 @@ export default function SessionPage() {
             // Fetch session with persona config
             const { data: sessionData } = await supabase
                 .from('persona_sessions')
-                .select('*, persona_configs(*), test_runs(id, projects(name, target_url))')
+                .select('*, persona_configs(*), test_runs(id, status, projects(name, target_url))')
                 .eq('id', sessionId)
                 .single();
 
@@ -166,6 +167,18 @@ export default function SessionPage() {
                             Mode: {session?.execution_mode}
                         </span>
                     </div>
+
+                    {session?.status === 'completed' && (
+                        <Link
+                            href={`/reports/${session.test_run_id}`}
+                            className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 border border-indigo-400/50 shadow-[0_0_20px_rgba(99,102,241,0.3)] transition-all group animate-in fade-in slide-in-from-right-4"
+                        >
+                            <BarChart3 className="h-3.5 w-3.5 text-white group-hover:scale-110 transition-transform" />
+                            <span className="text-[11px] font-black text-white uppercase tracking-widest leading-none pt-0.5">
+                                View Full Report
+                            </span>
+                        </Link>
+                    )}
                 </div>
             </div>
 
