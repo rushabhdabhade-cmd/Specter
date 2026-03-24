@@ -25,6 +25,7 @@ interface StepFeedbackCardProps {
             emotional_intensity?: number;
         };
     };
+    personaName?: string;
 }
 
 const EMOTION_CONFIG: Record<string, any> = {
@@ -55,7 +56,7 @@ function IntensityBadge({ intensity }: { intensity: number }) {
     return <span className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest ${color}`}>Intensity: {pct}%</span>;
 }
 
-export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
+export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
     const [pathsOpen, setPathsOpen] = useState(false);
     const cfg = EMOTION_CONFIG[step.emotion_tag] ?? EMOTION_CONFIG.neutral;
     const actionType = step.action_taken?.type ?? 'system';
@@ -67,9 +68,13 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
     const intensity = step.action_taken?.emotional_intensity ?? 0.5;
     const paths = step.action_taken?.possible_paths ?? [];
     const hasScreenshot = !!step.screenshot_url;
+    const stepKey = personaName ? `${personaName}-${step.step_number}` : undefined;
 
     return (
-        <div className={`group/card rounded-3xl border overflow-hidden transition-all duration-500 ${cfg.border} bg-[#060606] hover:border-white/10 hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.8)]`}>
+        <div
+            data-step-key={stepKey}
+            className={`group/card rounded-3xl border overflow-hidden transition-all duration-500 ${cfg.border} bg-[#060606] hover:border-white/10 hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.8)] data-[highlighted]:ring-2 data-[highlighted]:ring-indigo-500/60 data-[highlighted]:shadow-[0_0_32px_rgba(99,102,241,0.25)]`}
+        >
             {/* Emotion accent top bar */}
             <div className="h-1 w-full" style={{ background: cfg.hex }} />
 

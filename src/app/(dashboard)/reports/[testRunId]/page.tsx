@@ -387,7 +387,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
                 </div>
                 <div className="grid grid-cols-1 gap-6">
                   {logs.map((log: any) => (
-                    <StepFeedbackCard key={log.id} step={log} />
+                    <StepFeedbackCard key={log.id} step={log} personaName={session.persona_configs?.name} />
                   ))}
                 </div>
               </div>

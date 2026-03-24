@@ -47,7 +47,7 @@ export class Orchestrator {
         persona: PersonaProfile,
         llmConfig?: { provider: 'gemini' | 'openrouter' | 'ollama' | 'openai'; apiKey?: string; modelName?: string }
     ) {
-        console.log(`🚀 Session ${sessionId} | ${persona.name} | ${url}`);
+        console.log(`Session ${sessionId} | ${persona.name} | ${url}`);
         this.channel = this.supabase.channel(`terminal_${sessionId}`).subscribe();
 
         let testRunId: string | undefined;
@@ -138,8 +138,8 @@ export class Orchestrator {
                 break; // success — exit retry loop
 
             } catch (err: any) {
-                console.error(`❌ Session ${sessionId} attempt ${attempt} failed:`, err.message);
-                this.updateLiveStatus(sessionId, `❌ Error: ${err.message}`);
+                console.error(`Session ${sessionId} attempt ${attempt} failed:`, err.message);
+                this.updateLiveStatus(sessionId, `Error: ${err.message}`);
 
                 const isTimeout = this.isBrowserbaseTimeout(err);
 
@@ -190,7 +190,7 @@ export class Orchestrator {
         const lastLog = (logs || []).at(-1);
         const resumeUrl = lastLog?.current_url ?? null;
 
-        console.log(`♻️  Resume: ${visited.size} pages already done, re-entering at: ${resumeUrl}`);
+        console.log(`Resume: ${visited.size} pages already done, re-entering at: ${resumeUrl}`);
         return { visited, resumeUrl };
     }
 
@@ -226,7 +226,7 @@ export class Orchestrator {
             if (visited.has(normalizedPageUrl)) continue;
             visited.add(normalizedPageUrl);
 
-            console.log(`\n📄 [${visited.size}/${MAX_PAGES}] Navigating to: ${pageUrl}`);
+            console.log(`\n[${visited.size}/${MAX_PAGES}] Navigating to: ${pageUrl}`);
             this.updateLiveStatus(sessionId, `Page ${visited.size}/${MAX_PAGES}: ${pageUrl}`);
 
             // Check session hasn't been abandoned
@@ -241,7 +241,7 @@ export class Orchestrator {
             // The LLM prompt also enforces this, but this guard saves token calls entirely.
             const AUTH_URL_PATTERN = /\/(login|signin|sign-in|signup|sign-up|register|auth|account\/create|join|onboarding)(\/|\?|$)/i;
             if (AUTH_URL_PATTERN.test(pageUrl)) {
-                console.log(`  🔒 Auth page detected, skipping: ${pageUrl}`);
+                console.log(`  Auth page detected, skipping: ${pageUrl}`);
                 this.log(sessionId, pageUrl, 'neutral',
                     'Auth/login page detected. Skipping interaction — the engine does not fill credentials. ' +
                     'UX note: the presence of this gate is itself a friction point for new users.',
@@ -296,7 +296,7 @@ export class Orchestrator {
                     }
                 }
 
-                console.log(`  ↪ Discovered ${links.length} links, queue depth: ${queue.length}`);
+                console.log(`  Discovered ${links.length} links, queue depth: ${queue.length}`);
             }
 
             // ── Interactive exploration of this page ────────────────────────
@@ -328,7 +328,7 @@ export class Orchestrator {
 
                 // AI wants to exit this node
                 if (action.type === 'skip_node' || action.type === 'fail' || action.type === 'complete') {
-                    console.log(`  🛑 AI exits page (${action.type}): ${action.reasoning}`);
+                    console.log(`  AI exits page (${action.type}): ${action.reasoning}`);
                     this.log(sessionId, currentUrl, this.mapEmotion(action.emotional_state),
                         `Node skip: ${action.reasoning}`, action as any);
                     this.stepNumber++;
@@ -350,7 +350,7 @@ export class Orchestrator {
                 if (consecutiveSame >= MAX_SAME_ACTIONS) {
                     if (action.text) blacklistedActions.add(action.text);
                     if (action.selector) blacklistedActions.add(action.selector);
-                    console.warn(`  ⚠️ Loop detected on "${actionKey}", blacklisting.`);
+                    console.warn(`  Loop detected on "${actionKey}", blacklisting.`);
                     consecutiveSame = 0;
                     // Recovery scroll
                     await this.browser.perform({ type: 'scroll', text: 'bottom', reasoning: 'Loop recovery', emotional_state: 'neutral', emotional_intensity: 0.1 });
@@ -428,7 +428,7 @@ export class Orchestrator {
 
                     if (targetOrigin && postOrigin && postOrigin !== targetOrigin) {
                         // Left the target site — go back immediately
-                        console.log(`  🚫 External navigation blocked: ${postUrl} (origin: ${postOrigin}). Returning to ${currentUrl}`);
+                        console.log(`  External navigation blocked: ${postUrl} (origin: ${postOrigin}). Returning to ${currentUrl}`);
                         this.log(sessionId, currentUrl, 'neutral',
                             `External link skipped — navigated to ${new URL(postUrl).hostname} but returned to stay within the test scope.`,
                             { type: 'system', info: 'external_navigation_blocked', external_url: postUrl });
@@ -486,9 +486,9 @@ export class Orchestrator {
         this.logBuffer = [];
         try {
             const { error } = await (this.supabase.from('session_logs') as any).insert(batch);
-            if (error) console.error('❌ Log flush error:', error.message);
+            if (error) console.error('Log flush error:', error.message);
         } catch (err: any) {
-            console.error('❌ Log flush exception:', err.message);
+            console.error('Log flush exception:', err.message);
         }
     }
 
@@ -543,7 +543,7 @@ export class Orchestrator {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private updateLiveStatus(sessionId: string, status: string) {
-        console.log(`📡 [${sessionId.slice(0, 8)}] ${status}`);
+        console.log(`[${sessionId.slice(0, 8)}] ${status}`);
         
         // 1. Existing DB update
         void (this.supabase.from('persona_sessions') as any)

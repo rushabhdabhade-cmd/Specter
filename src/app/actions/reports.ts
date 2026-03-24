@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache';
  */
 export async function triggerReportRefresh(testRunId: string, force = false) {
     try {
-        console.log(`🔄 Manual refresh requested for test run: ${testRunId} (force=${force})`);
+        console.log(`Manual refresh requested for test run: ${testRunId} (force=${force})`);
 
         // 1. Trigger the background reporter
         // Note: We don't await this if we want immediate UI return, 
@@ -22,7 +22,7 @@ export async function triggerReportRefresh(testRunId: string, force = false) {
 
         return { success: true };
     } catch (error: any) {
-        console.error('❌ Failed to refresh report:', error);
+        console.error('Failed to refresh report:', error);
         return { success: false, error: error.message };
     }
 }

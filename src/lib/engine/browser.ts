@@ -2,18 +2,15 @@ import { Stagehand } from '@browserbasehq/stagehand';
 import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
 import { chromium } from 'playwright-core';
 
-// Interactive roles worth sending to the LLM — everything else is structural noise
-const INTERACTIVE_ROLES = new Set([
-    'link', 'button', 'textbox', 'searchbox', 'combobox', 'listbox',
-    'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'spinbutton',
-    'slider', 'option', 'treeitem', 'menuitemcheckbox', 'menuitemradio'
-]);
 
 export class BrowserService {
     private stagehand: Stagehand | null = null;
     private page: any = null;
     private savedConfig: any = null;       // saved for reconnect
     private lastKnownUrl: string = '';     // last navigated URL, restored after reconnect
+    private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+    private reconnecting = false;          // prevents concurrent reconnect attempts
+    private reconnectGeneration = 0;       // incremented each time a reconnect completes
     private metrics: HeuristicMetrics = {
         broken_links: [],
         navigation_latency: [],
@@ -41,36 +38,95 @@ export class BrowserService {
     // ─── Reconnect ──────────────────────────────────────────────────────────────
 
     private async reconnect(): Promise<void> {
-        console.warn('🔄 CDP dropped — reconnecting to Browserless...');
-        try { await this.stagehand?.close(); } catch { /* already dead */ }
-        this.stagehand = null;
-        this.page = null;
+        if (this.reconnecting) return;
+        this.reconnecting = true;
+        this.reconnectGeneration++;
+        console.warn('CDP dropped — reconnecting to Browserless...');
+        this.stopKeepalive();
+        try {
+            try { await this.stagehand?.close(); } catch { /* already dead */ }
+            this.stagehand = null;
+            this.page = null;
 
-        if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
+            if (!this.savedConfig) throw new Error('No saved config — cannot reconnect.');
 
-        this.stagehand = new Stagehand(this.savedConfig);
-        console.log('🎬 Re-initializing Stagehand...');
-        await this.stagehand.init();
-        await this.setupPage();
+            this.stagehand = new Stagehand(this.savedConfig);
+            console.log('Re-initializing Stagehand...');
+            await this.stagehand.init();
+            await this.setupPage();
 
-        if (this.lastKnownUrl) {
-            console.log(`🔁 Restoring to: ${this.lastKnownUrl}`);
-            await this.navigate(this.lastKnownUrl);
+            if (this.lastKnownUrl) {
+                console.log(`Restoring to: ${this.lastKnownUrl}`);
+                // Use page.goto() directly — calling this.navigate() here would deadlock
+                // because withReconnect() waits for this.reconnecting to become false.
+                await this.page.goto(this.lastKnownUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch((e: any) => {
+                    console.warn(`Restore navigation failed: ${e.message}`);
+                });
+            }
+            console.log('Reconnected.');
+        } finally {
+            this.reconnecting = false;
         }
-        console.log('✅ Reconnected.');
     }
 
     // ─── Wrap any browser call with auto-reconnect (one retry) ─────────────────
 
+    private async waitForReconnect(): Promise<void> {
+        await new Promise<void>(resolve => {
+            const check = setInterval(() => {
+                if (!this.reconnecting) { clearInterval(check); resolve(); }
+            }, 200);
+        });
+    }
+
     private async withReconnect<T>(fn: () => Promise<T>): Promise<T> {
-        try {
+        // If a reconnect is already in progress, wait for it then retry immediately
+        if (this.reconnecting) {
+            await this.waitForReconnect();
             return await fn();
+        }
+
+        // Race fn() against a generation-change signal.
+        // When the keepalive reconnects, it increments reconnectGeneration.
+        // Any fn() that was hung on the dead WebSocket will be abandoned here
+        // and retried on the fresh page — without spawning a second reconnect.
+        const genBefore = this.reconnectGeneration;
+        let signalInterval: ReturnType<typeof setInterval>;
+        const reconnectSignal = new Promise<never>((_, reject) => {
+            signalInterval = setInterval(() => {
+                if (this.reconnectGeneration !== genBefore) {
+                    clearInterval(signalInterval);
+                    reject(new Error('reconnect:generation-changed'));
+                }
+            }, 300);
+        });
+
+        try {
+            const result = await Promise.race([fn(), reconnectSignal]);
+            clearInterval(signalInterval!);
+            return result;
         } catch (err: any) {
-            if (BrowserService.isCdpError(err)) {
-                console.warn(`⚡ CDP error: "${err.message}" — attempting reconnect...`);
-                await this.reconnect();
-                return await fn();  // retry once on fresh connection
+            clearInterval(signalInterval!);
+
+            if (err.message === 'reconnect:generation-changed') {
+                // Keepalive already reconnected while fn() was hung — wait if still
+                // in progress, then retry on the new page.
+                if (this.reconnecting) await this.waitForReconnect();
+                console.warn('Keepalive reconnected while operation was hung — retrying on fresh connection...');
+                return await fn();
             }
+
+            if (BrowserService.isCdpError(err)) {
+                if (this.reconnectGeneration !== genBefore) {
+                    // Keepalive already established a fresh connection
+                    console.warn('Reconnect already completed — retrying on fresh connection...');
+                    return await fn();
+                }
+                console.warn(`CDP error: "${err.message}" — attempting reconnect...`);
+                await this.reconnect();
+                return await fn();
+            }
+
             throw err;
         }
     }
@@ -110,7 +166,7 @@ export class BrowserService {
                 const raw = process.env.BROWSERLESS_WS_URL!;
                 // Normalize: add wss:// if the user omitted the protocol
                 const wsUrl = /^wss?:\/\//i.test(raw) ? raw : `wss://${raw}`;
-                console.log(`🔌 Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
+                console.log(`Browserless mode: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
                 stagehandConfig.localBrowserLaunchOptions = {
                     cdpUrl: wsUrl,
                     viewport: { width: 1280, height: 800 },
@@ -134,12 +190,12 @@ export class BrowserService {
             this.savedConfig = stagehandConfig; // save for reconnect
             this.stagehand = new Stagehand(stagehandConfig);
 
-            console.log('🎬 Initializing Stagehand...');
+            console.log('Initializing Stagehand...');
             await this.stagehand.init();
             await this.setupPage();
-            console.log('✅ Stagehand ready.');
+            console.log('Stagehand ready.');
         } catch (err: any) {
-            console.error('❌ Stagehand init failed:', err.message);
+            console.error('Stagehand init failed:', err.message);
             throw err;
         }
     }
@@ -154,7 +210,7 @@ export class BrowserService {
         this.page = (context.activePage ? context.activePage() : null) || allPages[0];
 
         if (!this.page) {
-            console.log('🚀 Forcing newPage()...');
+            console.log('Forcing newPage()...');
             this.page = await context.newPage();
         }
 
@@ -162,7 +218,7 @@ export class BrowserService {
         if (pwContext && typeof pwContext.on === 'function') {
             this.attachNetworkListeners(pwContext);
             pwContext.on('page', async (newPage: any) => {
-                console.log(`✨ New tab: ${newPage.url()}. Switching...`);
+                console.log(`New tab: ${newPage.url()}. Switching...`);
                 this.page = newPage;
                 await newPage.bringToFront().catch(() => { });
                 await newPage.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
@@ -171,6 +227,39 @@ export class BrowserService {
 
         if (!this.page) throw new Error('Stagehand failure: Page object not found.');
         await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+
+        this.startKeepalive();
+    }
+
+    // ─── Keepalive — prevents Railway proxy from dropping idle WebSocket ─────────
+
+    private startKeepalive() {
+        this.stopKeepalive();
+        // Only needed when using a remote browser over WebSocket (Browserless/Browserbase)
+        if (!this.savedConfig?.localBrowserLaunchOptions?.cdpUrl && this.savedConfig?.env !== 'BROWSERBASE') return;
+
+        this.keepaliveTimer = setInterval(async () => {
+            if (!this.page || this.reconnecting) return;
+            try {
+                // Race the ping against a 5s timeout — if Railway killed the WebSocket
+                // the evaluate() hangs forever instead of throwing, so we must timeout it.
+                await Promise.race([
+                    this.page.evaluate(() => 1),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('keepalive timeout')), 5_000))
+                ]);
+            } catch (err: any) {
+                // Any failure (CDP error OR timeout) means the connection is dead.
+                console.warn(`Keepalive failed (${err.message}) — triggering proactive reconnect...`);
+                this.reconnect().catch(e => console.error('Proactive reconnect failed:', e.message));
+            }
+        }, 25_000); // 25s interval — ping detects drops well before they cause hangs
+    }
+
+    private stopKeepalive() {
+        if (this.keepaliveTimer) {
+            clearInterval(this.keepaliveTimer);
+            this.keepaliveTimer = null;
+        }
     }
 
     // ─── Network ────────────────────────────────────────────────────────────────
@@ -194,7 +283,7 @@ export class BrowserService {
                 try {
                     const url = typeof request.url === 'function' ? request.url() : 'unknown';
                     const err = typeof request.failure === 'function' ? request.failure()?.errorText : 'unknown';
-                    console.warn(`🚦 Request failed: ${url} — ${err}`);
+                    console.warn(`Request failed: ${url} — ${err}`);
                 } catch (_) { }
             });
         } catch (_) { }
@@ -427,7 +516,7 @@ export class BrowserService {
                         ? `Click on: ${action.text || action.reasoning}`
                         : `Type "${action.text}" into the field for: ${action.reasoning}`;
 
-                    console.log(`🤖 Stagehand: ${instruction}`);
+                    console.log(`Stagehand: ${instruction}`);
                     const t0 = Date.now();
                     await this.stagehand.act(instruction, { page: this.page });
                     this.metrics.action_latency.push(Date.now() - t0);
@@ -547,6 +636,7 @@ export class BrowserService {
     }
 
     async close() {
+        this.stopKeepalive();
         if (this.stagehand) await this.stagehand.close().catch(() => { });
         this.page = null;
         this.stagehand = null;
