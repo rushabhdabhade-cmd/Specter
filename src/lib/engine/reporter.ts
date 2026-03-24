@@ -62,7 +62,7 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         .select(`
             id,
             status,
-            persona_configs (name, goal_prompt),
+            persona_configs (name, goal_prompt, tech_literacy),
             session_logs (emotion_tag, inner_monologue, action_taken, step_number)
         `)
         .eq('test_run_id', testRunId);
@@ -89,7 +89,12 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         const goal = session.persona_configs?.goal_prompt || '';
         const logs = (session.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number);
 
-        const sessionScore = calculateSessionScore(session);
+        const sessionScore = calculateSessionScore({
+            ...session,
+            persona: {
+                tech_literacy: session.persona_configs?.tech_literacy
+            }
+        });
         totalScore += sessionScore;
         sessionScores.push(sessionScore);
 

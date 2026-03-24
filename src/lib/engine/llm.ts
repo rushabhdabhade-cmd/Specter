@@ -9,9 +9,19 @@ const ActionSchema = z.object({
     selector: z.string().optional(),
     text: z.string().optional(),
     reasoning: z.string(),
-    emotional_state: z.string(),
+    emotional_state: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
+    emotional_intensity: z.number().min(0).max(1),
+    specific_emotion: z.string().optional(),
     ux_feedback: z.string(),
+    proposed_solution: z.string().optional(),
     possible_paths: z.array(z.string())
+});
+
+const SectionAnalysisSchema = z.object({
+    ux_feedback: z.string(),
+    emotional_state: z.enum(['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment']),
+    emotional_intensity: z.number().min(0).max(1),
+    proposed_solution: z.string().optional()
 });
 
 // ─── Token-saving helpers ─────────────────────────────────────────────────────
@@ -129,15 +139,25 @@ Rules:
 - [CRITICAL] Be critical. If something is generic or misplaced, say so.
 
 EMOTIONAL STATE:
-- Delight: High satisfaction. Use this if you discover a link or section that directly relates to your goal, or if a navigation step successfully leads you to a new, relevant page. **Mandatory if you describe the step as "interesting", "useful", "found", "clear", or "easy".**
-- Neutral: Standard interaction with no specific positive or negative feedback.
-- Confusion: Lost, unsure where to click, or UI is ambiguous.
-- Frustration: Stuck, broken UI, repeated failures, or loops.
+You must select a granular emotion and an intensity (0.0 to 1.0) that best reflects your current experience:
+- Delight: High satisfaction/joy from a successful task or great discovery.
+- Satisfaction: Contentment; things are working as expected.
+- Curiosity: Interest in a section or link; wanting to explore further.
+- Surprise: Unexpected but interesting/positive revelation.
+- Neutral: Standard interaction with no specific pulse.
+- Confusion: UI is ambiguous, you're unsure where to go, or something feels slightly "off".
+- Boredom: Content is generic, layout is repetitive, or goal progress feels slow.
+- Frustration: Direct friction (broken links, loops, complex forms, missing info).
+- Disappointment: Goal progress failed or content didn't meet expectations.
+- specific_emotion: A short 2-3 word string providing more nuance (e.g., "Cautious Optimism", "Brief Annoyance", "Discovery Spark").
+- proposed_solution: [MANDATORY IF FRICTION DETECTED] If you express Confusion, Boredom, Frustration, or Disappointment, you MUST provide a concrete, technical recommendation on how to fix the issue (e.g., "Move the 'Skip' button to the top-right", "Increase contrast on the secondary CTA", "Simplify the 4-step onboarding into a single page").
 
-[CRITICAL] Reward finding relevant information or functional, helpful UI by selecting 'delight'. 
-[CRITICAL] If you state that a discovery is "good", "useful", or "helpful" in your reasoning, you MUST return 'delight' in the 'emotional_state' field.
+[SCORING DIRECTIVE]
+- High Intensity (0.8+) for Frustration/Disappointment significantly drains the UX score.
+- High Intensity (0.8+) for Delight/Satisfaction provides a positive boost.
+- If you state that a discovery is "good", "useful", or "helpful" in your reasoning, you MUST return a positive emotion (Delight/Satisfaction/Curiosity) with appropriate intensity.
 
-Return JSON: { "type","selector"?, "text", "reasoning","emotional_state","ux_feedback" }`;
+Return JSON: { "type","selector"?, "text", "reasoning","emotional_state","emotional_intensity","specific_emotion"?, "ux_feedback", "proposed_solution"?, "possible_paths" }`;
 }
 
 // ─── Providers ────────────────────────────────────────────────────────────────
@@ -178,20 +198,27 @@ export class OpenAIProvider implements LLMProvider {
         return JSON.parse(choice) as Action;
     }
 
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{
+        ux_feedback: string,
+        emotional_state: string,
+        emotional_intensity: number,
+        proposed_solution?: string
+    }> {
         const prompt = `You are evaluating a specific section of a webpage (${sectionLabel}).
 Goal: ${persona.goal_prompt}
 Current URL: ${observation.url}
 
 Analyze the provided screenshot and semantic elements for this section. Focus purely on UX observations and value proposition.
-Provide your findings in 'ux_feedback'.`;
+Identify any friction and propose a solution if necessary.
+Provide your findings including an emotional tag (delight, satisfaction, curiosity, surprise, neutral, confusion, boredom, frustration, disappointment) and intensity (0.0-1.0).
+Provide your findings in the requested JSON format.`;
 
         const response = await this.client.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: "You are a world-class UX Auditor. Your goal is to provide granular, objective feedback on specific parts of a webpage."
+                    content: "You are a world-class UX Auditor. Your goal is to provide granular, objective feedback. Always return valid JSON."
                 },
                 {
                     role: "user",
@@ -201,11 +228,16 @@ Provide your findings in 'ux_feedback'.`;
                     ],
                 },
             ],
-            response_format: zodResponseFormat(z.object({ ux_feedback: z.string() }), "feedback"),
+            response_format: zodResponseFormat(SectionAnalysisSchema, "feedback"),
         });
 
-        const res = JSON.parse(response.choices[0].message.content || '{"ux_feedback": "No feedback provided."}');
-        return res;
+        const res = JSON.parse(response.choices[0].message.content || '{}');
+        return {
+            ux_feedback: typeof res.ux_feedback === 'string' ? res.ux_feedback : JSON.stringify(res.ux_feedback || 'No feedback provided'),
+            emotional_state: res.emotional_state || 'neutral',
+            emotional_intensity: res.emotional_intensity ?? 0.3,
+            proposed_solution: res.proposed_solution
+        };
     }
 
     async generateSummary(prompt: string): Promise<string> {
@@ -261,20 +293,22 @@ export class GeminiProvider implements LLMProvider {
                 }
             } catch (err: any) {
                 lastError = err;
-                console.error(`❌ Gemini ${modelName} failed:`, err.message);
+                console.error(`❌ Gemini ${modelName} failed: `, err.message);
             }
         }
 
         throw lastError || new Error('All Gemini models failed');
     }
 
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
-        const prompt = `You are evaluating a specific section of a webpage (${sectionLabel}).
-Goal: ${persona.goal_prompt}
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
+        const prompt = `You are evaluating a specific section of a webpage(${sectionLabel}).
+    Goal: ${persona.goal_prompt}
 Current URL: ${observation.url}
 
-Analyze the provided screenshot and semantic elements for this section. Focus purely on UX observations and value proposition.
-Provide your findings in 'ux_feedback'.`;
+Analyze the provided screenshot and semantic elements for this section.Focus purely on UX observations and value proposition.
+Identify any friction and propose a solution if necessary.
+Provide your findings including an emotional tag(delight, satisfaction, curiosity, surprise, neutral, confusion, boredom, frustration, disappointment) and intensity(0.0 - 1.0).
+Return JSON: { "ux_feedback", "emotional_state", "emotional_intensity", "proposed_solution" ? } `;
 
         const model = this.genAI.getGenerativeModel({
             model: "gemini-2.0-flash",
@@ -294,10 +328,14 @@ Provide your findings in 'ux_feedback'.`;
         const text = result.response.text();
         try {
             const parsed = JSON.parse(text);
-            const feedback = typeof parsed === 'string' ? parsed : (parsed.ux_feedback || JSON.stringify(parsed));
-            return { ux_feedback: String(feedback) };
+            return {
+                ux_feedback: typeof parsed.ux_feedback === 'string' ? parsed.ux_feedback : JSON.stringify(parsed.ux_feedback || parsed),
+                emotional_state: parsed.emotional_state || 'neutral',
+                emotional_intensity: parsed.emotional_intensity ?? 0.3,
+                proposed_solution: parsed.proposed_solution
+            };
         } catch (e) {
-            return { ux_feedback: text };
+            return { ux_feedback: text, emotional_state: 'neutral', emotional_intensity: 0.3 };
         }
     }
 
@@ -313,7 +351,7 @@ Provide your findings in 'ux_feedback'.`;
                 return response.text();
             } catch (err: any) {
                 lastError = err;
-                console.error(`❌ Gemini summary ${modelName} failed:`, err.message);
+                console.error(`❌ Gemini summary ${modelName} failed: `, err.message);
             }
         }
         throw lastError || new Error('All Gemini models failed for summary');
@@ -348,7 +386,7 @@ export class OllamaProvider implements LLMProvider {
 
                 if (!response.ok) {
                     const errorText = await response.text().catch(() => 'No error body');
-                    throw new Error(`Ollama error (${response.status}): ${errorText}`);
+                    throw new Error(`Ollama error(${response.status}): ${errorText} `);
                 }
 
                 return await response.json();
@@ -435,15 +473,17 @@ export class OllamaProvider implements LLMProvider {
         }
     }
 
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
         const prompt = `[UX SPECIALIST AUDIT: ${sectionLabel.toUpperCase()}]
 Goal: ${persona.goal_prompt}
 URL: ${observation.url}
 
 Task: Analyze this specific section and provide qualitative UX feedback.
 Focus: Visual hierarchy, clarity of purpose, and potential friction.
+Identify any friction and propose a solution if necessary.
+Provide emotional tag (delight, satisfaction, curiosity, surprise, neutral, confusion, boredom, frustration, disappointment) and intensity (0.0-1.0).
 
-Return strictly JSON: { "ux_feedback": "..." }`;
+Return strictly JSON: { "ux_feedback", "emotional_state", "emotional_intensity", "proposed_solution"? }`;
 
         const abortController = new AbortController();
         const timeout = setTimeout(() => abortController.abort(), 60000);
@@ -456,11 +496,15 @@ Return strictly JSON: { "ux_feedback": "..." }`;
                 abortController.signal
             );
             const parsed = JSON.parse(result.message?.content || result.response || '{}');
-            const feedback = typeof parsed === 'string' ? parsed : (parsed.ux_feedback || JSON.stringify(parsed));
-            return { ux_feedback: String(feedback) };
+            return {
+                ux_feedback: typeof parsed.ux_feedback === 'string' ? parsed.ux_feedback : JSON.stringify(parsed.ux_feedback || parsed),
+                emotional_state: parsed.emotional_state || 'neutral',
+                emotional_intensity: parsed.emotional_intensity ?? 0.3,
+                proposed_solution: parsed.proposed_solution
+            };
         } catch (e) {
             console.error(`Ollama analysis failed:`, e);
-            return { ux_feedback: "Local analysis timed out." };
+            return { ux_feedback: "Local analysis timed out.", emotional_state: 'neutral', emotional_intensity: 0.3 };
         } finally {
             clearTimeout(timeout);
         }
@@ -498,7 +542,7 @@ export class LLMService {
         return this.provider.decideNextAction(observation, persona, history, blacklist, triedElements);
     }
 
-    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string }> {
+    async analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{ ux_feedback: string, emotional_state: string, emotional_intensity: number, proposed_solution?: string }> {
         return this.provider.analyzeSection(observation, persona, sectionLabel);
     }
 

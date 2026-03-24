@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
     MousePointerClick, Type, ArrowDown, Clock,
     Navigation, CheckCircle2, XCircle, Quote,
-    TrendingDown, TrendingUp, Minus, ChevronRight, ChevronDown
+    TrendingDown, TrendingUp, Minus, ChevronRight, ChevronDown, Sparkles
 } from 'lucide-react';
 
 interface StepFeedbackCardProps {
@@ -19,16 +19,24 @@ interface StepFeedbackCardProps {
             selector?: string;
             text?: string;
             ux_feedback?: string;
+            proposed_solution?: string;
+            specific_emotion?: string;
             possible_paths?: string[];
+            emotional_intensity?: number;
         };
     };
 }
 
-const EMOTION_CONFIG = {
-    delight: { label: 'Delight', hex: '#10b981', bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', scoreDelta: +2, barColor: '#10b981' },
-    neutral: { label: 'Neutral', hex: '#64748b', bg: 'bg-slate-800/40', text: 'text-slate-400', border: 'border-slate-700', scoreDelta: 0, barColor: '#64748b' },
-    confusion: { label: 'Confusion', hex: '#3b82f6', bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', scoreDelta: -5, barColor: '#3b82f6' },
-    frustration: { label: 'Frustration', hex: '#ef4444', bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20', scoreDelta: -10, barColor: '#ef4444' },
+const EMOTION_CONFIG: Record<string, any> = {
+    delight: { label: 'Delight', hex: '#10b981', bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
+    satisfaction: { label: 'Satisfaction', hex: '#34d399', bg: 'bg-emerald-400/10', text: 'text-emerald-300', border: 'border-emerald-400/20' },
+    curiosity: { label: 'Curiosity', hex: '#818cf8', bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' },
+    surprise: { label: 'Surprise', hex: '#fbbf24', bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' },
+    neutral: { label: 'Neutral', hex: '#64748b', bg: 'bg-slate-800/40', text: 'text-slate-400', border: 'border-slate-700' },
+    confusion: { label: 'Confusion', hex: '#3b82f6', bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
+    boredom: { label: 'Boredom', hex: '#94a3b8', bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-600' },
+    frustration: { label: 'Frustration', hex: '#ef4444', bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
+    disappointment: { label: 'Disappointment', hex: '#f87171', bg: 'bg-red-400/10', text: 'text-red-300', border: 'border-red-400/20' },
 };
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -41,10 +49,10 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
     fail: <XCircle className="h-3 w-3" />,
 };
 
-function ScoreDeltaBadge({ delta }: { delta: number }) {
-    if (delta === 0) return <span className="flex items-center gap-1 text-[9px] font-black text-slate-600"><Minus className="h-2.5 w-2.5" /> 0</span>;
-    if (delta > 0) return <span className="flex items-center gap-1 text-[9px] font-black text-emerald-400"><TrendingUp className="h-2.5 w-2.5" /> +{delta} pts</span>;
-    return <span className="flex items-center gap-1 text-[9px] font-black text-red-400"><TrendingDown className="h-2.5 w-2.5" /> {delta} pts</span>;
+function IntensityBadge({ intensity }: { intensity: number }) {
+    const pct = Math.round(intensity * 100);
+    const color = intensity > 0.7 ? 'text-white' : 'text-slate-500';
+    return <span className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest ${color}`}>Intensity: {pct}%</span>;
 }
 
 export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
@@ -56,6 +64,7 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
         uxFeedback = uxFeedback.overall || uxFeedback.feedback || JSON.stringify(uxFeedback);
     }
     const hasFeedback = uxFeedback && uxFeedback !== 'undefined' && String(uxFeedback).length > 5;
+    const intensity = step.action_taken?.emotional_intensity ?? 0.5;
     const paths = step.action_taken?.possible_paths ?? [];
     const hasScreenshot = !!step.screenshot_url;
 
@@ -125,8 +134,13 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${cfg.bg} ${cfg.text}`}>
                                     {cfg.label}
                                 </span>
+                                {step.action_taken?.specific_emotion && (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold text-slate-500 bg-white/5 border border-white/10 italic">
+                                        &ldquo;{step.action_taken.specific_emotion}&rdquo;
+                                    </span>
+                                )}
                             </div>
-                            <ScoreDeltaBadge delta={cfg.scoreDelta} />
+                            <IntensityBadge intensity={intensity} />
                         </div>
                     )}
 
@@ -137,11 +151,16 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${cfg.bg} ${cfg.text}`}>
                                     {cfg.label}
                                 </span>
+                                {step.action_taken?.specific_emotion && (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold text-slate-500 bg-white/5 border border-white/10 italic">
+                                        &ldquo;{step.action_taken.specific_emotion}&rdquo;
+                                    </span>
+                                )}
                                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${cfg.bg} ${cfg.text}`}>
                                     {ACTION_ICONS[actionType]} {actionType}
                                 </span>
                             </div>
-                            <ScoreDeltaBadge delta={cfg.scoreDelta} />
+                            <IntensityBadge intensity={intensity} />
                         </div>
                     )}
 
@@ -165,6 +184,24 @@ export function StepFeedbackCard({ step }: StepFeedbackCardProps) {
                             <p className="text-[13px] text-slate-200 leading-relaxed italic pl-5">
                                 {uxFeedback}
                             </p>
+                        </div>
+                    )}
+
+                    {/* Proposed Solution — MANDATORY action advice */}
+                    {step.action_taken?.proposed_solution && (
+                        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-indigo-400" />
+                                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">
+                                    Strategic Fix / Solution
+                                </p>
+                            </div>
+                            <div className="flex gap-3">
+                                <div className="h-auto w-1 bg-indigo-500/30 rounded-full" />
+                                <p className="text-[14px] text-white font-medium leading-relaxed">
+                                    {step.action_taken.proposed_solution}
+                                </p>
+                            </div>
                         </div>
                     )}
 
