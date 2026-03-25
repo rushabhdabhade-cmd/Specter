@@ -476,7 +476,7 @@ export default function SessionPage() {
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-semibold text-slate-300">Step {log.step_number}</span>
+                                                    {!isSystem && <span className="text-xs font-semibold text-slate-300">Step {log.step_number}</span>}
                                                     {isSystem ? (
                                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 border border-slate-600/40 text-slate-400 font-semibold capitalize">
                                                             {action.info?.replace(/_/g, ' ')}
