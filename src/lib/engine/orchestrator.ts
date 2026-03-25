@@ -347,7 +347,7 @@ export class Orchestrator {
             for (const sectionResult of analysis.sections) {
                 const matchedSection = observation.sections.find(s => s.label === sectionResult.label)
                     ?? observation.sections[0];
-                const localPath = await this.saveScreenshot(sessionId, 0, matchedSection.screenshot);
+                const localPath = await this.saveScreenshot(sessionId, this.stepNumber, matchedSection.screenshot);
                 this.log(
                     sessionId,
                     observation.url,
@@ -362,6 +362,7 @@ export class Orchestrator {
                     },
                     localPath  // store file path as screenshot_url, not raw base64
                 );
+                this.stepNumber++;
             }
 
             // ── DB log: page summary ──────────────────────────────────────────
