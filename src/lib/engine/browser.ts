@@ -148,8 +148,13 @@ export class BrowserService {
         const start = Date.now();
         try {
             await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            // 2 s cap — analytics/tracking scripts that never go idle shouldn't block capture
-            await this.page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => { });
+            // 5 s cap — analytics/tracking scripts that never go idle shouldn't block capture.
+            // Gives SPAs (React/Next.js) enough time to load initial data.
+            await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
+            
+            // Hard wait to ensure animations or post-hydration renders finish before we snap.
+            await this.page.waitForTimeout(1500);
+
             const duration = Date.now() - start;
             this.metrics.navigation_latency.push(duration);
             this.metrics.last_load_time = duration;
@@ -244,7 +249,7 @@ export class BrowserService {
         // Page is already loaded (navigate() waited for domcontentloaded).
         // Only a short paint-settle delay is needed here — waiting again for
         // domcontentloaded costs up to 2 s per slice (4 slices = up to 8 s wasted).
-        await this.page.waitForTimeout(80);
+        await this.page.waitForTimeout(400);
 
         const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
         const screenshot = await this.page.screenshot({
@@ -409,7 +414,7 @@ export class BrowserService {
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
             await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
         }
-        await this.page.waitForTimeout(300);
+        await this.page.waitForTimeout(1000);
     }
 
     // ─── Link harvesting ────────────────────────────────────────────────────────
