@@ -1,14 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import {
-    PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-    AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine,
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-    BarChart, Bar, LabelList,
+    Tooltip,
 } from 'recharts';
-import {
-    TrendingUp, TrendingDown, Minus, Info, Sparkles
-} from 'lucide-react';
+import { Sparkles, MousePointerClick } from 'lucide-react';
+
 
 interface FeedbackLog {
     step_number: number;
@@ -24,6 +23,7 @@ interface FeedbackSummaryProps {
     logs: FeedbackLog[];
     summary?: string;
     id?: string;
+    personaName?: string;
 }
 
 const EMOTION_COLORS: Record<string, string> = {
@@ -40,7 +40,42 @@ const EMOTION_COLORS: Record<string, string> = {
 
 import { EMOTION_WEIGHTS } from '@/lib/utils/scoring';
 
-/* Extract significant words from feedback strings */
+async function scrollToStep(personaName: string, stepNumber: number) {
+    const key = `${personaName}-${stepNumber}`;
+    if (!document.querySelector(`[data-step-key="${key}"]`)) {
+        const toggleBtn = document.querySelector(`[data-audit-trail="${personaName}"]`) as HTMLElement | null;
+        if (toggleBtn) {
+            toggleBtn.click();
+            await new Promise<void>(resolve => setTimeout(resolve, 350));
+        }
+    }
+    const el = document.querySelector(`[data-step-key="${key}"]`) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.setAttribute('data-highlighted', 'true');
+    setTimeout(() => el.removeAttribute('data-highlighted'), 2000);
+}
+
+/* Custom tooltip for line chart */
+const HealthTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const health = payload[0]?.value;
+    const emotion = payload[0]?.payload?.emotion;
+    const color = health > 70 ? '#10b981' : health > 40 ? '#f59e0b' : '#ef4444';
+    const emotionColor = EMOTION_COLORS[emotion] || '#94a3b8';
+    return (
+        <div className="rounded-xl border border-white/10 bg-slate-800 p-3 shadow-xl text-xs space-y-1">
+            <p className="text-slate-400">Step {label}</p>
+            <p className="font-black" style={{ color }}>UX Health: {health}%</p>
+            {emotion && (
+                <p className="font-bold capitalize" style={{ color: emotionColor }}>{emotion}</p>
+            )}
+            <p className="text-slate-500 text-[10px]">Click to jump to this step</p>
+        </div>
+    );
+};
+
+/* Top feedback phrases */
 function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: number; tag: string }[] {
     const STOPWORDS = new Set([
         'the', 'a', 'an', 'is', 'it', 'of', 'to', 'and', 'in', 'on', 'for',
@@ -53,22 +88,13 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
         'still', 'trying', 'really', 'don\'t', 'didn\'t', 'doesn\'t', 'i\'m',
         'it\'s', 'make', 'made', 'see', 'one', 'no', 'any',
     ]);
-
     const freq: Record<string, { count: number; tags: string[] }> = {};
-
     logs.forEach(log => {
         let text: any = log.action_taken?.ux_feedback || '';
         if (!text || text === 'undefined') return;
-
-        // If it's an object (happened in some LLM runs), try to extract 'overall' or just stringify
-        if (typeof text === 'object') {
-            text = text.overall || text.feedback || JSON.stringify(text);
-        }
-
+        if (typeof text === 'object') text = text.overall || text.feedback || JSON.stringify(text);
         if (typeof text !== 'string') return;
-
         const words = text.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/);
-        // Use 2-gram and 1-gram
         for (let i = 0; i < words.length; i++) {
             const w = words[i];
             if (w.length < 4 || STOPWORDS.has(w)) continue;
@@ -77,7 +103,6 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
             if (!freq[w].tags.includes(log.emotion_tag)) freq[w].tags.push(log.emotion_tag);
         }
     });
-
     return Object.entries(freq)
         .sort((a, b) => b[1].count - a[1].count)
         .slice(0, limit)
@@ -86,77 +111,12 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
             count: data.count,
             tag: data.tags.includes('frustration') ? 'frustration'
                 : data.tags.includes('confusion') ? 'confusion'
-                    : data.tags.includes('delight') ? 'delight' : 'neutral',
+                : data.tags.includes('delight') ? 'delight' : 'neutral',
         }));
 }
 
-
-/* Custom tooltip for pie */
-const PieTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0];
-    return (
-        <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs font-bold" style={{ color: d.payload.fill }}>
-            {d.name}: {d.value} steps ({d.payload.pct}%)
-        </div>
-    );
-};
-
-/* Custom tooltip for line chart */
-const HealthTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const health = payload[0]?.value;
-    const color = health > 70 ? '#10b981' : health > 40 ? '#f59e0b' : '#ef4444';
-    return (
-        <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs">
-            <p className="text-slate-400 mb-1">Step {label}</p>
-            <p className="font-black" style={{ color }}>UX Health: {health}%</p>
-        </div>
-    );
-};
-
-const WaterfallTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0].payload;
-    const color = d.isPositive ? '#10b981' : '#ef4444';
-    return (
-        <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs">
-            <p className="text-slate-400 mb-1">Step {label} (Impact)</p>
-            <p className="font-black" style={{ color }}>
-                {d.isPositive ? '+' : '-'}{d.displayDelta} pts ({d.emotion})
-            </p>
-        </div>
-    );
-};
-
-const ScatterTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0].payload;
-    const isFriction = d.x > 0;
-    return (
-        <div className="rounded-xl border border-white/10 bg-[#111] p-3 shadow-xl text-xs">
-            <p className="text-slate-400 mb-1">Step {d.step}: {d.name}</p>
-            <p className="font-black" style={{ color: isFriction ? '#ef4444' : '#10b981' }}>
-                {isFriction ? 'Friction' : 'Delight'}: {isFriction ? d.x : d.y}%
-            </p>
-        </div>
-    );
-};
-
-
-export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
-    // Emotion distribution for pie chart
-    const emotionCounts = { delight: 0, neutral: 0, confusion: 0, frustration: 0 };
-    logs.forEach(l => { if (l.emotion_tag in emotionCounts) emotionCounts[l.emotion_tag as keyof typeof emotionCounts]++; });
-    const total = logs.length || 1;
-    const pieData = Object.entries(emotionCounts)
-        .filter(([, v]) => v > 0)
-        .map(([name, value]) => ({
-            name: name.charAt(0).toUpperCase() + name.slice(1),
-            value,
-            pct: Math.round((value / total) * 100),
-            fill: EMOTION_COLORS[name as keyof typeof EMOTION_COLORS],
-        }));
+export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSummaryProps) {
+    const [selectedEmotion, setSelectedEmotion] = useState<string | null>(null);
 
     // Sentiment Radar Data
     const sentimentGroups = ['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment'];
@@ -172,34 +132,20 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
             : 0;
         return {
             subject: emo.charAt(0).toUpperCase() + emo.slice(1),
-            A: Math.round(avgIntensity * 100 * (count > 0 ? 1 : 0)), // Only show if count > 0
+            A: Math.round(avgIntensity * 100 * (count > 0 ? 1 : 0)),
             fullMark: 100,
-            color: EMOTION_COLORS[emo]
+            emo,
+            steps: matchingLogs.map(l => l.step_number).sort((a, b) => a - b),
         };
     });
 
-    // Waterfall Data (Score Drain)
-    let waterfallScore = 100;
-    const waterfallData = [...logs]
-        .sort((a, b) => a.step_number - b.step_number)
-        .map(l => {
-            const w = EMOTION_WEIGHTS[l.emotion_tag];
-            const weight = typeof w === 'number' ? w : 0;
-            const i = l.action_taken?.emotional_intensity;
-            const intensity = typeof i === 'number' && !isNaN(i) ? i : 0.5;
-            const delta = weight * intensity;
-            const prev = waterfallScore;
-            waterfallScore = Math.max(0, Math.min(100, waterfallScore + delta));
+    // Emotions that actually appeared
+    const activeEmotions = radarData.filter(d => d.A > 0);
 
-            return {
-                step: l.step_number,
-                displayDelta: Math.abs(Math.round(delta)),
-                isPositive: delta >= 0,
-                // Waterfall logic: [start, end]
-                value: delta >= 0 ? [prev, waterfallScore] : [waterfallScore, prev],
-                emotion: l.emotion_tag
-            };
-        });
+    // Steps for selected emotion
+    const selectedSteps = selectedEmotion
+        ? logs.filter(l => l.emotion_tag === selectedEmotion).map(l => l.step_number).sort((a, b) => a - b)
+        : [];
 
     // Cumulative Health score for Area chart
     let currentHealth = 100;
@@ -215,12 +161,10 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
             return { step: l.step_number, health: Math.round(currentHealth), emotion: l.emotion_tag };
         });
 
+    const worstHealth = healthData.length > 0 ? Math.min(...healthData.map(d => d.health)) : 100;
+    const currentLevel = healthData[healthData.length - 1]?.health ?? 100;
 
-
-    // Top UX feedback phrases
-    const phrases = topPhrases(logs);
-
-    // All UX feedback quotes (non-empty, deduplicated)
+    // All UX feedback quotes
     const feedbackQuotes = Array.from(
         new Set(
             logs
@@ -230,93 +174,138 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
     ).slice(0, 12);
 
     return (
-        <div className="space-y-10">
+        <div className="space-y-6">
 
-            {/* Charts row */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-
-                {/* Radar chart */}
-                <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
-                    <div>
-                        <h3 className="text-base font-bold text-white">Sentiment Pulse</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Emotional intensity mapping</p>
-                    </div>
-                    <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
-                                <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                                <PolarAngleAxis
-                                    dataKey="subject"
-                                    tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }}
-                                    tickLine={false}
-                                />
-                                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                                <Radar
-                                    name="Pulse"
-                                    dataKey="A"
-                                    stroke="#6366f1"
-                                    strokeWidth={2}
-                                    fill="#6366f1"
-                                    fillOpacity={0.35}
-                                    dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }}
-                                />
-                            </RadarChart>
-                        </ResponsiveContainer>
-                    </div>
+            {/* ── Sentiment Pulse ── */}
+            <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 space-y-4">
+                <div>
+                    <h3 className="text-sm font-bold text-white">Sentiment Pulse</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                        How intense each emotion was across the session. A larger spike means that emotion appeared more strongly and frequently. Click any emotion below to see which steps triggered it.
+                    </p>
                 </div>
 
-
-
-                {/* Waterfall Impact chart */}
-                <div className="lg:col-span-5 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
-                    <div>
-                        <h3 className="text-base font-bold text-white">UX Health Impact (Waterfall)</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Step-by-step score contribution</p>
-                    </div>
-                    <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <BarChart data={waterfallData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis dataKey="step" tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                                <YAxis domain={[0, 100]} tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                                <Tooltip content={<WaterfallTooltip />} />
-                                <Bar dataKey="value" strokeWidth={0}>
-                                    {waterfallData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.isPositive ? '#10b981' : '#ef4444'} opacity={0.8} />
-                                    ))}
-                                    <LabelList dataKey="displayDelta" position="top" style={{ fill: '#475569', fontSize: 9, fontWeight: 800 }} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
+                            <PolarGrid stroke="rgba(148,163,184,0.2)" />
+                            <PolarAngleAxis
+                                dataKey="subject"
+                                tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }}
+                                tickLine={false}
+                            />
+                            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                            <Radar
+                                name="Pulse"
+                                dataKey="A"
+                                stroke="#6366f1"
+                                strokeWidth={2}
+                                fill="#6366f1"
+                                fillOpacity={0.35}
+                                dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }}
+                            />
+                        </RadarChart>
+                    </ResponsiveContainer>
                 </div>
 
-                {/* Health Area chart */}
-                <div className="lg:col-span-3 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
+                {/* Clickable emotion legend */}
+                {activeEmotions.length > 0 && (
+                    <div className="space-y-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                            <MousePointerClick className="h-3 w-3" />
+                            Click an emotion to see which steps
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {activeEmotions.map(({ emo, steps }) => {
+                                const color = EMOTION_COLORS[emo] || '#94a3b8';
+                                const isSelected = selectedEmotion === emo;
+                                return (
+                                    <button
+                                        key={emo}
+                                        onClick={() => setSelectedEmotion(isSelected ? null : emo)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold capitalize transition-all"
+                                        style={{
+                                            borderColor: isSelected ? color : color + '40',
+                                            background: isSelected ? color + '20' : color + '0a',
+                                            color: isSelected ? color : '#94a3b8',
+                                        }}
+                                    >
+                                        <span
+                                            className="h-2 w-2 rounded-full flex-shrink-0"
+                                            style={{ background: color }}
+                                        />
+                                        {emo}
+                                        <span
+                                            className="ml-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md"
+                                            style={{ background: color + '25', color }}
+                                        >
+                                            {steps.length}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Step chips for selected emotion */}
+                        {selectedEmotion && selectedSteps.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                                <span className="text-[10px] text-slate-500 font-bold">Jump to:</span>
+                                {selectedSteps.map(step => {
+                                    const color = EMOTION_COLORS[selectedEmotion] || '#94a3b8';
+                                    return (
+                                        <button
+                                            key={step}
+                                            onClick={() => personaName && scrollToStep(personaName, step)}
+                                            className="px-2.5 py-1 rounded-md border text-[10px] font-bold transition-all hover:scale-105"
+                                            style={{
+                                                borderColor: color + '40',
+                                                background: color + '15',
+                                                color,
+                                            }}
+                                        >
+                                            Step {step}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* ── UX Health Journey + Stats ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                <div className="lg:col-span-3 rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 space-y-3">
                     <div>
-                        <h3 className="text-base font-bold text-white">UX Health Journey</h3>
-                        <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">Cumulative satisfaction trend</p>
+                        <h3 className="text-sm font-bold text-white">UX Health Journey</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                            Satisfaction score from 100% at start, adjusting up or down after each step based on emotion. Drops = friction. <span className="text-indigo-400 font-semibold">Click any dot to jump to that step.</span>
+                        </p>
                     </div>
 
                     <div className="h-52">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <AreaChart data={healthData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                            <AreaChart
+                                data={healthData}
+                                margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
+                            >
                                 <defs>
                                     <linearGradient id="healthColor" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
                                         <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.1)" />
                                 <XAxis
                                     dataKey="step"
-                                    tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }}
-                                    axisLine={{ stroke: 'rgba(255,255,255,0.05)' }}
+                                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }}
+                                    axisLine={{ stroke: 'rgba(148,163,184,0.15)' }}
                                     tickLine={false}
+                                    label={{ value: 'Step', position: 'insideBottomRight', offset: -5, fill: '#475569', fontSize: 9 }}
                                 />
                                 <YAxis
                                     domain={[0, 100]}
-                                    tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }}
+                                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }}
                                     axisLine={false}
                                     tickLine={false}
                                 />
@@ -328,70 +317,116 @@ export function FeedbackSummary({ logs, summary, id }: FeedbackSummaryProps) {
                                     fillOpacity={1}
                                     fill="url(#healthColor)"
                                     strokeWidth={2}
+                                    dot={(dotProps: any) => {
+                                        const { cx, cy, payload } = dotProps;
+                                        const h = payload.health;
+                                        const fill = h > 70 ? '#10b981' : h > 40 ? '#f59e0b' : '#ef4444';
+                                        return (
+                                            <circle
+                                                key={`dot-${payload.step}`}
+                                                cx={cx}
+                                                cy={cy}
+                                                r={5}
+                                                fill={fill}
+                                                stroke="#1e293b"
+                                                strokeWidth={2}
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (personaName) scrollToStep(personaName, payload.step);
+                                                }}
+                                            />
+                                        );
+                                    }}
+                                    activeDot={(dotProps: any) => {
+                                        const { cx, cy, payload } = dotProps;
+                                        const h = payload.health;
+                                        const fill = h > 70 ? '#10b981' : h > 40 ? '#f59e0b' : '#ef4444';
+                                        return (
+                                            <circle
+                                                key={`active-${payload.step}`}
+                                                cx={cx}
+                                                cy={cy}
+                                                r={7}
+                                                fill={fill}
+                                                stroke="#1e293b"
+                                                strokeWidth={2}
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (personaName) scrollToStep(personaName, payload.step);
+                                                }}
+                                            />
+                                        );
+                                    }}
                                 />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                {/* Min/max annotations */}
-                <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 flex flex-col justify-center space-y-8">
+                {/* Stats */}
+                <div className="lg:col-span-2 rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 flex flex-col justify-center space-y-6">
                     {[
-                        { label: 'Initial Health', value: '100', color: '#6366f1', sub: 'Baseline start' },
-                        { label: 'Current Level', value: String(healthData[healthData.length - 1]?.health ?? 100), color: (healthData[healthData.length - 1]?.health ?? 100) > 70 ? '#10b981' : '#f59e0b', sub: 'Calculated Perception' },
-                        { label: 'Worst Point', value: healthData.length > 0 ? String(Math.min(...healthData.map(d => d.health))) : '100', color: '#ef4444', sub: 'The "Peak" Friction' },
+                        {
+                            label: 'Initial Health',
+                            value: '100%',
+                            color: '#6366f1',
+                            sub: 'All sessions start at full health',
+                        },
+                        {
+                            label: 'Final Level',
+                            value: `${currentLevel}%`,
+                            color: currentLevel > 70 ? '#10b981' : currentLevel > 40 ? '#f59e0b' : '#ef4444',
+                            sub: 'Where the session ended up',
+                        },
+                        {
+                            label: 'Worst Point',
+                            value: `${worstHealth}%`,
+                            color: '#ef4444',
+                            sub: 'The most friction the user felt',
+                        },
                     ].map(({ label, value, color, sub }) => (
-                        <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '40' }}>
-                            <p className="text-[10px] text-slate-600 uppercase tracking-widest font-black leading-none">{label}</p>
-                            <div className="flex items-baseline gap-2 mt-2">
-                                <p className="text-3xl font-black" style={{ color }}>{value}%</p>
-                                <p className="text-[10px] text-slate-500 font-bold">{sub}</p>
+                        <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '50' }}>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black leading-none">{label}</p>
+                            <div className="flex items-baseline gap-2 mt-1.5">
+                                <p className="text-2xl font-black" style={{ color }}>{value}</p>
+                                <p className="text-[10px] text-slate-500">{sub}</p>
                             </div>
                         </div>
                     ))}
                 </div>
-
             </div>
 
-            {/* AI-Generated Feedback Summary — Concise Executive Insight */}
+            {/* AI summary */}
             {summary && (
-                <div className="group relative rounded-3xl border border-indigo-500/10 bg-indigo-500/[0.02] p-8 overflow-hidden transition-all hover:bg-indigo-500/[0.04]">
-                    <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
-                        <Sparkles className="h-20 w-20 text-indigo-400" />
-                    </div>
-
-                    <div className="relative flex items-center gap-3 mb-4">
-                        <div className="h-7 w-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+                <div className="group relative rounded-xl border border-indigo-500/15 bg-indigo-500/[0.03] p-6 overflow-hidden">
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="h-6 w-6 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                            <Sparkles className="h-3 w-3 text-indigo-400" />
                         </div>
-                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">AI Observation Summary</h3>
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">AI Observation</h3>
                     </div>
-
-                    <p className="relative z-10 text-lg md:text-xl font-medium text-slate-200 leading-relaxed tracking-tight italic">
-                        &ldquo;{summary}&rdquo;
-                    </p>
+                    <p className="text-sm text-slate-200 leading-relaxed italic">&ldquo;{summary}&rdquo;</p>
                 </div>
             )}
 
-
-            {/* All UX Feedback Quotes */}
+            {/* UX Feedback quotes */}
             {feedbackQuotes.length > 0 && (
-                <div className="rounded-3xl border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 space-y-4">
                     <div>
-                        <h3 className="text-base font-bold text-white">UX Feedback Log</h3>
-                        <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mt-0.5">All persona observations — unfiltered</p>
+                        <h3 className="text-sm font-bold text-white">UX Feedback Log</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">All persona observations — unfiltered</p>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {feedbackQuotes.map((quote, i) => {
-                            // Find the matching log to get emotion
                             const matchedLog = logs.find(l => l.action_taken?.ux_feedback === quote);
                             const emotion = matchedLog?.emotion_tag || 'neutral';
-                            const color = EMOTION_COLORS[emotion as keyof typeof EMOTION_COLORS];
+                            const color = EMOTION_COLORS[emotion];
                             return (
                                 <div
                                     key={i}
-                                    className="rounded-2xl p-4 border text-sm italic text-slate-200 leading-relaxed"
+                                    className="rounded-xl p-4 border text-xs italic text-slate-300 leading-relaxed"
                                     style={{ borderColor: color + '25', background: color + '08' }}
                                 >
                                     <span style={{ color }} className="not-italic font-black mr-1">&ldquo;</span>

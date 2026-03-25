@@ -73,7 +73,7 @@ export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
     return (
         <div
             data-step-key={stepKey}
-            className={`group/card rounded-3xl border overflow-hidden transition-all duration-500 ${cfg.border} bg-[#060606] hover:border-white/10 hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.8)] data-[highlighted]:ring-2 data-[highlighted]:ring-indigo-500/60 data-[highlighted]:shadow-[0_0_32px_rgba(99,102,241,0.25)]`}
+            className={`group/card rounded-3xl border overflow-hidden transition-all duration-500 ${cfg.border} bg-slate-800/60 hover:bg-slate-800/80 hover:border-white/10 hover:shadow-lg data-[highlighted]:ring-2 data-[highlighted]:ring-indigo-500/60 data-[highlighted]:shadow-[0_0_32px_rgba(99,102,241,0.25)]`}
         >
             {/* Emotion accent top bar */}
             <div className="h-1 w-full" style={{ background: cfg.hex }} />
@@ -82,7 +82,7 @@ export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
 
                 {/* ── Screenshot panel (left on lg, top on mobile) ───────────────── */}
                 {hasScreenshot && (
-                    <div className="lg:w-[480px] flex-shrink-0 relative overflow-hidden border-b lg:border-b-0 lg:border-r border-white/5 bg-[#000000] group-hover/card:bg-[#040404] transition-colors">
+                    <div className="lg:w-[480px] flex-shrink-0 relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-700/50 bg-slate-900/60 group-hover/card:bg-slate-900/80 transition-colors">
                         {/* Overlay Gradient for top legibility */}
                         <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/80 via-black/40 to-transparent z-[5]" />
 
@@ -101,7 +101,7 @@ export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
 
                         {/* Action type badge */}
                         <div className="absolute top-4 right-4 z-10">
-                            <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-black/80 border border-white/10 text-[9px] font-black text-white backdrop-blur-md shadow-lg group-hover/card:border-white/20 transition-all">
+                            <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-white/10 text-[9px] font-black text-white backdrop-blur-md shadow-lg group-hover/card:border-white/20 transition-all">
                                 {ACTION_ICONS[actionType]}
                                 <span className="uppercase tracking-widest">{actionType}</span>
                             </span>
@@ -240,7 +240,7 @@ export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
                             {step.action_taken?.selector && (
                                 <div className="flex items-center gap-2">
                                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Target</span>
-                                    <code className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/40 border border-white/5 text-[10px] text-indigo-400 font-mono">
+                                    <code className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/50 border border-white/5 text-[10px] text-indigo-400 font-mono">
                                         <MousePointerClick className="h-2.5 w-2.5" />
                                         <span className="max-w-[140px] truncate">{step.action_taken.selector}</span>
                                     </code>
@@ -251,7 +251,7 @@ export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
                             {step.action_taken?.text && (
                                 <div className="flex items-center gap-2">
                                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Typed</span>
-                                    <code className="px-2 py-1 rounded-lg bg-black/40 border border-white/5 text-[10px] text-amber-300 font-mono">
+                                    <code className="px-2 py-1 rounded-lg bg-slate-900/50 border border-white/5 text-[10px] text-amber-300 font-mono">
                                         {step.action_taken.text}
                                     </code>
                                 </div>

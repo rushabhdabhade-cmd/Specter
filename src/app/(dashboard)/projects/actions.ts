@@ -56,7 +56,12 @@ export async function createTestRun(formData: {
         .from('projects') as any)
         .upsert({
             user_id: userId,
-            name: `Project for ${new URL(formData.url).hostname}`,
+            name: (() => {
+                const hostname = new URL(formData.url).hostname.replace(/^www\./, '');
+                const parts = hostname.split('.');
+                const brand = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+                return parts.length > 1 ? `${brand}.${parts.slice(1).join('.')}` : brand;
+            })(),
             target_url: formData.url,
             requires_auth: formData.requiresAuth,
             auth_credentials: formData.credentials ? JSON.stringify(formData.credentials) : null,

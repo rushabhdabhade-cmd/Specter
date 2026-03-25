@@ -27,12 +27,10 @@ interface ActionItemsProps {
 async function scrollToStep(personaName: string, stepNumber: number) {
     const key = `${personaName}-${stepNumber}`;
 
-    // The AuditTrail accordion is collapsed by default — open it first so cards render
     if (!document.querySelector(`[data-step-key="${key}"]`)) {
         const toggleBtn = document.querySelector(`[data-audit-trail="${personaName}"]`) as HTMLElement | null;
         if (toggleBtn) {
             toggleBtn.click();
-            // Wait one animation frame for React to re-render the cards
             await new Promise<void>(resolve => setTimeout(resolve, 350));
         }
     }
@@ -51,27 +49,39 @@ export function ActionItems({ items }: ActionItemsProps) {
     if (!items || items.length === 0) return null;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                    <Zap className="h-5 w-5 text-indigo-400" />
+                <div className="h-8 w-8 rounded-lg bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center">
+                    <Zap className="h-4 w-4 text-indigo-400" />
                 </div>
                 <div>
-                    <h2 className="text-2xl font-bold text-white">Prioritized UX Fixes</h2>
-                    <p className="text-sm text-slate-500 font-medium">Automated extraction of the most impactful improvements based on persona friction.</p>
+                    <h2 className="text-base font-bold text-white">Prioritized UX Fixes</h2>
+                    <p className="text-xs text-slate-400">Most impactful improvements based on persona friction.</p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 gap-3">
                 {items.map((item, i) => {
                     const priority = item.priority.toLowerCase();
                     const isHigh = priority.includes('high');
                     const isMedium = priority.includes('medium');
 
-                    const colorClass = isHigh ? 'text-red-400' : isMedium ? 'text-amber-400' : 'text-emerald-400';
-                    const bgClass = isHigh ? 'bg-red-500/5 border-red-500/10' : isMedium ? 'bg-amber-500/5 border-amber-500/10' : 'bg-emerald-500/5 border-emerald-500/10';
-                    const accentClass = isHigh ? 'bg-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.4)]' : isMedium ? 'bg-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.4)]';
-                    const chipBg = isHigh ? 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20' : isMedium ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20';
+                    const accentColor = isHigh ? '#ef4444' : isMedium ? '#f59e0b' : '#10b981';
+                    const chipStyle = isHigh
+                        ? 'bg-red-500/15 text-red-300 border-red-500/30'
+                        : isMedium
+                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                        : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+                    const iconBg = isHigh
+                        ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                        : isMedium
+                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                        : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
+                    const chipRefStyle = isHigh
+                        ? 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+                        : isMedium
+                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+                        : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20';
 
                     const Icon = isHigh ? AlertCircle : isMedium ? Zap : CheckCircle2;
                     const hasRefs = item.stepRefs && item.stepRefs.length > 0;
@@ -80,39 +90,40 @@ export function ActionItems({ items }: ActionItemsProps) {
                     return (
                         <div
                             key={i}
-                            className={`group relative rounded-3xl border ${bgClass} p-6 transition-all duration-300 hover:bg-white/[0.02] hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-black/40 overflow-hidden`}
+                            className="group relative rounded-xl border border-slate-700/50 bg-slate-800/60 hover:bg-slate-800/90 hover:border-slate-600/60 transition-all duration-200 overflow-hidden"
                             onMouseEnter={() => setHoveredIndex(i)}
                             onMouseLeave={() => setHoveredIndex(null)}
                         >
-                            {/* Color-coded accent line */}
-                            <div className={`absolute left-0 top-0 bottom-0 w-1 group-hover:w-1.5 transition-all duration-300 ${accentClass}`} />
+                            {/* Left accent bar */}
+                            <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: accentColor }} />
 
-                            <div className="flex flex-col gap-4 pl-2">
-                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-                                    <div className="flex items-start gap-4 flex-1">
-                                        <div className={`mt-1 flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center ${isHigh ? 'bg-red-500/10' : isMedium ? 'bg-amber-500/10' : 'bg-emerald-500/10'} border border-white/5`}>
-                                            <Icon className={`h-4 w-4 ${colorClass}`} />
+                            <div className="pl-5 pr-5 py-4 flex flex-col gap-3">
+                                <div className="flex items-start gap-3">
+                                    {/* Icon */}
+                                    <div className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center border ${iconBg}`}>
+                                        <Icon className="h-3.5 w-3.5" />
+                                    </div>
+
+                                    {/* Content */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <h4 className="text-sm font-bold text-white leading-snug">
+                                                {item.title}
+                                            </h4>
+                                            <span className={`flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${chipStyle}`}>
+                                                {item.priority}
+                                            </span>
                                         </div>
-                                        <div className="space-y-1.5 flex-1 min-w-0">
-                                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                                <h4 className="text-base font-bold text-white group-hover:text-indigo-400 transition-colors leading-snug">
-                                                    {item.title}
-                                                </h4>
-                                                <div className={`flex-shrink-0 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/5 bg-black/40 ${colorClass}`}>
-                                                    {item.priority}
-                                                </div>
-                                            </div>
-                                            <p className="text-sm text-slate-400 leading-relaxed max-w-2xl font-medium">
-                                                {item.detail}
-                                            </p>
-                                        </div>
+                                        <p className="text-xs text-slate-400 leading-relaxed">
+                                            {item.detail}
+                                        </p>
                                     </div>
                                 </div>
 
                                 {/* Step reference chips — visible on hover */}
                                 {hasRefs && (
-                                    <div className={`flex flex-wrap items-center gap-2 pl-13 transition-all duration-300 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1 pointer-events-none'}`}>
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-1">
+                                    <div className={`flex flex-wrap items-center gap-2 ml-11 transition-all duration-200 ${isHovered ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1">
                                             <User className="h-2.5 w-2.5" />
                                             Evidenced by
                                         </span>
@@ -120,21 +131,15 @@ export function ActionItems({ items }: ActionItemsProps) {
                                             <button
                                                 key={j}
                                                 onClick={() => scrollToStep(ref.personaName, ref.stepNumber)}
-                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-black transition-all cursor-pointer ${chipBg}`}
+                                                className={`px-2.5 py-1 rounded-full border text-[10px] font-bold transition-all cursor-pointer ${chipRefStyle}`}
                                                 title={`Jump to ${ref.personaName} · Step ${ref.stepNumber}`}
                                             >
-                                                <span className="opacity-60">{ref.personaName}</span>
-                                                <span className="h-3 w-px bg-current opacity-30" />
-                                                <span>Step {ref.stepNumber}</span>
+                                                Step {ref.stepNumber}
                                             </button>
                                         ))}
                                     </div>
                                 )}
                             </div>
-
-                            {/* subtle glow gradient */}
-
-                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
                         </div>
                     );
                 })}

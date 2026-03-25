@@ -66,7 +66,7 @@ export function SentimentTimeline({ steps, personaName }: SentimentTimelineProps
 
 
                                 {/* Tooltip on hover — moved to TOP and SCOPED to step group */}
-                                <div className="hidden group-hover/step:flex absolute bottom-full mb-4 left-1/2 -translate-x-1/2 z-[100] flex-col min-w-[260px] max-w-[300px] rounded-2xl border border-white/10 bg-[#0d0d0d] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] p-5 gap-3 pointer-events-none transition-all animate-in fade-in zoom-in-95 duration-200">
+                                <div className="hidden group-hover/step:flex absolute bottom-full mb-4 left-1/2 -translate-x-1/2 z-[100] flex-col min-w-[260px] max-w-[300px] rounded-2xl border border-white/10 bg-slate-800 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] p-5 gap-3 pointer-events-none transition-all animate-in fade-in zoom-in-95 duration-200">
                                     <div className="flex items-center gap-2">
                                         <span
                                             className="h-2 w-2 rounded-full flex-shrink-0"
