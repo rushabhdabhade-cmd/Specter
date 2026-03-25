@@ -80,6 +80,18 @@ export interface PageScanAnalysis {
     page_summary: string;
 }
 
+// Extended analysis returned by analysePage() — includes navigation intent
+export interface PageAnalysisResult extends PageScanAnalysis {
+    /** Concrete UX problems found on this page */
+    friction_points: string[];
+    /** Well-executed UX elements worth noting */
+    positives: string[];
+    /** 3–5 URLs from the page the LLM recommends visiting next (empty for auth pages) */
+    next_links: string[];
+    /** One-sentence update to the running journey narrative */
+    journey_narrative_update: string;
+}
+
 export interface LLMProvider {
     decideNextAction(
         observation: Observation,
@@ -96,6 +108,20 @@ export interface LLMProvider {
         pageTitle: string,
         persona: PersonaProfile
     ): Promise<PageScanAnalysis>;
+
+    /**
+     * Crawl-Reason-Repeat: analyse a captured page and decide which links to visit next.
+     * Browser is already closed when this is called — only screenshots + metadata are passed.
+     */
+    analysePage(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile,
+        isAuthPage: boolean,
+        availableLinks: string[],
+        journeyNarrative: string
+    ): Promise<PageAnalysisResult>;
 
     generateSummary(prompt: string): Promise<string>;
     generatePersonas(siteContext: string, userPrompt: string, archetypes: string[]): Promise<PersonaProfile[]>;

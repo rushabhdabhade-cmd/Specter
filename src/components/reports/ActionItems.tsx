@@ -24,14 +24,23 @@ interface ActionItemsProps {
     items: ActionItem[];
 }
 
-function scrollToStep(personaName: string, stepNumber: number) {
+async function scrollToStep(personaName: string, stepNumber: number) {
     const key = `${personaName}-${stepNumber}`;
+
+    // The AuditTrail accordion is collapsed by default — open it first so cards render
+    if (!document.querySelector(`[data-step-key="${key}"]`)) {
+        const toggleBtn = document.querySelector(`[data-audit-trail="${personaName}"]`) as HTMLElement | null;
+        if (toggleBtn) {
+            toggleBtn.click();
+            // Wait one animation frame for React to re-render the cards
+            await new Promise<void>(resolve => setTimeout(resolve, 350));
+        }
+    }
+
     const el = document.querySelector(`[data-step-key="${key}"]`) as HTMLElement | null;
     if (!el) return;
 
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    // Highlight pulse: set data-highlighted, remove after 2s
     el.setAttribute('data-highlighted', 'true');
     setTimeout(() => el.removeAttribute('data-highlighted'), 2000);
 }

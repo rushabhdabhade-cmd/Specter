@@ -101,12 +101,20 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
             }
         }
 
-        // Key logs for LLM context: first 2 + last 2 steps + all friction steps
+        // Key logs for LLM context: first 2 + last 2 + all friction steps + up to 5 positive steps
         const keyLogIndices = new Set<number>();
         logs.forEach((_: any, i: number) => { if (i < 2 || i >= logs.length - 2) keyLogIndices.add(i); });
         logs.forEach((log: any, i: number) => {
             if (log.emotion_tag === 'frustration' || log.emotion_tag === 'confusion' || log.emotion_tag === 'disappointment') {
                 keyLogIndices.add(i);
+            }
+        });
+        // Also include positive moments so the synthesis sees a balanced picture
+        let positiveCount = 0;
+        logs.forEach((log: any, i: number) => {
+            if (positiveCount < 5 && (log.emotion_tag === 'delight' || log.emotion_tag === 'satisfaction' || log.emotion_tag === 'curiosity')) {
+                keyLogIndices.add(i);
+                positiveCount++;
             }
         });
 
@@ -145,25 +153,25 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         const llm = new LLMService({ provider: synthProvider, apiKey });
 
         // Main synthesis
-        const synthesisPrompt = `You are a senior UX strategist. Write a professional executive UX audit report.
+        const synthesisPrompt = `You are a senior UX strategist writing a balanced, evidence-based executive audit.
 
 Stats: ${sessions.length} personas tested | ${funnelRate.toFixed(1)}% completion | Usability score: ${averageScore}/100
 
-Unique UX feedback collected:
+UX feedback collected (positive and negative):
 ${Array.from(allFeedback).map(f => `- ${f}`).join('\n')}
 
-Session details:
+Session details (includes delight, curiosity, and friction moments):
 ${qualitativeData.join('\n')}
 
 Write in Markdown:
 # Strategic UX Audit
-(3–5 sentences. Cover: visual hierarchy, navigation friction, content clarity, trust signals. State clearly where the biggest drop-off risks are and what persona types are most affected.)
+(3–5 sentences. Be balanced and accurate — credit genuine strengths before identifying friction. Cover: what works well (visual design, content, navigation), where friction occurs, and which persona types are most affected. Avoid over-penalising minor issues; focus on patterns that consistently impacted multiple steps.)
 
 Then output action items in EXACTLY this format:
 [ACTION_ITEMS]
 - (Priority: High/Medium/Low) | Fix: [title] | Detail: [specific recommendation] | Steps: PersonaName#3, OtherPersona#7
 [/ACTION_ITEMS]
-Max 5 items. For Steps, cite the persona name and step number(s) from the session data above that most directly evidence the issue. Use the exact persona name as shown (e.g. "Sarah#3"). Omit Steps field if no specific step applies.`;
+Max 5 items, ordered by actual user impact (not just negativity). Only flag High priority for issues that caused clear task failure or repeated frustration. For Steps, cite the persona name and step number(s) from the session data above. Use the exact persona name as shown (e.g. "Sarah#3"). Omit Steps field if no specific step applies.`;
 
         try {
             console.log(`Synthesizing report with ${synthProvider}...`);
