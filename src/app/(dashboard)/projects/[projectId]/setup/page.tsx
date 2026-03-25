@@ -204,7 +204,7 @@ export default function NewTestRunPage() {
       {/* Progress Indicator */}
       <div className="relative mb-24 flex w-full max-w-2xl items-center justify-between px-8">
         {/* Connection Lines */}
-        <div className="absolute left-[12%] right-[12%] top-5 -z-10 h-[1px] bg-white/5">
+        <div className="absolute left-[12%] right-[12%] top-5 -z-10 h-[1px] bg-slate-700/60">
           <div
             className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 transition-all duration-1000 ease-in-out shadow-[0_0_15px_rgba(99,102,241,0.5)]"
             style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}
@@ -216,12 +216,12 @@ export default function NewTestRunPage() {
           <div
             className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 1
               ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
-              : 'border border-white/5 bg-white/[0.02] text-slate-600'
+              : 'border border-slate-600 bg-slate-800 text-slate-400'
               }`}
           >
             {step > 1 ? <Check className="h-5 w-5" strokeWidth={3} /> : '01'}
           </div>
-          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 1 ? 'text-white' : 'text-slate-600'}`}>Target Domain</span>
+          <span className={`text-[10px] font-bold uppercase tracking-[0.15em] transition-colors duration-500 ${step >= 1 ? 'text-white' : 'text-slate-400'}`}>Target Domain</span>
         </div>
 
         {/* Step 2 */}
@@ -229,12 +229,12 @@ export default function NewTestRunPage() {
           <div
             className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 2
               ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
-              : 'border border-white/5 bg-white/[0.02] text-slate-600'
+              : 'border border-slate-600 bg-slate-800 text-slate-400'
               }`}
           >
             {step > 2 ? <Check className="h-5 w-5" strokeWidth={3} /> : '02'}
           </div>
-          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-600'}`}>Persona Cohort</span>
+          <span className={`text-[10px] font-bold uppercase tracking-[0.15em] transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-400'}`}>AI Personas</span>
         </div>
 
         {/* Step 3 */}
@@ -242,12 +242,12 @@ export default function NewTestRunPage() {
           <div
             className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 3
               ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
-              : 'border border-white/5 bg-white/[0.02] text-slate-600'
+              : 'border border-slate-600 bg-slate-800 text-slate-400'
               }`}
           >
             <Zap className={`h-5 w-5 ${step >= 3 ? 'fill-current' : ''}`} />
           </div>
-          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 3 ? 'text-white' : 'text-slate-600'}`}>Deployment</span>
+          <span className={`text-[10px] font-bold uppercase tracking-[0.15em] transition-colors duration-500 ${step >= 3 ? 'text-white' : 'text-slate-400'}`}>Launch</span>
         </div>
       </div>
 
@@ -261,18 +261,17 @@ export default function NewTestRunPage() {
             </p>
           </div>
 
-          <div className="w-full space-y-10 rounded-[48px] border border-white/5 bg-[#0a0a0a] p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] backdrop-blur-3xl relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-50 pointer-events-none" />
+          <div className="w-full space-y-8 rounded-2xl border border-slate-700/50 bg-slate-800/50 p-10 relative overflow-hidden">
 
-            <div className="space-y-6 text-left relative focus-within:translate-y-[-4px] transition-transform duration-500">
-              <div className="flex items-center gap-3 text-slate-400">
-                <div className="h-8 w-8 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center shadow-inner">
+            <div className="space-y-3 text-left">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <Globe className="h-4 w-4 text-indigo-400" />
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Primary Domain URL <span className="text-red-500/50 ml-1 font-bold">*</span></span>
+                <span className="text-sm font-semibold text-white">Website URL <span className="text-red-400 ml-0.5">*</span></span>
               </div>
               {error && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-medium animate-in fade-in slide-in-from-top-1">
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in fade-in slide-in-from-top-1">
                   {error}
                 </div>
               )}
@@ -280,23 +279,26 @@ export default function NewTestRunPage() {
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-[#111111] backdrop-blur-md border border-white/10 rounded-3xl p-6 text-xl text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/30 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+                className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all"
                 placeholder="https://yourapp.build"
               />
             </div>
 
-            <div className="space-y-6 text-left relative group/scope">
-              <div className="flex items-center gap-3 text-slate-400">
-                <div className="h-8 w-8 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center shadow-inner">
+            <div className="space-y-3 text-left">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <Target className="h-4 w-4 text-indigo-400" />
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Testing Scope & Constraints</span>
+                <div>
+                  <span className="text-sm font-semibold text-white">Testing Scope</span>
+                  <span className="ml-2 text-xs text-slate-400">(optional)</span>
+                </div>
               </div>
               <textarea
                 rows={4}
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="w-full bg-[#111111] backdrop-blur-md border border-white/10 rounded-3xl p-6 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/30 transition-all resize-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+                className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl px-5 py-4 text-base text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all resize-none"
                 placeholder="e.g. Focus on user onboarding and payment flows, ignore the help center."
               />
             </div>
@@ -371,19 +373,19 @@ export default function NewTestRunPage() {
 
 
             {/* AI Engine Section */}
-            <div className="space-y-5 text-left pt-2 border-t border-white/5">
-              <div className="flex items-center gap-3 text-slate-400">
-                <div className="h-8 w-8 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center shadow-inner">
+            <div className="space-y-5 text-left pt-2 border-t border-slate-700/50">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <Zap className="h-4 w-4 text-indigo-400" />
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">AI Engine</span>
+                <span className="text-sm font-semibold text-white">AI Engine</span>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <button
                   type="button"
                   onClick={() => { setLlmProvider('gemini'); setLlmApiKey(''); setLlmModelName(''); }}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'gemini' ? 'bg-white/5 border-white/20 text-white shadow-lg' : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-400'}`}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'gemini' ? 'bg-indigo-500/10 border-indigo-500/40 text-white shadow-lg' : 'bg-slate-700/30 border-slate-600/50 text-slate-300 hover:border-slate-500 hover:text-white'}`}
                 >
                   <span className="text-sm font-bold">Gemini</span>
                   <span className="text-[10px] opacity-60 leading-tight">Google Flash 2.0 · Free tier</span>
@@ -391,7 +393,7 @@ export default function NewTestRunPage() {
                 <button
                   type="button"
                   onClick={() => setLlmProvider('openrouter')}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'openrouter' ? 'bg-white/5 border-white/20 text-white shadow-lg' : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-400'}`}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'openrouter' ? 'bg-indigo-500/10 border-indigo-500/40 text-white shadow-lg' : 'bg-slate-700/30 border-slate-600/50 text-slate-300 hover:border-slate-500 hover:text-white'}`}
                 >
                   <span className="text-sm font-bold">OpenRouter</span>
                   <span className="text-[10px] opacity-60 leading-tight">100+ vision models</span>
@@ -399,7 +401,7 @@ export default function NewTestRunPage() {
                 <button
                   type="button"
                   onClick={() => { setLlmProvider('ollama'); setLlmModelName(''); }}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'ollama' ? 'bg-white/5 border-white/20 text-white shadow-lg' : 'bg-transparent border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-400'}`}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'ollama' ? 'bg-indigo-500/10 border-indigo-500/40 text-white shadow-lg' : 'bg-slate-700/30 border-slate-600/50 text-slate-300 hover:border-slate-500 hover:text-white'}`}
                 >
                   <span className="text-sm font-bold">Local</span>
                   <span className="text-[10px] opacity-60 leading-tight">Ollama · No API needed</span>
@@ -425,7 +427,7 @@ export default function NewTestRunPage() {
                       value={llmModelName}
                       onChange={(e) => setLlmModelName(e.target.value)}
                       placeholder="e.g. anthropic/claude-3-5-sonnet"
-                      className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/30 transition-all shadow-inner font-mono text-sm"
+                      className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all font-mono text-sm"
                     />
                   </div>
                   <div className="space-y-2">
@@ -435,7 +437,7 @@ export default function NewTestRunPage() {
                       value={llmApiKey}
                       onChange={(e) => setLlmApiKey(e.target.value)}
                       placeholder="sk-or-v1-••••••••••••••••••••••••••••••"
-                      className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/30 transition-all shadow-inner"
+                      className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all"
                     />
                   </div>
                 </div>
@@ -445,17 +447,17 @@ export default function NewTestRunPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Custom Persona Instructions</label>
-                  <span className="text-[10px] text-slate-600 italic">Optional</span>
+                  <span className="text-xs text-slate-400">Optional</span>
                 </div>
                 <textarea
                   value={personaPrompt}
                   onChange={(e) => setPersonaPrompt(e.target.value)}
                   placeholder="e.g. Focus on first-time users who are non-technical, aged 40+, and skeptical of new software..."
                   rows={3}
-                  className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/30 transition-all shadow-inner resize-none text-sm leading-relaxed"
+                  className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all resize-none text-sm leading-relaxed"
                 />
-                <p className="text-[10px] text-slate-600 leading-relaxed">
-                  Guide the AI when generating your persona cohort. Leave blank to let the engine decide automatically.
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Guide the AI when generating personas. Leave blank to let it decide automatically.
                 </p>
               </div>
 
@@ -522,7 +524,7 @@ export default function NewTestRunPage() {
           </div>
 
           {(isAnalyzing || isGenerating) ? (
-            <div className="w-full max-w-3xl bg-[#0a0a0a] border border-white/10 rounded-[32px] p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+            <div className="w-full max-w-3xl bg-slate-800/50 border border-slate-700/50 rounded-2xl p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
               <div className="flex flex-col items-center justify-center py-20 space-y-6">
                 <div className="relative">
                   <Loader2 className="h-16 w-16 animate-spin text-white/20" />
@@ -541,7 +543,7 @@ export default function NewTestRunPage() {
               </div>
               <button
                 onClick={() => setStep(1)}
-                className="w-full pt-4 text-slate-600 text-[10px] font-bold uppercase tracking-widest hover:text-slate-400 transition-colors"
+                className="w-full pt-4 text-slate-400 text-xs font-semibold hover:text-white transition-colors"
               >
                 ← Cancel
               </button>
@@ -562,7 +564,7 @@ export default function NewTestRunPage() {
                             : 'bg-transparent border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300'
                             }`}
                         >
-                          <span className={`min-w-[24px] h-6 px-1 rounded flex items-center justify-center text-[10px] font-bold shrink-0 ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-[#151515] text-slate-600'
+                          <span className={`min-w-[24px] h-6 px-1 rounded flex items-center justify-center text-[10px] font-bold shrink-0 ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-slate-700 text-slate-300'
                             }`}>
                             {idx + 1}
                           </span>
@@ -612,14 +614,14 @@ export default function NewTestRunPage() {
                 </div>
 
                 {/* Editor Area */}
-                <div className="flex-1 bg-[#0a0a0a] border border-white/5 rounded-[32px] p-10 space-y-8 shadow-2xl relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
+                <div className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-2xl p-8 space-y-8 shadow-2xl relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-700/50">
                     <div className="space-y-1">
-                      <h2 className="text-xl font-bold text-white">Refine Category</h2>
-                      <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Mindset & Attributes</p>
+                      <h2 className="text-xl font-bold text-white">Edit Persona</h2>
+                      <p className="text-xs font-semibold text-slate-400">Attributes & Behaviour</p>
                     </div>
-                    <div className="bg-white/5 px-2 py-1 rounded text-[10px] font-bold text-slate-500 border border-white/5 uppercase">
-                      ID: {selectedPersona.id}
+                    <div className="bg-slate-700/60 px-2 py-1 rounded text-xs font-bold text-slate-300 border border-slate-600/50 uppercase">
+                      #{selectedPersona.id}
                     </div>
                   </div>
 
@@ -630,7 +632,7 @@ export default function NewTestRunPage() {
                         type="text"
                         value={selectedPersona.name}
                         onChange={(e) => updatePersona(selectedPersona.id, 'name', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
+                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
                       />
                     </div>
                     <div className="space-y-3">
@@ -640,7 +642,7 @@ export default function NewTestRunPage() {
                         value={selectedPersona.geolocation}
                         placeholder="e.g. United States / Region"
                         onChange={(e) => updatePersona(selectedPersona.id, 'geolocation', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
+                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
                       />
                     </div>
                     <div className="space-y-3">
@@ -650,7 +652,7 @@ export default function NewTestRunPage() {
                         value={selectedPersona.ageRange}
                         placeholder="e.g. 22-35"
                         onChange={(e) => updatePersona(selectedPersona.id, 'ageRange', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
+                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
                       />
                     </div>
                     <div className="space-y-3">
@@ -658,7 +660,7 @@ export default function NewTestRunPage() {
                       <select
                         value={selectedPersona.techLiteracy}
                         onChange={(e) => updatePersona(selectedPersona.id, 'techLiteracy', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner appearance-none"
+                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all appearance-none"
                       >
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
@@ -668,7 +670,7 @@ export default function NewTestRunPage() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cohort Size</label>
-                        <span className="text-[8px] text-slate-600 font-bold uppercase">Parallel Explorers</span>
+                        <span className="text-xs text-slate-400">How many run in parallel</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <input
@@ -677,9 +679,9 @@ export default function NewTestRunPage() {
                           max="10"
                           value={selectedPersona.personaCount}
                           onChange={(e) => updatePersona(selectedPersona.id, 'personaCount', parseInt(e.target.value) || 1)}
-                          className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
+                          className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
                         />
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 border border-white/5">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-700/60 border border-slate-600/50">
                           <Users className="h-5 w-5 text-slate-400" />
                         </div>
                       </div>
@@ -691,7 +693,7 @@ export default function NewTestRunPage() {
                         value={selectedPersona.domainFamiliarity}
                         placeholder="e.g. Familiar with SaaS tools"
                         onChange={(e) => updatePersona(selectedPersona.id, 'domainFamiliarity', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all shadow-inner"
+                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
                       />
                     </div>
                     <div className="col-span-2 space-y-3">
@@ -701,7 +703,7 @@ export default function NewTestRunPage() {
                         value={selectedPersona.prompt}
                         placeholder="e.g. Skeptical budget-cutter looking for pricing first"
                         onChange={(e) => updatePersona(selectedPersona.id, 'prompt', e.target.value)}
-                        className="w-full bg-[#111111] border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-white/20 hover:border-white/20 transition-all resize-none shadow-inner"
+                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all resize-none"
                       />
                     </div>
                   </div>
@@ -718,7 +720,7 @@ export default function NewTestRunPage() {
                   <button
                     disabled={isLaunching}
                     onClick={() => { setStep(1); setAiStep('pending'); setError(null); }}
-                    className="px-10 py-6 rounded-2xl bg-[#0a0a0a] border border-white/5 text-white font-bold hover:bg-white/5 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                    className="px-10 py-6 rounded-2xl bg-slate-700/50 border border-slate-600/50 text-white font-bold hover:bg-slate-700 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                   >
                     Back
                   </button>
@@ -749,9 +751,9 @@ export default function NewTestRunPage() {
       {/* Persona Library Modal */}
       {showLibrary && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="relative w-full max-w-4xl max-h-[85vh] bg-[#0a0a0a] border border-white/10 rounded-[40px] shadow-2xl overflow-hidden flex flex-col">
+          <div className="relative w-full max-w-4xl max-h-[85vh] bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="p-8 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-indigo-500/5 to-transparent">
+            <div className="p-8 border-b border-slate-700/50 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <Sparkles className="h-6 w-6 text-indigo-400" />
@@ -775,7 +777,7 @@ export default function NewTestRunPage() {
                 {SAMPLE_PERSONAS.map((sample) => (
                   <div
                     key={sample.id}
-                    className="group p-6 rounded-[28px] border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] hover:border-indigo-500/30 transition-all cursor-pointer relative"
+                    className="group p-6 rounded-2xl border border-slate-700/50 bg-slate-700/20 hover:bg-slate-700/40 hover:border-indigo-500/40 transition-all cursor-pointer relative"
                     onClick={() => addFromLibrary(sample)}
                   >
                     <div className="flex items-start justify-between mb-4">
@@ -793,7 +795,7 @@ export default function NewTestRunPage() {
 
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
-                        <Globe className="h-3 w-3 text-slate-600" />
+                        <Globe className="h-3 w-3 text-slate-400" />
                         <span className="text-[10px] text-slate-400 font-medium">{sample.geolocation}</span>
                         <div className="h-1 w-1 rounded-full bg-slate-700" />
                         <span className="text-[10px] text-slate-400 font-medium">{sample.ageRange} years</span>
@@ -815,8 +817,8 @@ export default function NewTestRunPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 border-t border-white/5 bg-[#080808] text-center">
-              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+            <div className="p-6 border-t border-slate-700/50 bg-slate-800/80 text-center">
+              <p className="text-xs text-slate-400 font-semibold">
                 Select a persona to add it to your testing cohort
               </p>
             </div>
