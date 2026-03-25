@@ -82,11 +82,9 @@ export function SessionLogAccordion({ sessionId }: SessionLogAccordionProps) {
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
                                                 {getIcon((log.action_taken as any)?.type || 'action')}
-                                                {(log.action_taken as any)?.type !== 'system' && (
-                                                    <span className="text-xs font-semibold text-slate-300">
-                                                        Step {log.step_number}
-                                                    </span>
-                                                )}
+                                                <span className="text-xs font-semibold text-slate-300">
+                                                    Step {log.step_number}
+                                                </span>
                                                 <span className="text-[10px] text-slate-500 capitalize">{actionType}</span>
                                             </div>
                                             <span className="text-[10px] text-slate-500 font-mono">
