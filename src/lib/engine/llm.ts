@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
     Observation, Action, PersonaProfile, LLMProvider,
-    Archetype, ObservationSection, PageScanAnalysis
+    Archetype, ObservationSection, PageScanAnalysis, PageAnalysisResult
 } from './types';
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
@@ -50,6 +50,13 @@ const ArchetypeSchema = z.object({
     id: z.string(),
     icon_type: z.enum(['users', 'zap', 'user', 'check', 'globe', 'x', 'shopping-cart', 'home', 'settings']),
     desc: z.string()
+});
+
+const PageAnalysisResultSchema = PageScanSchema.extend({
+    friction_points: z.array(z.string()).default([]),
+    positives: z.array(z.string()).default([]),
+    next_links: z.array(z.string()).default([]),
+    journey_narrative_update: z.string().default('')
 });
 
 // ─── Shared prompt builders ───────────────────────────────────────────────────
@@ -153,6 +160,64 @@ Return JSON matching this structure:
 }`;
 }
 
+function buildPageAnalysisPrompt(
+    sections: ObservationSection[],
+    pageUrl: string,
+    pageTitle: string,
+    persona: PersonaProfile,
+    isAuthPage: boolean,
+    availableLinks: string[],
+    journeyNarrative: string
+): string {
+    const sectionLabels = sections.map(s => s.label || 'Section').join(', ');
+    const linkList = availableLinks.slice(0, 25).join('\n');
+    return `You are conducting a UX audit as the persona: ${persona.name} (${persona.tech_literacy} tech literacy, goal: ${persona.goal_prompt}).
+
+Journey context: ${journeyNarrative || 'Starting the journey on this site.'}
+Current page: "${pageTitle}" (${pageUrl})
+Sections captured: ${sectionLabels}
+${isAuthPage ? '\n⚠️ This is an authentication/login page. Analyze the UI design quality only — do NOT suggest visiting any further links from here.\n' : ''}
+For EACH section screenshot provided, analyze:
+1. Visual hierarchy — is the most important content prominent?
+2. Content clarity — is the messaging clear for this persona?
+3. Friction — any confusing UI, missing CTAs, broken layouts, or trust issues?
+4. Emotional response — how would this persona feel seeing this section?
+
+Be specific and critical. Point to exact elements: headlines, CTAs, images, forms, navigation items.
+${!isAuthPage && availableLinks.length > 0 ? `\nAvailable links on this page (choose the 3–5 most valuable to explore next for this persona's goal):\n${linkList}\n` : ''}
+Return JSON:
+{
+  "sections": [
+    { "label": "Top|Mid|Bottom", "ux_feedback": "specific critique", "emotional_state": "...", "emotional_intensity": 0.0-1.0, "proposed_solution": "..." }
+  ],
+  "overall_emotion": "...",
+  "overall_intensity": 0.0-1.0,
+  "page_summary": "2-3 sentence overall UX quality assessment for this persona",
+  "friction_points": ["specific UX problem 1", "specific UX problem 2"],
+  "positives": ["good UX element 1"],
+  "next_links": ${isAuthPage ? '[]' : '["https://...", "https://..."]'},
+  "journey_narrative_update": "one sentence: what did this persona learn or feel on this page"
+}`;
+}
+
+function pageAnalysisFallback(sections: ObservationSection[]): PageAnalysisResult {
+    return {
+        sections: sections.map(s => ({
+            label: s.label || 'Section',
+            ux_feedback: 'Analysis unavailable',
+            emotional_state: 'neutral',
+            emotional_intensity: 0.3
+        })),
+        overall_emotion: 'neutral',
+        overall_intensity: 0.3,
+        page_summary: 'Analysis unavailable',
+        friction_points: [],
+        positives: [],
+        next_links: [],
+        journey_narrative_update: ''
+    };
+}
+
 // ─── OpenAI Provider ──────────────────────────────────────────────────────────
 // Uses gpt-4o for vision tasks (decideNextAction, analyzePageSections)
 // Uses gpt-4o-mini for text-only tasks (summaries, personas, archetypes) — ~15x cheaper
@@ -217,6 +282,36 @@ export class OpenAIProvider implements LLMProvider {
         });
 
         return JSON.parse(response.choices[0].message.content || '{}');
+    }
+
+    async analysePage(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile,
+        isAuthPage: boolean,
+        availableLinks: string[],
+        journeyNarrative: string
+    ): Promise<PageAnalysisResult> {
+        const prompt = buildPageAnalysisPrompt(sections, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
+        const content: any[] = [{ type: 'text', text: prompt }];
+        for (const section of sections) {
+            content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' } });
+        }
+        try {
+            const response = await this.client.chat.completions.create({
+                model: 'gpt-4o',
+                max_tokens: 1200,
+                messages: [
+                    { role: 'system', content: 'UX auditor. JSON only. Be specific and critical.' },
+                    { role: 'user', content }
+                ],
+                response_format: zodResponseFormat(PageAnalysisResultSchema, 'page_analysis')
+            });
+            return JSON.parse(response.choices[0].message.content || '{}');
+        } catch {
+            return pageAnalysisFallback(sections);
+        }
     }
 
     // text-only: use mini model
@@ -299,6 +394,7 @@ export class GeminiProvider implements LLMProvider {
         this.genAI = new GoogleGenerativeAI(apiKey || process.env.GEMINI_API_KEY || '');
     }
 
+
     private get flashModel() {
         return this.genAI.getGenerativeModel({
             model: 'gemini-2.0-flash',
@@ -359,6 +455,35 @@ export class GeminiProvider implements LLMProvider {
                 overall_intensity: 0.3,
                 page_summary: 'Analysis unavailable'
             };
+        }
+    }
+
+    async analysePage(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile,
+        isAuthPage: boolean,
+        availableLinks: string[],
+        journeyNarrative: string
+    ): Promise<PageAnalysisResult> {
+        const prompt = buildPageAnalysisPrompt(sections, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
+        const parts: any[] = [prompt];
+        for (const section of sections) {
+            parts.push({ inlineData: { data: section.screenshot, mimeType: 'image/jpeg' } });
+        }
+        try {
+            const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
+            const parsed = JSON.parse(result.response.text());
+            return {
+                ...parsed,
+                friction_points: Array.isArray(parsed.friction_points) ? parsed.friction_points : [],
+                positives: Array.isArray(parsed.positives) ? parsed.positives : [],
+                next_links: Array.isArray(parsed.next_links) ? parsed.next_links : [],
+                journey_narrative_update: parsed.journey_narrative_update || ''
+            };
+        } catch {
+            return pageAnalysisFallback(sections);
         }
     }
 
@@ -474,6 +599,32 @@ export class OllamaProvider implements LLMProvider {
                 overall_intensity: 0.3,
                 page_summary: 'Analysis unavailable'
             };
+        }
+    }
+
+    async analysePage(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile,
+        isAuthPage: boolean,
+        availableLinks: string[],
+        journeyNarrative: string
+    ): Promise<PageAnalysisResult> {
+        const prompt = buildPageAnalysisPrompt(sections, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
+        const primaryImage = sections[0]?.screenshot || '';
+        try {
+            const data = await this.call(this.models[0], prompt, primaryImage ? [primaryImage] : []);
+            const parsed = JSON.parse(data.response);
+            return {
+                ...parsed,
+                friction_points: Array.isArray(parsed.friction_points) ? parsed.friction_points : [],
+                positives: Array.isArray(parsed.positives) ? parsed.positives : [],
+                next_links: Array.isArray(parsed.next_links) ? parsed.next_links : [],
+                journey_narrative_update: parsed.journey_narrative_update || ''
+            };
+        } catch {
+            return pageAnalysisFallback(sections);
         }
     }
 
@@ -707,6 +858,58 @@ export class OpenRouterProvider implements LLMProvider {
         }
     }
 
+    async analysePage(
+        sections: ObservationSection[],
+        pageUrl: string,
+        pageTitle: string,
+        persona: PersonaProfile,
+        isAuthPage: boolean,
+        availableLinks: string[],
+        journeyNarrative: string
+    ): Promise<PageAnalysisResult> {
+        const prompt = buildPageAnalysisPrompt(sections, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
+        const makeRequest = (withImages: boolean) => {
+            const content: any[] = [{ type: 'text', text: prompt }];
+            if (withImages) {
+                for (const section of sections) {
+                    content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' } });
+                }
+            }
+            return this.client.chat.completions.create({
+                model: this.modelName,
+                max_tokens: 1200,
+                messages: [
+                    { role: 'system', content: 'UX auditor. Return ONLY valid JSON. No markdown.' },
+                    { role: 'user', content: withImages ? content : prompt }
+                ],
+                response_format: { type: 'json_object' }
+            });
+        };
+
+        let response: any;
+        try {
+            response = await this.withRetry(() => makeRequest(true));
+        } catch (err: any) {
+            if (this.isNoVisionError(err)) {
+                response = await this.withRetry(() => makeRequest(false));
+            } else {
+                return pageAnalysisFallback(sections);
+            }
+        }
+        try {
+            const parsed = JSON.parse(this.extractJson(this.getContent(response)));
+            return {
+                ...parsed,
+                friction_points: Array.isArray(parsed.friction_points) ? parsed.friction_points : [],
+                positives: Array.isArray(parsed.positives) ? parsed.positives : [],
+                next_links: Array.isArray(parsed.next_links) ? parsed.next_links : [],
+                journey_narrative_update: parsed.journey_narrative_update || ''
+            };
+        } catch {
+            return pageAnalysisFallback(sections);
+        }
+    }
+
     async generateSummary(prompt: string): Promise<string> {
         const res = await this.withRetry(() => this.client.chat.completions.create({
             model: this.modelName,
@@ -769,6 +972,13 @@ export class LLMService {
 
     analyzePageSections(sections: ObservationSection[], url: string, title: string, p: PersonaProfile): Promise<PageScanAnalysis> {
         return this.provider.analyzePageSections(sections, url, title, p);
+    }
+
+    analysePage(
+        sections: ObservationSection[], url: string, title: string, p: PersonaProfile,
+        isAuth: boolean, links: string[], narrative: string
+    ): Promise<PageAnalysisResult> {
+        return this.provider.analysePage(sections, url, title, p, isAuth, links, narrative);
     }
 
     generateSummary(prompt: string): Promise<string> {

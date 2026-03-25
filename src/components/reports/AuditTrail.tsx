@@ -15,6 +15,7 @@ export function AuditTrail({ logs, personaName }: AuditTrailProps) {
   return (
     <div className="rounded-2xl border border-white/10 overflow-hidden">
       <button
+        data-audit-trail={personaName}
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-6 py-4 bg-white/[0.02] hover:bg-white/[0.04] transition-colors group"
       >

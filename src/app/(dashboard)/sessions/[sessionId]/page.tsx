@@ -197,6 +197,8 @@ export default function SessionPage() {
     );
 
     const latestLog = logs[logs.length - 1];
+    // Page-summary logs have no screenshot — walk backwards to find the last one that does
+    const latestScreenshotLog = [...logs].reverse().find((l: any) => l.screenshot_url) ?? null;
     const emotionIcons = {
         delight: <Smile className="h-4 w-4 text-emerald-400" />,
         frustration: <Frown className="h-4 w-4 text-amber-400" />,
@@ -350,9 +352,9 @@ export default function SessionPage() {
                         </div>
 
                         <div className="aspect-video bg-black flex items-center justify-center overflow-hidden relative">
-                            {latestLog?.screenshot_url ? (
+                            {latestScreenshotLog?.screenshot_url ? (
                                 <img
-                                    src={latestLog.screenshot_url}
+                                    src={latestScreenshotLog.screenshot_url}
                                     alt="Browser View"
                                     className="w-full h-full object-contain filter brightness-[0.9] group-hover:brightness-100 transition-all duration-700"
                                 />

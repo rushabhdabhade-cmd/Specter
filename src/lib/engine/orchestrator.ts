@@ -1,7 +1,8 @@
 import { createAdminClient } from '../supabase/admin';
 import { BrowserService } from './browser';
 import { LLMService } from './llm';
-import { PersonaProfile, Action, HeuristicMetrics } from './types';
+import { PersonaProfile } from './types';
+import { SiteMap } from './sitemap';
 import { generateAndStoreReport, checkAndFinalizeTestRun } from './reporter';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,10 +15,8 @@ process.setMaxListeners(50);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_PAGES = 15;    // Hard cap on unique pages to visit
-const MAX_ACTIONS_PAGE = 5;     // Max interactions per page
-const MAX_SAME_ACTIONS = 2;     // Consecutive identical actions before blacklisting
-const DB_FLUSH_INTERVAL = 3;     // Flush buffered logs every N steps
+const MAX_PAGES = 15;           // Hard cap on unique pages to visit
+const DB_FLUSH_INTERVAL = 3;    // Flush buffered logs every N steps
 const LINK_HARVEST_MAX = 20;    // Max links collected from any single page
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -44,7 +43,7 @@ export class Orchestrator {
         persona: PersonaProfile,
         llmConfig?: { provider: 'gemini' | 'openrouter' | 'ollama' | 'openai'; apiKey?: string; modelName?: string }
     ) {
-        console.log(`Session ${sessionId} | ${persona.name} | ${url}`);
+        this.clog(sessionId, `SESSION START | persona: ${persona.name} | url: ${url} | provider: ${llmConfig?.provider ?? 'gemini'} | model: ${llmConfig?.modelName ?? 'default'}`);
         this.channel = this.supabase.channel(`terminal_${sessionId}`).subscribe();
 
         let testRunId: string | undefined;
@@ -67,8 +66,6 @@ export class Orchestrator {
                 testRunId = sessionData.test_run_id;
                 const executionMode = sessionData.execution_mode || 'autonomous';
 
-                // Prefer the config passed directly (avoids stale/overwritten project data
-                // when multiple concurrent test runs share the same project row).
                 let provider: 'gemini' | 'openrouter' | 'ollama' | 'openai';
                 let apiKey: string | undefined;
                 let modelName: string | undefined;
@@ -78,7 +75,6 @@ export class Orchestrator {
                     apiKey = llmConfig.apiKey;
                     modelName = llmConfig.modelName;
                 } else {
-                    // Fallback: read from project (legacy path)
                     const project = sessionData.persona_configs?.projects;
                     provider = project?.llm_provider || 'gemini';
                     modelName = project?.llm_model_name || undefined;
@@ -96,28 +92,27 @@ export class Orchestrator {
                 await (this.supabase.from('persona_sessions') as any).update({
                     status: 'running',
                     started_at: new Date().toISOString(),
-                    is_paused: executionMode === 'manual'
+                    is_paused: false
                 }).eq('id', sessionId);
 
-                // ── 1. Browser init ──────────────────────────────────────────
-                this.updateLiveStatus(sessionId, 'Initializing browser...');
-                await this.log(sessionId, url, 'neutral', 'Initializing browser engine.', { type: 'system', info: 'browser_init' });
+                this.updateLiveStatus(sessionId, 'Starting crawl...');
 
-                // Wait for a browser slot — caps concurrent Chromium instances to avoid OOM.
+                // ── 1. Browser init (once per session, not per page) ─────────
+                // Opening Stagehand per-page costs ~5-7 s each (Playwright launch +
+                // Gemini connectivity check). We init once and reuse across pages.
                 await acquireBrowser();
                 browserAcquired = true;
-                // Stagehand always uses Gemini for browser automation (DOM observation, act).
-                // The user's provider/key only drives the LLM reasoning layer.
+                this.clog(sessionId, 'Browser init start...');
+                const browserInitStart = Date.now();
                 await this.browser.init('google/gemini-2.0-flash', process.env.GEMINI_API_KEY);
+                this.clog(sessionId, `Browser ready in ${Date.now() - browserInitStart}ms`);
 
-                // ── 2. Serial page traversal ─────────────────────────────────
-                // On retry, restore already-visited pages from logs so we skip
-                // them and resume from the last page.
+                // ── 2. Crawl-Reason-Repeat traversal ────────────────────────
                 const resumeState = attempt > 1 ? await this.buildResumeState(sessionId) : null;
-                await this.runTraversal(sessionId, url, persona, executionMode, resumeState);
+                await this.runCrawl(sessionId, url, persona, resumeState);
 
-                // ── 3. Complete ──────────────────────────────────────────────
-                await this.flushLogs(); // flush any remaining buffered logs
+                // ── 2. Complete ──────────────────────────────────────────────
+                await this.flushLogs();
 
                 await (this.supabase.from('persona_sessions') as any).update({
                     status: 'completed',
@@ -127,21 +122,19 @@ export class Orchestrator {
 
                 await this.log(sessionId, url, 'delight', 'Session completed.', { type: 'system', info: 'session_completed' });
                 await this.flushLogs();
-                break; // success — exit retry loop
+                break;
 
             } catch (err: any) {
                 console.error(`Session ${sessionId} attempt ${attempt} failed:`, err.message);
                 this.updateLiveStatus(sessionId, `Error: ${err.message}`);
 
-                // Permanent errors where retrying won't help:
-                // - wrong model ID / model not on OpenRouter
-                // - model that doesn't follow JSON output format instructions
                 const isConfigError = err.message?.includes('model not found')
                     || err.message?.includes('No endpoints found')
                     || err.message?.includes('non-JSON response');
 
                 if (attempt < MAX_RETRIES && !isConfigError) {
                     await this.browser.close().catch(() => { });
+                    if (browserAcquired) { releaseBrowser(); browserAcquired = false; }
                     await this.flushLogs();
                     continue;
                 }
@@ -181,269 +174,287 @@ export class Orchestrator {
         return { visited, resumeUrl };
     }
 
-    // ─── Serial traversal ─────────────────────────────────────────────────────
+    // ─── Structured console logger ─────────────────────────────────────────────
 
-    private async runTraversal(
+    private clog(sid: string, msg: string) {
+        const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+        console.log(`[${ts}] [${sid.slice(0, 8)}] ${msg}`);
+    }
+
+    // ─── Crawl-Reason-Repeat traversal ────────────────────────────────────────
+    //
+    // Per-page loop:
+    //   1. acquireBrowser  → open browser → navigate → observeFullPage → getLinks → close → releaseBrowser
+    //   2. LLM reasons over screenshots (no browser held) → returns analysis + next_links
+    //   3. Enqueue next_links through SiteMap (filters external, deduplicates, limits content)
+    //   4. Repeat until MAX_PAGES reached or queue empty
+
+    private async runCrawl(
         sessionId: string,
         startUrl: string,
         persona: PersonaProfile,
-        executionMode: string,
         resume?: { visited: Set<string>; resumeUrl: string | null } | null
     ) {
-        // On resume: restore visited set and re-enter at the last page so its
-        // links get harvested and unvisited pages continue to be explored.
-        const visited = resume?.visited ?? new Set<string>();
-        const queue: string[] = resume?.resumeUrl && resume.resumeUrl !== startUrl
-            ? [resume.resumeUrl, startUrl]  // re-harvest last page first, then fall back
+        const siteMap = new SiteMap(startUrl);
+
+        if (resume?.visited) {
+            siteMap.seedVisited(Array.from(resume.visited));
+        }
+
+        const seedUrls = resume?.resumeUrl && resume.resumeUrl !== startUrl
+            ? [resume.resumeUrl, startUrl]
             : [startUrl];
-        const history: Action[] = [];
-        const triedElementsOnUrl = new Map<string, Set<string>>();
-        const blacklistedActions = new Set<string>();
+        siteMap.enqueue(seedUrls);
 
-        // Confine traversal to the target origin — never follow external links
-        let targetOrigin: string;
-        try { targetOrigin = new URL(startUrl).origin; } catch { targetOrigin = ''; }
+        const sessionStart = Date.now();
+        this.clog(sessionId, `╔══ CRAWL START ══ persona: ${persona.name} ══ target: ${startUrl}`);
+        this.clog(sessionId, `║  page budget: ${MAX_PAGES} | seed queue: ${siteMap.queueLength()}`);
+        this.clog(sessionId, `║  browser: single instance reused across all pages (no per-page restart)`);
 
-        let totalActions = 0;
+        while (siteMap.visitedCount() < MAX_PAGES) {
+            const pageUrl = siteMap.dequeue();
+            if (!pageUrl) {
+                this.clog(sessionId, '║  Queue empty — crawl complete.');
+                break;
+            }
 
-        while (queue.length > 0 && visited.size < MAX_PAGES) {
-            const pageUrl = queue.shift()!;
-            const normalizedPageUrl = this.normalizeUrl(pageUrl);
+            if (siteMap.hasVisited(pageUrl)) continue;
 
-            if (visited.has(normalizedPageUrl)) continue;
-            visited.add(normalizedPageUrl);
+            const pageIndex = siteMap.visitedCount() + 1;
+            const isAuth = SiteMap.isAuthUrl(pageUrl);
+            const pageStart = Date.now();
 
-            console.log(`\n[${visited.size}/${MAX_PAGES}] Navigating to: ${pageUrl}`);
-            this.updateLiveStatus(sessionId, `Page ${visited.size}/${MAX_PAGES}: ${pageUrl}`);
+            this.clog(sessionId, `╠══ PAGE ${pageIndex}/${MAX_PAGES} ${'═'.repeat(Math.max(0, 40 - pageUrl.length))}`);
+            this.clog(sessionId, `║  URL   : ${pageUrl}`);
+            this.clog(sessionId, `║  TYPE  : ${isAuth ? 'AUTH (capture+analyze, no next_links)' : 'regular'}`);
+            this.clog(sessionId, `║  QUEUE : ${siteMap.queueLength()} pages waiting`);
 
-            // Check session hasn't been abandoned
+            this.updateLiveStatus(sessionId, `Page ${pageIndex}/${MAX_PAGES}: ${pageUrl}`);
+
+            // ── Check session hasn't been abandoned ──────────────────────────
             const { data: latestSession } = await (this.supabase.from('persona_sessions') as any)
                 .select('status').eq('id', sessionId).single();
-            if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') return;
+            if (latestSession?.status === 'abandoned' || latestSession?.status === 'completed') {
+                this.clog(sessionId, '║  Session abandoned — stopping.');
+                return;
+            }
 
-            await this.browser.navigate(pageUrl);
+            // ── Phase 1a: Navigate + fast capture (no stagehand.observe) ─────
+            this.clog(sessionId, '║  ── PHASE 1: BROWSER ─────────────────────────────');
 
-            // ── Auth page heuristic — skip before any LLM call ──────────────
-            // Detect auth/login/signup pages by URL pattern and skip immediately.
-            // The LLM prompt also enforces this, but this guard saves token calls entirely.
-            const AUTH_URL_PATTERN = /\/(login|signin|sign-in|signup|sign-up|register|auth|account\/create|join|onboarding)(\/|\?|$)/i;
-            if (AUTH_URL_PATTERN.test(pageUrl)) {
-                console.log(`  Auth page detected, skipping: ${pageUrl}`);
-                this.log(sessionId, pageUrl, 'neutral',
-                    'Auth/login page detected. Skipping interaction — the engine does not fill credentials. ' +
-                    'UX note: the presence of this gate is itself a friction point for new users.',
-                    { type: 'system', info: 'auth_page_skipped' });
-                this.stepNumber++;
+            let observation: Awaited<ReturnType<BrowserService['observeFastPage']>> | null = null;
+            let links: string[] = [];
+            let pageMetrics = { latency_ms: 0, broken_links_count: 0, request_failures: 0 };
+
+            try {
+                const navStart = Date.now();
+                await this.browser.navigate(pageUrl);
+                pageMetrics = this.browser.getLastPageMetrics();
+                this.clog(sessionId, `║    Navigate             +${Date.now() - navStart}ms → ${pageUrl} (load: ${pageMetrics.latency_ms}ms, broken: ${pageMetrics.broken_links_count}, reqFail: ${pageMetrics.request_failures})`);
+
+                const obsStart = Date.now();
+                observation = await this.browser.observeFastPage();
+                const sectionCount = observation.sections?.length ?? 0;
+                const ssKb = Math.round((observation.screenshot?.length ?? 0) * 0.75 / 1024);
+                this.clog(sessionId, `║    observeFastPage      +${Date.now() - obsStart}ms → ${sectionCount} sections, ~${ssKb}kb`);
+                this.clog(sessionId, `║    Page title           "${observation.title}"`);
+
+                if (!isAuth) {
+                    const linksStart = Date.now();
+                    links = await this.browser.getContentLinks(LINK_HARVEST_MAX);
+                    this.clog(sessionId, `║    getContentLinks      +${Date.now() - linksStart}ms → ${links.length} links`);
+                    if (links.length > 0) links.forEach(l => this.clog(sessionId, `║      · ${l}`));
+                }
+            } catch (err: any) {
+                this.clog(sessionId, `║    ✖ Capture FAILED: ${err.message}`);
+            }
+
+            if (!observation || !observation.url) {
+                this.clog(sessionId, `║  ✖ Skipping — no observation captured`);
+                siteMap.markVisited(pageUrl, isAuth);
+                continue;
+            }
+
+            siteMap.markVisited(pageUrl, isAuth);
+
+            if (!observation.sections || observation.sections.length === 0) {
+                this.clog(sessionId, `║  ✖ Skipping — no page sections in observation`);
                 await this.flushLogs();
                 continue;
             }
 
-            // ── Full-page scan (one LLM call for all sections) ──────────────
-            const observation = await this.browser.observeFullPage();
-
-            if (observation.sections && observation.sections.length > 0) {
-                this.updateLiveStatus(sessionId, `Scanning ${observation.sections.length} sections of ${pageUrl}...`);
-
-                // Single multi-image LLM call — replaces N separate analyzeSection() calls
-                const scanResult = await this.llm.analyzePageSections(
-                    observation.sections,
-                    observation.url,
-                    observation.title,
-                    persona
-                ).catch(() => null);
-
-                if (scanResult) {
-                    // Log one entry per section with the rich per-section feedback
-                    for (const sectionResult of scanResult.sections) {
-                        const matchedSection = observation.sections.find(s => s.label === sectionResult.label)
-                            || observation.sections[0];
-
-                        const localPath = await this.saveScreenshot(sessionId, this.stepNumber, matchedSection.screenshot);
-                        this.log(sessionId, observation.url, this.mapEmotion(sectionResult.emotional_state),
-                            sectionResult.ux_feedback,
-                            {
-                                type: 'system',
-                                info: `scan_${(sectionResult.label || 'section').toLowerCase()}`,
-                                proposed_solution: sectionResult.proposed_solution,
-                                specific_emotion: sectionResult.emotional_state,
-                                local_screenshot_path: localPath
-                            },
-                            matchedSection.screenshot
-                        );
-                        this.stepNumber++;
-                    }
+            // ── Phase 1b: Heuristic interactions for heatmap data ────────────
+            // Rule-based clicks (no LLM) — CTAs, nav links, buttons visible in
+            // the viewport. Coordinates logged to DB → frontend heatmap overlay.
+            // If a click navigates away, the destination URL is enqueued and we
+            // return to the current page to finish the interaction set.
+            if (!isAuth) {
+                await this.runInteractions(sessionId, pageUrl, siteMap);
+                // Return to the page we were analysing after interactions
+                const currentUrl = this.browser.getCurrentUrl();
+                if (this.normalizeUrl(currentUrl) !== this.normalizeUrl(pageUrl)) {
+                    await this.browser.navigate(pageUrl);
                 }
-
-                // Harvest links from this page and add new unique paths to queue
-                const links = await this.browser.getContentLinks(LINK_HARVEST_MAX);
-                for (const link of links) {
-                    const normalized = this.normalizeUrl(link);
-                    if (!visited.has(normalized) && !queue.map(q => this.normalizeUrl(q)).includes(normalized)) {
-                        queue.push(link);
-                    }
-                }
-
-                console.log(`  Discovered ${links.length} links, queue depth: ${queue.length}`);
             }
 
-            // ── Interactive exploration of this page ────────────────────────
+            // ── Phase 2: LLM reasoning ───────────────────────────────────────
+            this.clog(sessionId, '║  ── PHASE 2: LLM REASONING ───────────────────────');
+            this.clog(sessionId, `║    Sections: ${observation.sections.map(s => s.label).join(', ')}`);
+            this.clog(sessionId, `║    Journey : ${siteMap.journeyNarrative.slice(0, 100) || '(start)'}`);
 
-            let pageActions = 0;
-            let consecutiveSame = 0;
-            let lastActionKey = '';
+            this.updateLiveStatus(sessionId, `Analysing page ${pageIndex}: ${pageUrl}`);
+            const llmStart = Date.now();
 
-            while (pageActions < MAX_ACTIONS_PAGE) {
+            const analysis = await this.llm.analysePage(
+                observation.sections,
+                observation.url,
+                observation.title,
+                persona,
+                isAuth,
+                links,
+                siteMap.journeyNarrative
+            ).catch((err: any) => {
+                this.clog(sessionId, `║    ✖ LLM FAILED: ${err?.message}`);
+                return null;
+            });
 
-                if (executionMode === 'manual') {
-                    this.updateLiveStatus(sessionId, 'Waiting for command (Manual Mode)...');
-                    await this.waitForStepSignal(sessionId);
-                }
+            if (!analysis) { await this.flushLogs(); continue; }
 
-                const currentUrl = await this.browser.evaluate(() => window.location.href).catch(() => pageUrl);
-                const normalizedCurrentUrl = this.normalizeUrl(currentUrl);
+            this.clog(sessionId, `║    LLM done             +${Date.now() - llmStart}ms`);
+            this.clog(sessionId, `║    Emotion  : ${analysis.overall_emotion} (${analysis.overall_intensity.toFixed(2)})`);
+            this.clog(sessionId, `║    Summary  : ${analysis.page_summary}`);
 
-                // Use a lightweight observe for action decision (no full page re-scan)
-                const actionObservation = await this.browser.observe();
-                const tried = Array.from(triedElementsOnUrl.get(normalizedCurrentUrl) || []);
+            if (analysis.friction_points.length > 0) {
+                this.clog(sessionId, `║    Friction (${analysis.friction_points.length}):`);
+                analysis.friction_points.forEach(f => this.clog(sessionId, `║      ✗ ${f}`));
+            }
+            if (analysis.positives.length > 0) {
+                this.clog(sessionId, `║    Positives (${analysis.positives.length}):`);
+                analysis.positives.forEach(p => this.clog(sessionId, `║      ✓ ${p}`));
+            }
+            if (analysis.next_links.length > 0) {
+                this.clog(sessionId, `║    Next links (${analysis.next_links.length}):`);
+                analysis.next_links.forEach(l => this.clog(sessionId, `║      → ${l}`));
+            }
 
-                this.updateLiveStatus(sessionId, `Page ${visited.size} | Action ${pageActions + 1}/${MAX_ACTIONS_PAGE} | Thinking...`);
+            if (analysis.journey_narrative_update) {
+                const sep = siteMap.journeyNarrative ? ' ' : '';
+                siteMap.journeyNarrative += sep + analysis.journey_narrative_update;
+                this.clog(sessionId, `║    Narrative: "${analysis.journey_narrative_update}"`);
+            }
 
-                const action = await this.llm.decideNextAction(
-                    actionObservation, persona, history,
-                    Array.from(blacklistedActions), tried
-                );
-
-                // AI wants to exit this node
-                if (action.type === 'skip_node' || action.type === 'fail' || action.type === 'complete') {
-                    console.log(`  AI exits page (${action.type}): ${action.reasoning}`);
-                    this.log(sessionId, currentUrl, this.mapEmotion(action.emotional_state),
-                        `Node skip: ${action.reasoning}`, action as any);
-                    this.stepNumber++;
-                    // 'complete' = satisfied with this page → continue to next page in queue
-                    // 'fail' / 'skip_node' = give up on this page → continue to next page in queue
-                    // Neither should end the whole traversal — that only happens when the queue is empty
-                    break;
-                }
-
-                // Loop detection
-                const actionKey = `${action.type}::${action.text || action.selector || ''}`;
-                if (actionKey === lastActionKey) {
-                    consecutiveSame++;
-                } else {
-                    consecutiveSame = 0;
-                    lastActionKey = actionKey;
-                }
-
-                if (consecutiveSame >= MAX_SAME_ACTIONS) {
-                    if (action.text) blacklistedActions.add(action.text);
-                    if (action.selector) blacklistedActions.add(action.selector);
-                    console.warn(`  Loop detected on "${actionKey}", blacklisting.`);
-                    consecutiveSame = 0;
-                    // Recovery scroll
-                    await this.browser.perform({ type: 'scroll', text: 'bottom', reasoning: 'Loop recovery', emotional_state: 'neutral', emotional_intensity: 0.1 });
-                    continue;
-                }
-
-                // Track tried elements for this URL
-                if (action.type === 'click') {
-                    if (!triedElementsOnUrl.has(normalizedCurrentUrl)) triedElementsOnUrl.set(normalizedCurrentUrl, new Set());
-                    const tried = triedElementsOnUrl.get(normalizedCurrentUrl)!;
-                    if (action.text) tried.add(action.text);
-                    if (action.selector) tried.add(action.selector);
-                }
-
-                // Resolve click coordinates for heatmap data
-                let clickCoords: any = null;
-                if (action.type === 'click') {
-                    clickCoords = await this.resolveCoords(action, actionObservation.domContext);
-                }
-
-                // Parse interactive elements from domContext for "Show Potential Clicks" overlay
-                let potentialElements: any[] = [];
-                try {
-                    const parsed: any[] = JSON.parse(actionObservation.domContext || '[]');
-                    potentialElements = parsed
-                        .filter(el => el.coordinates && typeof el.coordinates.x === 'number')
-                        .map(el => ({
-                            x: el.coordinates.x,
-                            y: el.coordinates.y,
-                            w: el.coordinates.w,
-                            h: el.coordinates.h,
-                            role: el.role,
-                            text: (el.text || '').slice(0, 30),
-                        }));
-                } catch { /* ignore parse errors */ }
-
-                // Execute
-                this.updateLiveStatus(sessionId, `Page ${visited.size} | ${action.type}: ${action.text || ''}`);
-                await this.browser.perform(action);
-
-                const postUrl = await this.browser.evaluate(() => window.location.href).catch(() => currentUrl);
-                const metrics = this.browser.getMetrics();
-
-                // Log step
-                const postObservation = await this.browser.observe();
-                const localPath = await this.saveScreenshot(sessionId, this.stepNumber, postObservation.screenshot);
-
-                this.log(sessionId, postUrl, this.mapEmotion(action.emotional_state),
-                    action.reasoning,
+            // ── DB log: one entry per section ────────────────────────────────
+            for (const sectionResult of analysis.sections) {
+                const matchedSection = observation.sections.find(s => s.label === sectionResult.label)
+                    ?? observation.sections[0];
+                const localPath = await this.saveScreenshot(sessionId, this.stepNumber, matchedSection.screenshot);
+                this.log(
+                    sessionId,
+                    observation.url,
+                    this.mapEmotion(sectionResult.emotional_state),
+                    sectionResult.ux_feedback,
                     {
-                        ...action,
-                        coordinates: clickCoords,
-                        potential_elements: potentialElements,
-                        local_screenshot_path: localPath,
-                        technical_metrics: {
-                            latency_ms: metrics.last_load_time,
-                            broken_links_count: metrics.broken_links.length
-                        }
-                    } as any,
-                    postObservation.screenshot
+                        type: 'system',
+                        info: isAuth ? 'auth_page_analyzed' : `scan_${(sectionResult.label || 'section').toLowerCase()}`,
+                        proposed_solution: sectionResult.proposed_solution,
+                        specific_emotion: sectionResult.emotional_state,
+                        local_screenshot_path: localPath
+                    },
+                    localPath  // store file path as screenshot_url, not raw base64
                 );
-
-                action.current_url = postUrl;
-                history.push(action);
                 this.stepNumber++;
-                pageActions++;
-                totalActions++;
+            }
 
-                // If the action navigated away, check origin before enqueuing
-                const normalizedPost = this.normalizeUrl(postUrl);
-                if (normalizedPost !== normalizedCurrentUrl) {
-                    // Detect external navigation (e.g. YouTube, social media links)
-                    let postOrigin: string;
-                    try { postOrigin = new URL(postUrl).origin; } catch { postOrigin = ''; }
+            // ── DB log: page summary ──────────────────────────────────────────
+            this.log(sessionId, observation.url, this.mapEmotion(analysis.overall_emotion), analysis.page_summary, {
+                type: 'page_summary',
+                info: 'page_complete',
+                friction_points: analysis.friction_points,
+                positives: analysis.positives,
+                overall_emotion: analysis.overall_emotion,
+                overall_intensity: analysis.overall_intensity,
+                technical_metrics: pageMetrics
+            });
+            this.stepNumber++;
 
-                    if (targetOrigin && postOrigin && postOrigin !== targetOrigin) {
-                        // Left the target site — go back immediately
-                        console.log(`  External navigation blocked: ${postUrl} (origin: ${postOrigin}). Returning to ${currentUrl}`);
-                        this.log(sessionId, currentUrl, 'neutral',
-                            `External link skipped — navigated to ${new URL(postUrl).hostname} but returned to stay within the test scope.`,
-                            { type: 'system', info: 'external_navigation_blocked', external_url: postUrl });
-                        this.stepNumber++;
-                        await this.browser.navigate(currentUrl);
-                        break;
-                    }
+            // ── Enqueue next links ────────────────────────────────────────────
+            if (!isAuth) {
+                siteMap.enqueue(analysis.next_links.length > 0
+                    ? [...analysis.next_links, ...links]
+                    : links
+                );
+            }
 
-                    // Same-origin navigation — enqueue if not yet visited
-                    if (!visited.has(normalizedPost)) {
-                        queue.unshift(postUrl); // priority: visit where we landed next
-                    }
-                    break;
+            const pageTotal = Date.now() - pageStart;
+            this.clog(sessionId, `╠══ PAGE ${pageIndex} DONE ══ ${pageTotal}ms ══ queue: ${siteMap.queueLength()} ══ visited: ${siteMap.visitedCount()}/${MAX_PAGES}`);
+
+            await this.flushLogs();
+        }
+
+        const sessionTotal = Date.now() - sessionStart;
+        this.clog(sessionId, `╚══ CRAWL DONE ══ ${siteMap.visitedCount()} pages ══ total: ${(sessionTotal / 1000).toFixed(1)}s`);
+        await this.flushLogs();
+    }
+
+    // ─── Heuristic interaction loop ───────────────────────────────────────────
+    //
+    // After observeFastPage, click up to MAX_INTERACTIONS visible CTAs/nav/buttons
+    // using pure Playwright (no LLM). Records click coords for the heatmap.
+    // If a click navigates away: enqueue destination → return to original page.
+
+    private readonly MAX_INTERACTIONS = 4;
+
+    private async runInteractions(
+        sessionId: string,
+        pageUrl: string,
+        siteMap: SiteMap
+    ): Promise<void> {
+        const elements = await this.browser.getHeuristicClicks(this.MAX_INTERACTIONS);
+        if (elements.length === 0) return;
+
+        this.clog(sessionId, `║  ── INTERACTIONS (${elements.length} targets) ──────────────────`);
+
+        let done = 0;
+        for (const el of elements) {
+            if (done >= this.MAX_INTERACTIONS) break;
+
+            this.clog(sessionId, `║    Click #${done + 1}: "${el.text}" at (${el.x}, ${el.y})`);
+
+            try {
+                const { newUrl, screenshot } = await this.browser.clickAtCoords(el.x, el.y);
+                const navigated = this.normalizeUrl(newUrl) !== this.normalizeUrl(pageUrl);
+
+                const localPath = await this.saveScreenshot(sessionId, this.stepNumber, screenshot);
+                this.log(
+                    sessionId,
+                    pageUrl,
+                    'neutral',
+                    `Interacted with: "${el.text}"`,
+                    {
+                        type: 'click',
+                        info: 'heuristic_interaction',
+                        text: el.text,
+                        // coordinates stored for heatmap overlay
+                        coordinates: { x: el.x, y: el.y, w: el.w, h: el.h },
+                        navigated_to: navigated ? newUrl : null,
+                        local_screenshot_path: localPath
+                    },
+                    localPath  // store file path as screenshot_url, not raw base64
+                );
+                this.stepNumber++;
+                done++;
+
+                if (navigated) {
+                    this.clog(sessionId, `║      → Navigated to ${newUrl} — enqueuing, returning to ${pageUrl}`);
+                    if (!siteMap.hasVisited(newUrl)) siteMap.enqueue([newUrl]);
+                    await this.browser.navigate(pageUrl);
                 }
-
-                if (executionMode === 'manual') {
-                    await (this.supabase.from('persona_sessions') as any)
-                        .update({ is_paused: true, step_requested: false }).eq('id', sessionId);
-                }
-
-                // Flush buffered logs every N steps
-                if (totalActions % DB_FLUSH_INTERVAL === 0) {
-                    await this.flushLogs();
-                }
+            } catch (err: any) {
+                this.clog(sessionId, `║      ✖ Click failed: ${err.message}`);
             }
         }
 
-        await this.flushLogs();
+        this.clog(sessionId, `║    ${done} interactions logged`);
     }
 
     // ─── Log buffer ───────────────────────────────────────────────────────────
@@ -454,13 +465,13 @@ export class Orchestrator {
         emotion: string,
         monologue: string,
         action: any,
-        screenshotBase64?: string
+        screenshotUrl?: string   // file path (/screenshots/…) or S3 presigned URL — NOT raw base64
     ) {
         this.logBuffer.push({
             session_id: sessionId,
             step_number: this.stepNumber,
             current_url: url,
-            screenshot_url: screenshotBase64 ? `data:image/jpeg;base64,${screenshotBase64}` : undefined,
+            screenshot_url: screenshotUrl || null,
             emotion_tag: emotion,
             inner_monologue: monologue,
             action_taken: action
@@ -479,43 +490,10 @@ export class Orchestrator {
         }
     }
 
-    // ─── Coordinate resolution ────────────────────────────────────────────────
-
-    private async resolveCoords(action: Action, domContext: string | undefined): Promise<any> {
-        // Try selector first
-        if (action.selector) {
-            const coords = await this.browser.evaluate((sel: string) => {
-                const el = sel.startsWith('xpath=')
-                    ? (document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement)
-                    : document.querySelector(sel) as HTMLElement;
-                if (!el) return null;
-                const r = el.getBoundingClientRect();
-                return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) };
-            }, action.selector).catch(() => null);
-            if (coords) return coords;
-        }
-
-        // Fallback: match by text in DOM context
-        if (action.text && domContext) {
-            try {
-                const dom = JSON.parse(domContext);
-                const target = (action.text || '').toLowerCase();
-                const match = dom.find((el: any) =>
-                    el.text && el.text.toLowerCase().includes(target) && el.coordinates
-                );
-                if (match?.coordinates) {
-                    const c = match.coordinates;
-                    return { x: Math.round(c.x + c.w / 2), y: Math.round(c.y + c.h / 2), w: c.w, h: c.h };
-                }
-            } catch (_) { }
-        }
-
-        return null;
-    }
-
     // ─── Screenshot persistence ───────────────────────────────────────────────
 
     private async saveScreenshot(sessionId: string, step: number, base64: string): Promise<string> {
+        if (!base64) return '';
         const file = `step_${step}.jpg`;
         const key = `screenshots/${sessionId}/${file}`;
 
@@ -531,22 +509,23 @@ export class Orchestrator {
                     ContentType: 'image/jpeg',
                 });
                 await s3.send(cmd);
-                // Presigned GET URL valid for 7 days — stored in DB so frontend can <img src> it directly
                 const { GetObjectCommand } = await import('@aws-sdk/client-s3');
                 const getCmd = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
                 return await getSignedUrl(s3, getCmd, { expiresIn: 60 * 60 * 24 * 7 });
-            } catch (_) {
-                return '';
+            } catch (err: any) {
+                console.error(`S3 upload failed for ${key}:`, err.message, '— falling back to local storage');
+                // Fall through to local storage rather than silently returning ''
             }
         }
 
-        // Local fallback (dev / no S3 configured)
+        // Local storage (dev / S3 not configured / S3 upload failed)
         try {
             const dir = path.join(process.cwd(), 'public', 'screenshots', sessionId);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.mkdirSync(dir, { recursive: true });
             fs.writeFileSync(path.join(dir, file), Buffer.from(base64, 'base64'));
             return `/screenshots/${sessionId}/${file}`;
-        } catch (_) {
+        } catch (err: any) {
+            console.error(`Local screenshot save failed for ${key}:`, err.message);
             return '';
         }
     }
@@ -568,17 +547,6 @@ export class Orchestrator {
                 payload: { message: status, timestamp: new Date().toISOString() }
             });
         }
-    }
-
-    private async waitForStepSignal(sessionId: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => { clearInterval(interval); reject(new Error('Manual step timeout')); }, 600_000);
-            const interval = setInterval(async () => {
-                const { data } = await (this.supabase.from('persona_sessions') as any)
-                    .select('step_requested').eq('id', sessionId).single();
-                if (data?.step_requested) { clearInterval(interval); clearTimeout(timeout); resolve(); }
-            }, 2000);
-        });
     }
 
     private mapEmotion(state: string): string {
