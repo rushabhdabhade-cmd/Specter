@@ -544,7 +544,7 @@ export class BrowserService {
             // page.evaluate(). boundingBox() uses Playwright's own layout engine and correctly
             // handles content-visibility:auto, CSS animations, and other edge cases that cause
             // getBoundingClientRect() inside page.evaluate() to return 0 or stale values.
-            const handles = await this.page.$$('a[href], button, [role="button"]');
+            const handles = await this.page.locator('a[href], button, [role="button"]').all();
             const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
 
             const found: Array<{ text: string; x: number; y: number; w: number; h: number; isNavLink: boolean; priority: number }> = [];
@@ -588,7 +588,7 @@ export class BrowserService {
             }
 
             const results = found.sort((a, b) => b.priority - a.priority).slice(0, max);
-            console.log(`getHeuristicClicks: ${handles.length} handles → ${found.length} valid → taking ${results.length}: [${results.map(r => `"${r.text}"`).join(', ')}]`);
+            console.log(`getHeuristicClicks: ${handles.length} locators → ${found.length} valid → taking ${results.length}: [${results.map(r => `"${r.text}"`).join(', ')}]`);
 
             return results.map(({ priority: _p, ...rest }) => rest);
         } catch (err: any) {

@@ -387,7 +387,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
       </div>
 
       {/* ── Holistic Spatial Analysis ── */}
-      <div className="space-y-8 pt-12 border-t border-white/5">
+      {/* <div className="space-y-8 pt-12 border-t border-white/5">
         <div className="flex items-center gap-4">
           <div className="h-10 w-10 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
             <Map className="h-5 w-5 text-orange-400" />
@@ -402,7 +402,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
           dropOffStats={reportData.dropOffStats}
           totalSessions={sessions?.length}
         />
-      </div>
+      </div> */}
 
     </div>
   );
