@@ -92,7 +92,7 @@ export function SessionLogAccordion({ sessionId }: SessionLogAccordionProps) {
                                         <div className="flex items-center gap-2">
                                             {getIcon((log.action_taken as any)?.type || 'action')}
                                             <span className="text-[9px] font-black uppercase tracking-tighter text-slate-500">
-                                                Step {log.step_number} • {(log.action_taken as any)?.type || 'ACTION'}
+                                                Step {log.step_number} • {((log.action_taken as any)?.type || 'ACTION').replace(/_/g, ' ')}
                                             </span>
                                         </div>
                                         <span className="text-[9px] text-slate-700 font-mono">
