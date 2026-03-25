@@ -2,10 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import {
-    BarChart3, ArrowRight, Share2,
-    Check, Globe, Calendar, Trash2, AlertTriangle, Loader2
-} from 'lucide-react';
+import { ArrowRight, Share2, Check, Calendar, Trash2, AlertTriangle, Loader2, Users } from 'lucide-react';
 
 interface ReportCardProps {
     report: {
@@ -27,148 +24,125 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
     const [deleting, setDeleting] = useState(false);
 
     const handleShare = async (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         try {
-            const reportUrl = `${window.location.origin}/reports/${report.id}`;
-            await navigator.clipboard.writeText(reportUrl);
+            await navigator.clipboard.writeText(`${window.location.origin}/reports/${report.id}`);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
-            console.error('Failed to copy text: ', err);
-        }
+        } catch { }
     };
 
     const handleDelete = async () => {
         setDeleting(true);
         try {
             const res = await fetch(`/api/reports/${report.id}`, { method: 'DELETE' });
-            if (res.ok) {
-                onDelete?.(report.id);
-            } else {
-                console.error('Failed to delete report');
-                setDeleting(false);
-                setShowConfirm(false);
-            }
-        } catch (err) {
-            console.error('Error deleting report:', err);
-            setDeleting(false);
-            setShowConfirm(false);
-        }
+            if (res.ok) onDelete?.(report.id);
+            else { setDeleting(false); setShowConfirm(false); }
+        } catch { setDeleting(false); setShowConfirm(false); }
     };
 
-    const scoreColor = report.usabilityScore >= 75 ? 'text-emerald-400' : report.usabilityScore >= 50 ? 'text-amber-400' : 'text-red-400';
-    const scoreBg = report.usabilityScore >= 75 ? 'bg-emerald-500/5' : report.usabilityScore >= 50 ? 'bg-amber-500/5' : 'bg-red-500/5';
-    const scoreBorder = report.usabilityScore >= 75 ? 'border-emerald-500/20' : report.usabilityScore >= 50 ? 'border-amber-500/20' : 'border-red-500/20';
-
-    // Determine how many persona bubbles to show (limit to 5)
-    const displayCount = Math.min(report.sessionCount, 5);
-    const remainingCount = report.sessionCount > 5 ? report.sessionCount - 5 : 0;
+    const scoreColor = report.usabilityScore >= 75 ? '#10b981' : report.usabilityScore >= 50 ? '#f59e0b' : '#ef4444';
+    const frictionColor = report.frictionLevel === 'Low' ? '#10b981' : report.frictionLevel === 'Medium' ? '#f59e0b' : '#ef4444';
 
     return (
         <>
-            <div className="group relative flex flex-col rounded-[48px] border border-white/20 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-y-[-4px] overflow-hidden">
-                {/* Ambient Glow */}
-                <div className={`absolute -right-20 -top-20 h-48 w-48 rounded-full blur-[100px] opacity-10 transition-opacity group-hover:opacity-20 ${report.usabilityScore >= 75 ? 'bg-emerald-500' : report.usabilityScore >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                    }`} />
+            <div className="group relative flex flex-col rounded-2xl border border-slate-700/50 bg-slate-800/50 p-6 transition-all duration-300 hover:border-slate-600/60 hover:bg-slate-800/80 overflow-hidden">
 
-                <div className="relative space-y-10 flex-1 flex flex-col z-10">
-                    {/* Top Section */}
-                    <div className="flex items-start justify-between">
-                        <div className="space-y-4">
-                            <h3 className="text-3xl font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors leading-tight">
-                                {report.projectName}
-                            </h3>
-                            <div className="flex flex-wrap items-center gap-4">
-
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
-                                    <Calendar className="h-3.5 w-3.5 opacity-50" />
-                                    <span>{report.completedAt}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    {/* Metrics */}
-                    <div className="grid grid-cols-2 gap-8">
-                        <div className={`rounded-3xl border ${scoreBorder} ${scoreBg} p-8 space-y-4 relative overflow-hidden`}>
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">UX Health Score</p>
-                            <div className="flex items-baseline gap-2">
-                                <span className={`text-5xl font-black tracking-tighter ${scoreColor}`}>{report.usabilityScore}</span>
-                                <span className="text-[10px] font-black opacity-30 tracking-widest uppercase">Units</span>
-                            </div>
-                        </div>
-
-                        <div className="rounded-3xl border border-white/5 bg-white/[0.01] p-8 space-y-4">
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">Friction Level</p>
-                            <div className="flex items-center gap-3">
-                                <span className="text-3xl font-black text-white italic capitalize">{report.frictionLevel}</span>
-                                <div className={`h-2.5 w-2.5 rounded-full ${report.frictionLevel === 'Low' ? 'bg-emerald-500' : report.frictionLevel === 'Medium' ? 'bg-amber-500' : 'bg-red-500'} animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.2)]`} />
-                            </div>
+                {/* Top */}
+                <div className="flex items-start justify-between mb-4">
+                    <div className="min-w-0 flex-1 pr-3">
+                        <h3 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors truncate">
+                            {report.projectName}
+                        </h3>
+                        <div className="flex items-center gap-1.5 mt-1">
+                            <Calendar className="h-3 w-3 text-slate-500 flex-shrink-0" />
+                            <span className="text-xs text-slate-400">{report.completedAt}</span>
                         </div>
                     </div>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 flex-shrink-0">
+                        <Users className="h-3.5 w-3.5" />
+                        {report.sessionCount} persona{report.sessionCount !== 1 ? 's' : ''}
+                    </div>
+                </div>
 
-                    {/* Bottom Section */}
-                    <div className="mt-auto pt-2border-t border-white/5 flex items-center justify-between">
-                        <div className="flex items-center gap-6">
-                            <div className="flex -space-x-4">
-
-                                {remainingCount > 0 && (
-                                    <div className="h-10 w-10 rounded-2xl border-2 border-[#0a0a0a] bg-white/5 flex items-center justify-center shadow-2xl z-20">
-                                        <span className="text-[10px] font-black text-slate-500">+{remainingCount}</span>
-                                    </div>
-                                )}
-                            </div>
-                            <span className="text-[10px] text-white uppercase tracking-widest text-slate-800 italic">
-                                {report.sessionCount} Synthetic Agents
+                {/* Metrics */}
+                <div className="grid grid-cols-2 gap-3 mb-5">
+                    <div
+                        className="rounded-xl p-4 border"
+                        style={{ borderColor: scoreColor + '30', background: scoreColor + '0d' }}
+                    >
+                        <p className="text-xs font-semibold text-slate-400 mb-2">UX Health Score</p>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-3xl font-black" style={{ color: scoreColor }}>
+                                {report.usabilityScore}
                             </span>
+                            <span className="text-xs text-slate-500">/100</span>
                         </div>
+                    </div>
 
-                        <div className="flex items-center gap-4">
-                            <button
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowConfirm(true); }}
-                                className="p-4 rounded-2xl border border-white/20 bg-white/5 text-slate-300 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all active:scale-95"
-                            >
-                                <Trash2 className="h-5 w-5" />
-                            </button>
-                            <button
-                                onClick={handleShare}
-                                className={`p-4 rounded-2xl border transition-all active:scale-95 ${copied
-                                    ? 'bg-emerald-500/10 border-emerald-300/20 text-emerald-400'
-                                    : 'bg-white/5 border-white/20 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/10'
-                                    }`}
-                            >
-                                {copied ? <Check className="h-5 w-5" /> : <Share2 className="h-5 w-5" />}
-                            </button>
-                            <Link
-                                href={`/reports/${report.id}`}
-                                className="flex items-center gap-4 h-14 px-8 rounded-2xl bg-white text-black text-[11px] font-black uppercase tracking-[0.2em] hover:bg-slate-200 transition-all active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
-                            >
-                                Review
-                                <ArrowRight className="h-4 w-4" />
-                            </Link>
+                    <div
+                        className="rounded-xl p-4 border"
+                        style={{ borderColor: frictionColor + '30', background: frictionColor + '0d' }}
+                    >
+                        <p className="text-xs font-semibold text-slate-400 mb-2">Friction Level</p>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xl font-bold" style={{ color: frictionColor }}>
+                                {report.frictionLevel}
+                            </span>
+                            <span
+                                className="h-2 w-2 rounded-full animate-pulse"
+                                style={{ background: frictionColor }}
+                            />
                         </div>
                     </div>
                 </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-700/50">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowConfirm(true); }}
+                            className="p-2 rounded-lg border border-slate-700/50 text-slate-500 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={handleShare}
+                            className={`p-2 rounded-lg border transition-all ${copied
+                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                : 'border-slate-700/50 text-slate-500 hover:text-white hover:bg-slate-700/50'
+                                }`}
+                        >
+                            {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+                        </button>
+                    </div>
+
+                    <Link
+                        href={`/reports/${report.id}`}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-400 hover:bg-indigo-500 text-white text-sm font-bold transition-all active:scale-95"
+                    >
+                        View Report
+                        <ArrowRight className="h-4 w-4" />
+                    </Link>
+                </div>
             </div>
 
-            {/* Confirmation Dialog */}
+            {/* Delete confirm dialog */}
             {showConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
                     <div
-                        className="relative z-10 w-full max-w-md rounded-[32px] border border-white/10 bg-[#0d0d0d] p-10 space-y-8 shadow-2xl"
+                        className="relative z-10 w-full max-w-md rounded-2xl border border-slate-700/50 bg-slate-800 p-8 space-y-6 shadow-2xl"
                         onClick={e => e.stopPropagation()}
                     >
-                        <div className="flex items-start gap-5">
-                            <div className="h-12 w-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+                        <div className="flex items-start gap-4">
+                            <div className="h-10 w-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
                                 <AlertTriangle className="h-5 w-5 text-red-400" />
                             </div>
-                            <div className="space-y-2">
-                                <h3 className="text-lg font-black text-white tracking-tight">Delete Test Result</h3>
-                                <p className="text-sm text-slate-400 leading-relaxed">
-                                    This will permanently delete <span className="text-white font-bold">{report.projectName}</span> and all associated sessions and logs. This cannot be undone.
+                            <div>
+                                <h3 className="text-base font-bold text-white">Delete report?</h3>
+                                <p className="text-sm text-slate-400 mt-1 leading-relaxed">
+                                    This will permanently delete the report for <span className="text-white font-semibold">{report.projectName}</span> and all its data. This cannot be undone.
                                 </p>
                             </div>
                         </div>
@@ -176,14 +150,14 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
                             <button
                                 onClick={() => setShowConfirm(false)}
                                 disabled={deleting}
-                                className="h-11 px-6 rounded-2xl border border-white/10 text-slate-400 text-[11px] font-black uppercase tracking-widest hover:text-white hover:border-white/20 transition-all disabled:opacity-50"
+                                className="px-4 py-2 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold hover:text-white transition-all disabled:opacity-50"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleDelete}
                                 disabled={deleting}
-                                className="flex items-center gap-2 h-11 px-6 rounded-2xl bg-red-500/20 border border-red-500/30 text-red-400 text-[11px] font-black uppercase tracking-widest hover:bg-red-500/30 transition-all active:scale-95 disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-semibold hover:bg-red-500/30 transition-all disabled:opacity-50"
                             >
                                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                                 {deleting ? 'Deleting...' : 'Delete'}

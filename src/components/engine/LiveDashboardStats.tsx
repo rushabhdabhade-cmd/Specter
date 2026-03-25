@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { CheckCircle2, Play, Clock } from 'lucide-react';
+import { FolderOpen, FlaskConical, Users } from 'lucide-react';
 
 interface LiveDashboardStatsProps {
     initialStats: {
@@ -18,11 +18,6 @@ export function LiveDashboardStats({ initialStats, userId }: LiveDashboardStatsP
     const supabase = createClient();
 
     useEffect(() => {
-        // Subscribe to relevant tables to refresh stats
-        // Note: Supabase Realtime 'postgres_changes' doesn't give counts directly, 
-        // so we refetch counts when changes happen or just increment/decrement locally.
-        // For precision, refetching is safer for aggregate stats.
-
         const fetchLatestStats = async () => {
             const { count: projectsCount } = await supabase
                 .from('projects')
@@ -70,61 +65,51 @@ export function LiveDashboardStats({ initialStats, userId }: LiveDashboardStatsP
 
     const statConfig = [
         {
-            label: 'Network Projects',
-            value: stats.projectsCount.toString(),
-            icon: CheckCircle2,
-            color: 'text-slate-400',
-            bgColor: 'bg-white/5',
-            trait: 'Architecture'
+            label: 'Projects',
+            sub: 'Websites being tested',
+            value: stats.projectsCount,
+            icon: FolderOpen,
+            color: '#6366f1',
         },
         {
-            label: 'Protocol Executions',
-            value: stats.runsCount.toString(),
-            icon: Play,
-            color: 'text-slate-400',
-            bgColor: 'bg-white/5',
-            trait: 'Live Stream'
+            label: 'Test Runs',
+            sub: 'Total tests executed',
+            value: stats.runsCount,
+            icon: FlaskConical,
+            color: '#10b981',
         },
         {
-            label: 'Synthetic Cohorts',
-            value: stats.personasCount.toString(),
-            icon: Clock,
-            color: 'text-slate-400',
-            bgColor: 'bg-white/5',
-            trait: 'Behavioral'
+            label: 'AI Personas',
+            sub: 'Simulated users run',
+            value: stats.personasCount,
+            icon: Users,
+            color: '#f59e0b',
         },
     ];
 
     return (
-        <div className="grid gap-8 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
             {statConfig.map((stat) => (
                 <div
                     key={stat.label}
-                    className="group relative overflow-hidden rounded-[40px] border border-white/5 bg-[#0a0a0a] p-10 transition-all duration-500 hover:border-white/10 hover:translate-y-[-4px]"
+                    className="group relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-800/50 p-6 transition-all duration-300 hover:border-slate-600/60 hover:bg-slate-800/80"
                 >
-                    <div className="flex items-center justify-between mb-10">
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
-                                {stat.label}
-                            </span>
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 italic">
-                                {stat.trait}
-                            </span>
+                    <div className="flex items-start justify-between mb-6">
+                        <div>
+                            <p className="text-sm font-bold text-white">{stat.label}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">{stat.sub}</p>
                         </div>
-                        <div className={`h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center ${stat.color} transition-transform group-hover:scale-110`}>
-                            <stat.icon className="h-5 w-5" />
+                        <div
+                            className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ background: stat.color + '18', border: `1px solid ${stat.color}30` }}
+                        >
+                            <stat.icon className="h-4 w-4" style={{ color: stat.color }} />
                         </div>
                     </div>
 
-                    <div className="flex items-baseline gap-2">
-                        <div className="text-6xl font-black tracking-tighter text-white">{stat.value}</div>
-                        <span className="text-xs font-black uppercase tracking-widest text-slate-800">Units</span>
+                    <div className="text-4xl font-black tracking-tight" style={{ color: stat.color }}>
+                        {stat.value}
                     </div>
-
-                    {/* Ambient Glow */}
-                    <div
-                        className={`absolute -right-10 -bottom-10 h-32 w-32 rounded-full ${stat.bgColor} opacity-0 blur-[60px] transition-opacity duration-1000 group-hover:opacity-100`}
-                    />
                 </div>
             ))}
         </div>

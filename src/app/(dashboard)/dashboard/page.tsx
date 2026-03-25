@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Plus, Zap, History, ArrowUpRight } from 'lucide-react';
+import { Plus, Zap, History, ArrowUpRight, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { auth } from '@clerk/nextjs/server';
 import { LiveDashboardStats } from '@/components/engine/LiveDashboardStats';
@@ -10,7 +10,6 @@ export default async function DashboardPage() {
 
   const supabase = await createClient();
 
-  // 1. Parallel Fetching (Filtered by userId)
   const [projectsRes, runsRes, personasRes, recentRunsRes] = await Promise.all([
     supabase
       .from('projects')
@@ -34,6 +33,7 @@ export default async function DashboardPage() {
         status,
         created_at,
         projects!inner (
+          name,
           target_url,
           user_id
         ),
@@ -55,128 +55,133 @@ export default async function DashboardPage() {
   const recentRuns = (recentRunsRaw || []).map((run: any) => {
     const totalSessions = run.persona_sessions?.length || 0;
     const completedSessions = run.persona_sessions?.filter((s: any) => s.status === 'completed').length || 0;
+    const status = run.status || 'unknown';
 
     return {
       id: run.id,
-      url: run.projects?.target_url || 'Unknown',
-      date: new Date(run.created_at).toLocaleDateString(),
-      status: run.status?.toUpperCase() || 'UNKNOWN',
-      statusColor: run.status === 'failed' ? 'text-slate-300 border-white/10' : run.status === 'completed' ? 'text-slate-300 border-white/10' : 'text-slate-300 border-white/10',
+      name: run.projects?.name || run.projects?.target_url || 'Unnamed project',
+      url: run.projects?.target_url || '',
+      date: new Date(run.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      status,
       totalSessions,
-      completedSessions
+      completedSessions,
     };
   });
 
   return (
-    <div className="animate-in fade-in space-y-20 duration-1000 selection:bg-indigo-500/30">
-      {/* ── COMMAND HEADER ─────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-        <div className="space-y-4">
+    <div className="animate-in fade-in space-y-12 duration-700">
 
-          <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white">Command <br /> <span className="italic opacity-50">Center.</span></h1>
-          <p className="max-w-md text-sm font-medium text-slate-500 italic leading-relaxed">
-            Discovering UX vulnerabilities through autonomous AI-driven personas.
+      {/* ── Header ── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-2">
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white">
+            Dashboard
+          </h1>
+          <p className="text-sm text-slate-400 max-w-md leading-relaxed">
+            Run AI-powered UX tests on your website and see how real users experience it.
           </p>
         </div>
         <Link
           href="/projects/new/setup"
-          className="group flex items-center gap-4 rounded-2xl bg-white px-8 py-5 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)]"
+          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-6 py-3 text-sm font-bold text-white transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
         >
-          <Plus className="h-5 w-5" />
-          Initialize Cohort
+          <Plus className="h-4 w-4" />
+          Run New Test
         </Link>
       </div>
 
-      {/* ── LIVE ANALYTICS ─────────────────────────────────────────────── */}
-      <section className="space-y-10">
+      {/* ── Stats ── */}
+      <LiveDashboardStats
+        initialStats={{
+          projectsCount: projectsCount || 0,
+          runsCount: runsCount || 0,
+          personasCount: personasCount || 0,
+        }}
+        userId={userId}
+      />
 
-        <LiveDashboardStats
-          initialStats={{
-            projectsCount: projectsCount || 0,
-            runsCount: runsCount || 0,
-            personasCount: personasCount || 0
-          }}
-          userId={userId}
-        />
-      </section>
-
-      {/* ── EXECUTION PROTOCOLS ────────────────────────────────────────── */}
+      {/* ── Recent runs ── */}
       {recentRuns.length > 0 && (
-        <section className="space-y-10">
+        <section className="space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
-                <History className="h-5 w-5 text-slate-500" />
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-slate-700/60 border border-slate-600/40 flex items-center justify-center">
+                <History className="h-4 w-4 text-slate-400" />
               </div>
-              <h2 className="text-2xl font-black tracking-tight text-white italic">Execution Logs</h2>
+              <h2 className="text-base font-bold text-white">Recent Test Runs</h2>
             </div>
-            <Link href="/test-runs" className="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-white transition-colors flex items-center gap-2">
-              View All Protocol Logs <ArrowUpRight className="h-3 w-3" />
+            <Link
+              href="/test-runs"
+              className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1"
+            >
+              View all <ArrowUpRight className="h-3 w-3" />
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            {recentRuns.map((run) => (
-              <Link
-                key={run.id}
-                href={`/test-runs/${run.id}`}
-                className="group flex flex-col md:flex-row md:items-center justify-between rounded-[32px] border border-white/20 bg-[#0a0a0a] p-8 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.01]"
-              >
-                <div className="flex items-center gap-8">
-                  <div className="relative">
-                    <div className="h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                      <Zap className="h-5 w-5 text-slate-400 group-hover:scale-110 transition-transform" />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-lg font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">
-                      {run.url}
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 italic">ID: {run.id.slice(0, 8)}</span>
-                      <span className="h-1 w-1 rounded-full bg-slate-800" />
-                      <span className="text-[9px] font-black tracking-widest text-slate-500 uppercase">{run.date}</span>
-                    </div>
-                  </div>
-                </div>
+          <div className="grid grid-cols-1 gap-3">
+            {recentRuns.map((run) => {
+              const isCompleted = run.status === 'completed';
+              const isFailed = run.status === 'failed';
+              const StatusIcon = isCompleted ? CheckCircle2 : isFailed ? XCircle : Clock;
+              const statusColor = isCompleted ? '#10b981' : isFailed ? '#ef4444' : '#f59e0b';
+              const statusLabel = isCompleted ? 'Completed' : isFailed ? 'Failed' : run.status.charAt(0).toUpperCase() + run.status.slice(1);
 
-                <div className="flex items-center gap-8 mt-6 md:mt-0">
-                  <div className="flex flex-col items-end gap-1 px-6 border-r border-white/5">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">Cohort Synthesis</span>
-                    <span className="text-xs font-mono font-bold text-slate-400">
-                      {run.completedSessions}/{run.totalSessions} <span className="opacity-30 italic">Active</span>
-                    </span>
+              return (
+                <Link
+                  key={run.id}
+                  href={`/test-runs/${run.id}`}
+                  className="group flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border border-slate-700/50 bg-slate-800/50 px-5 py-4 transition-all hover:border-slate-600/60 hover:bg-slate-800/80"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="h-10 w-10 rounded-xl bg-slate-700/60 border border-slate-600/30 flex items-center justify-center flex-shrink-0">
+                      <Zap className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white group-hover:text-indigo-300 transition-colors truncate max-w-[360px]">
+                        {run.name}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">{run.date}</p>
+                    </div>
                   </div>
-                  <div className={`px-4 py-2 rounded-xl bg-white/5 border ${run.statusColor} text-[10px] font-black tracking-[0.2em] uppercase`}>
-                    {run.status}
+
+                  <div className="flex items-center gap-4 mt-3 sm:mt-0">
+                    <div className="text-right">
+                      <p className="text-xs text-slate-400">
+                        {run.completedSessions}/{run.totalSessions} personas done
+                      </p>
+                    </div>
+                    <div
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold flex-shrink-0"
+                      style={{ color: statusColor, borderColor: statusColor + '40', background: statusColor + '12' }}
+                    >
+                      <StatusIcon className="h-3 w-3" />
+                      {statusLabel}
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         </section>
       )}
 
-      {/* Empty State */}
+      {/* ── Empty state ── */}
       {recentRuns.length === 0 && (
-        <div className="flex flex-col items-center justify-center space-y-8 rounded-[48px] border border-white/5 bg-white/[0.01] p-32 text-center">
-          <div className="relative">
-            <div className="absolute inset-0 bg-indigo-500/20 blur-3xl animate-pulse" />
-            <div className="relative h-20 w-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-500">
-              <Zap className="h-10 w-10 opacity-30" />
-            </div>
+        <div className="flex flex-col items-center justify-center space-y-5 rounded-2xl border border-dashed border-slate-700 bg-slate-800/20 p-16 text-center">
+          <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+            <Zap className="h-7 w-7 text-indigo-400 opacity-60" />
           </div>
-          <div className="space-y-3">
-            <h3 className="text-2xl font-black text-white italic">Protocol Inactive</h3>
-            <p className="max-w-[280px] mx-auto text-sm font-medium text-slate-600 italic leading-relaxed">
-              No behavioral synthesis sessions found. Initialize your first protocol to begin.
+          <div className="space-y-2">
+            <h3 className="text-base font-bold text-white">No test runs yet</h3>
+            <p className="text-sm text-slate-400 max-w-[260px] mx-auto leading-relaxed">
+              Create a project and run your first AI test to see results here.
             </p>
           </div>
           <Link
             href="/projects/new/setup"
-            className="text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-white transition-colors underline underline-offset-8 decoration-indigo-500/20"
+            className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
           >
-            Launch Setup Wizard
+            Create your first project →
           </Link>
         </div>
       )}

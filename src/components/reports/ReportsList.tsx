@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Search, Filter, LayoutGrid, List, FileText, AlertTriangle } from 'lucide-react';
+import { Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ReportCard } from './ReportCard';
-import Link from 'next/link';
+
+const PAGE_SIZE = 6;
 
 interface Report {
     id: string;
@@ -21,110 +22,145 @@ interface ReportsListProps {
 }
 
 export function ReportsList({ initialReports }: ReportsListProps) {
-    const [reports, setReports] = useState(initialReports);
+    const [reports, setReports]         = useState(initialReports);
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterMode, setFilterMode] = useState<'all' | 'high' | 'low'>('all');
+    const [filterMode, setFilterMode]   = useState<'all' | 'high' | 'low'>('all');
+    const [page, setPage]               = useState(1);
 
     const handleDelete = (id: string) => {
         setReports(prev => prev.filter(r => r.id !== id));
+        // If we just deleted the last item on this page, go back one
+        setPage(prev => Math.max(1, prev));
     };
 
     const filteredReports = useMemo(() => {
+        setPage(1); // reset to page 1 whenever search/filter changes
         return reports.filter(report => {
-            const matchesSearch = report.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            const matchesSearch =
+                report.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 report.url.toLowerCase().includes(searchQuery.toLowerCase());
-
             const matchesFilter =
                 filterMode === 'all' ||
                 (filterMode === 'high' && report.usabilityScore >= 70) ||
-                (filterMode === 'low' && report.usabilityScore < 50);
-
+                (filterMode === 'low'  && report.usabilityScore < 50);
             return matchesSearch && matchesFilter;
         });
     }, [reports, searchQuery, filterMode]);
 
+    const totalPages  = Math.max(1, Math.ceil(filteredReports.length / PAGE_SIZE));
+    const safePage    = Math.min(page, totalPages);
+    const pageReports = filteredReports.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+    const start       = filteredReports.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+    const end         = Math.min(safePage * PAGE_SIZE, filteredReports.length);
+
     return (
-        <div className="space-y-8">
-            {/* Search and Filters Bar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="relative flex-1 max-w-md group">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                        <Search className="h-4 w-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                    </div>
+        <div className="space-y-5">
+            {/* ── Search + filters ── */}
+            <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
                     <input
                         type="text"
-                        placeholder="Search projects or URLs..."
+                        placeholder="Search by project or URL..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full h-12 bg-[#0d0d0d] border border-white/20 rounded-2xl pl-12 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                        className="w-full h-10 bg-slate-800/60 border border-slate-700/50 rounded-xl pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 transition-all"
                     />
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-[#0d0d0d] border border-white/5 rounded-2xl p-1">
+                <div className="flex items-center bg-slate-800/60 border border-slate-700/50 rounded-xl p-1 gap-1">
+                    {([
+                        { key: 'all',  label: 'All' },
+                        { key: 'high', label: 'Good score' },
+                        { key: 'low',  label: 'Needs work' },
+                    ] as const).map(({ key, label }) => (
                         <button
-                            onClick={() => setFilterMode('all')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterMode === 'all' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
-                                }`}
+                            key={key}
+                            onClick={() => setFilterMode(key)}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                filterMode === key
+                                    ? key === 'high' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                    : key === 'low'  ? 'bg-red-500/15 text-red-400 border border-red-500/20'
+                                    : 'bg-slate-600/60 text-white border border-slate-500/40'
+                                    : 'text-slate-400 hover:text-slate-200'
+                            }`}
                         >
-                            All
+                            {label}
                         </button>
-                        <button
-                            onClick={() => setFilterMode('high')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterMode === 'high' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-lg' : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                        >
-                            High Score
-                        </button>
-                        <button
-                            onClick={() => setFilterMode('low')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterMode === 'low' ? 'bg-red-500/10 text-red-500 border border-red-500/20 shadow-lg' : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                        >
-                            Needs Work
-                        </button>
-                    </div>
+                    ))}
                 </div>
             </div>
 
-            {/* Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {filteredReports.length > 0 ? (
-                    filteredReports.map((report) => (
+            {/* ── Grid ── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pageReports.length > 0 ? (
+                    pageReports.map(report => (
                         <ReportCard key={report.id} report={report} onDelete={handleDelete} />
                     ))
                 ) : (
-                    <div className="col-span-full flex flex-col items-center justify-center rounded-[48px] border border-dashed border-white/5 bg-white/[0.01] py-32 text-center transition-all animate-in fade-in zoom-in-95 duration-700">
-                        <div className="relative mb-10">
-                            <div className="h-24 w-24 rounded-[32px] bg-gradient-to-br from-slate-900 to-black border border-white/5 flex items-center justify-center shadow-2xl">
-                                <FileText className="h-10 w-10 text-slate-800" />
-                            </div>
-                            <div className="absolute -bottom-2 -right-2 h-10 w-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-xl">
-                                <AlertTriangle className="h-5 w-5" />
-                            </div>
+                    <div className="col-span-full flex flex-col items-center justify-center space-y-4 rounded-2xl border border-dashed border-slate-700 bg-slate-800/20 py-20 text-center">
+                        <div className="h-12 w-12 rounded-xl bg-slate-700/60 border border-slate-600/40 flex items-center justify-center">
+                            <FileText className="h-6 w-6 text-slate-500" />
                         </div>
-
-                        <h3 className="text-2xl font-black text-white mb-4 tracking-tight">No matching reports</h3>
-                        <p className="max-w-[420px] text-base text-slate-500 font-medium leading-relaxed mb-12">
-                            We couldn't find any experience reports matching your current search or filter criteria.
-                        </p>
-
-                        <div className="flex items-center gap-6">
-                            <button
-                                onClick={() => { setSearchQuery(''); setFilterMode('all'); }}
-                                className="text-xs font-black uppercase tracking-[0.2em] text-indigo-400 hover:text-indigo-300 transition-colors"
-                                id="reset-filters"
-                            >
-                                Clear All Filters
-                            </button>
-                            <div className="h-4 w-px bg-white/10" />
-                            <Link href="/dashboard" className="text-xs  uppercase tracking-[0.2em] text-white hover:opacity-80 transition-opacity">
-                                Back to Dashboard
-                            </Link>
+                        <div>
+                            <h3 className="text-base font-bold text-white">No reports found</h3>
+                            <p className="text-sm text-slate-400 mt-1">Try adjusting your search or filter.</p>
                         </div>
+                        <button
+                            onClick={() => { setSearchQuery(''); setFilterMode('all'); }}
+                            className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                        >
+                            Clear filters
+                        </button>
                     </div>
                 )}
             </div>
+
+            {/* ── Pagination ── */}
+            {filteredReports.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2">
+                    <p className="text-sm text-slate-400">
+                        Showing <span className="text-white font-semibold">{start}–{end}</span> of{' '}
+                        <span className="text-white font-semibold">{filteredReports.length}</span> reports
+                    </p>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={safePage === 1}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700/50 bg-slate-800/60 text-sm font-semibold text-slate-400 hover:text-white hover:border-slate-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                            Prev
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                <button
+                                    key={p}
+                                    onClick={() => setPage(p)}
+                                    className={`h-8 w-8 rounded-lg text-sm font-bold transition-all ${
+                                        p === safePage
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+                                    }`}
+                                >
+                                    {p}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            disabled={safePage === totalPages}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700/50 bg-slate-800/60 text-sm font-semibold text-slate-400 hover:text-white hover:border-slate-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                            Next
+                            <ChevronRight className="h-4 w-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
