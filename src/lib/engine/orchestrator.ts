@@ -495,37 +495,55 @@ export class Orchestrator {
     private async saveScreenshot(sessionId: string, step: number, base64: string): Promise<string> {
         if (!base64) return '';
         const file = `step_${step}.jpg`;
-        const key = `screenshots/${sessionId}/${file}`;
+        const storagePath = `${sessionId}/${file}`;
+        const bucket = process.env.SUPABASE_SCREENSHOTS_BUCKET;
+        const sizeKb = Math.round(base64.length * 0.75 / 1024);
 
-        if (process.env.S3_BUCKET_NAME) {
+        // ── Supabase Storage (production) ────────────────────────────────────────
+        if (bucket) {
+            this.clog(sessionId, `║  📤 Uploading screenshot → bucket: ${bucket} | path: ${storagePath} | size: ~${sizeKb}kb`);
+            const uploadStart = Date.now();
             try {
-                const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
-                const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-                const s3 = new S3Client({ region: process.env.S3_REGION ?? 'ap-south-1' });
-                const cmd = new PutObjectCommand({
-                    Bucket: process.env.S3_BUCKET_NAME,
-                    Key: key,
-                    Body: Buffer.from(base64, 'base64'),
-                    ContentType: 'image/jpeg',
-                });
-                await s3.send(cmd);
-                const { GetObjectCommand } = await import('@aws-sdk/client-s3');
-                const getCmd = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
-                return await getSignedUrl(s3, getCmd, { expiresIn: 60 * 60 * 24 * 7 });
+                // Convert base64 → ArrayBuffer (more reliable than passing Buffer
+                // directly through Supabase's fetch-based client in Node.js)
+                const binary = Buffer.from(base64, 'base64');
+                const arrayBuffer = binary.buffer.slice(
+                    binary.byteOffset,
+                    binary.byteOffset + binary.byteLength
+                );
+
+                const { error } = await this.supabase.storage
+                    .from(bucket)
+                    .upload(storagePath, arrayBuffer, {
+                        contentType: 'image/jpeg',
+                        upsert: true,
+                    });
+
+                if (error) {
+                    this.clog(sessionId, `║  ✖ Upload failed [${storagePath}]: ${error.message} (status: ${(error as any).statusCode})`);
+                    throw error;
+                }
+
+                const { data } = this.supabase.storage.from(bucket).getPublicUrl(storagePath);
+                this.clog(sessionId, `║  ✔ Screenshot stored +${Date.now() - uploadStart}ms → ${data.publicUrl}`);
+                return data.publicUrl;
             } catch (err: any) {
-                console.error(`S3 upload failed for ${key}:`, err.message, '— falling back to local storage');
-                // Fall through to local storage rather than silently returning ''
+                this.clog(sessionId, `║  ✖ Supabase Storage failed for ${storagePath}: ${err.message} — falling back to local`);
             }
+        } else {
+            this.clog(sessionId, `║  ⚠ SUPABASE_SCREENSHOTS_BUCKET not set — saving screenshot locally`);
         }
 
-        // Local storage (dev / S3 not configured / S3 upload failed)
+        // ── Local storage (dev / bucket not configured / upload failed) ──────────
         try {
             const dir = path.join(process.cwd(), 'public', 'screenshots', sessionId);
             fs.mkdirSync(dir, { recursive: true });
+            const localPath = `/screenshots/${sessionId}/${file}`;
             fs.writeFileSync(path.join(dir, file), Buffer.from(base64, 'base64'));
-            return `/screenshots/${sessionId}/${file}`;
+            this.clog(sessionId, `║  💾 Screenshot saved locally → ${localPath} (~${sizeKb}kb)`);
+            return localPath;
         } catch (err: any) {
-            console.error(`Local screenshot save failed for ${key}:`, err.message);
+            this.clog(sessionId, `║  ✖ Local screenshot save failed for ${storagePath}: ${err.message}`);
             return '';
         }
     }
