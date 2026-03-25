@@ -374,6 +374,7 @@ export class Orchestrator {
                 overall_intensity: analysis.overall_intensity,
                 technical_metrics: pageMetrics
             });
+            this.stepNumber++;
 
             // ── Enqueue next links ────────────────────────────────────────────
             if (!isAuth) {
@@ -490,7 +491,7 @@ export class Orchestrator {
 
     // ─── Screenshot persistence ───────────────────────────────────────────────
 
-    private async saveScreenshot(sessionId: string, step: number, base64: string): Promise<string> {
+    private async saveScreenshot(sessionId: string, step: number | string, base64: string): Promise<string> {
         if (!base64) return '';
         const file = `step_${step}.jpg`;
         const storagePath = `${sessionId}/${file}`;
