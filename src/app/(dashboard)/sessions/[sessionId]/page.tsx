@@ -239,8 +239,8 @@ export default function SessionPage() {
 
                 {session?.exit_reason && (
                     <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl ${status === 'completed'
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                         }`}>
                         {session.exit_reason.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase())}
                     </span>
@@ -258,11 +258,9 @@ export default function SessionPage() {
                         <span className="text-slate-400">
                             <span className="text-white font-bold">{effectivePages}</span>/{MAX_PAGES} pages
                         </span>
-                        <span className="text-slate-400">
-                            <span className="text-white font-bold">{stepsCompleted}</span> steps
-                        </span>
+
                         <span className={`text-lg font-black tabular-nums ${session?.status === 'completed' ? 'text-emerald-400' :
-                                session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
+                            session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
                             }`}>{overallPct}%</span>
                     </div>
                 </div>
@@ -270,7 +268,7 @@ export default function SessionPage() {
                 <div className="h-2 w-full rounded-full bg-slate-700/60 overflow-hidden relative">
                     <div
                         className={`h-full rounded-full transition-all duration-700 ease-out ${session?.status === 'completed' ? 'bg-emerald-500' :
-                                session?.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'
+                            session?.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'
                             }`}
                         style={{ width: `${overallPct}%` }}
                     />
@@ -279,19 +277,19 @@ export default function SessionPage() {
                     )}
                 </div>
 
-                <div className="flex items-center gap-[2px]">
+                {/* <div className="flex items-center gap-[2px]">
                     {Array.from({ length: MAX_PAGES }).map((_, i) => (
                         <div
                             key={i}
                             className={`h-1 flex-1 rounded-sm transition-all duration-500 ${i < effectivePages
-                                    ? session?.status === 'completed' ? 'bg-emerald-500/60' : 'bg-indigo-500/60'
-                                    : i === effectivePages && session?.status === 'running'
-                                        ? 'bg-indigo-500/30 animate-pulse'
-                                        : 'bg-slate-700/60'
+                                ? session?.status === 'completed' ? 'bg-emerald-500/60' : 'bg-indigo-500/60'
+                                : i === effectivePages && session?.status === 'running'
+                                    ? 'bg-indigo-500/30 animate-pulse'
+                                    : 'bg-slate-700/60'
                                 }`}
                         />
                     ))}
-                </div>
+                </div> */}
 
                 <p className="text-xs text-slate-400">
                     {session?.status === 'completed'
