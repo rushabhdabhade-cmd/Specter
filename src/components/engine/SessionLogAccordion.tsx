@@ -71,7 +71,7 @@ export function SessionLogAccordion({ sessionId }: SessionLogAccordionProps) {
                         </div>
                     ) : logs.length > 0 ? (
                         <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                            {logs.map((log) => {
+                            {logs.filter((log) => !(log.action_taken as any)?.info?.startsWith('scan_')).map((log) => {
                                 const actionType = ((log.action_taken as any)?.type || 'action').replace(/_/g, ' ');
                                 const uxFeedback = (log.action_taken as any)?.ux_feedback;
                                 const selector   = (log.action_taken as any)?.selector;

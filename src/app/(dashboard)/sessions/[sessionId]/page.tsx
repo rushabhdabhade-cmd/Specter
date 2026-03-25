@@ -195,11 +195,11 @@ export default function SessionPage() {
     };
 
     const statusConfig: Record<string, { label: string; color: string; Icon: any }> = {
-        queued:    { label: 'Queued',    color: '#64748b', Icon: Clock },
-        running:   { label: 'Running',   color: '#3b82f6', Icon: Activity },
+        queued: { label: 'Queued', color: '#64748b', Icon: Clock },
+        running: { label: 'Running', color: '#3b82f6', Icon: Activity },
         completed: { label: 'Completed', color: '#10b981', Icon: CheckCircle2 },
         abandoned: { label: 'Abandoned', color: '#f59e0b', Icon: XCircle },
-        error:     { label: 'Error',     color: '#ef4444', Icon: XCircle },
+        error: { label: 'Error', color: '#ef4444', Icon: XCircle },
     };
     const status = session?.status || 'queued';
     const cfg = statusConfig[status] || statusConfig.queued;
@@ -238,11 +238,10 @@ export default function SessionPage() {
                 </div>
 
                 {session?.exit_reason && (
-                    <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl ${
-                        status === 'completed'
+                    <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl ${status === 'completed'
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                             : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                    }`}>
+                        }`}>
                         {session.exit_reason.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase())}
                     </span>
                 )}
@@ -262,19 +261,17 @@ export default function SessionPage() {
                         <span className="text-slate-400">
                             <span className="text-white font-bold">{stepsCompleted}</span> steps
                         </span>
-                        <span className={`text-lg font-black tabular-nums ${
-                            session?.status === 'completed' ? 'text-emerald-400' :
-                            session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
-                        }`}>{overallPct}%</span>
+                        <span className={`text-lg font-black tabular-nums ${session?.status === 'completed' ? 'text-emerald-400' :
+                                session?.status === 'error' ? 'text-red-400' : 'text-indigo-400'
+                            }`}>{overallPct}%</span>
                     </div>
                 </div>
 
                 <div className="h-2 w-full rounded-full bg-slate-700/60 overflow-hidden relative">
                     <div
-                        className={`h-full rounded-full transition-all duration-700 ease-out ${
-                            session?.status === 'completed' ? 'bg-emerald-500' :
-                            session?.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'
-                        }`}
+                        className={`h-full rounded-full transition-all duration-700 ease-out ${session?.status === 'completed' ? 'bg-emerald-500' :
+                                session?.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'
+                            }`}
                         style={{ width: `${overallPct}%` }}
                     />
                     {session?.status === 'running' && (
@@ -286,13 +283,12 @@ export default function SessionPage() {
                     {Array.from({ length: MAX_PAGES }).map((_, i) => (
                         <div
                             key={i}
-                            className={`h-1 flex-1 rounded-sm transition-all duration-500 ${
-                                i < effectivePages
+                            className={`h-1 flex-1 rounded-sm transition-all duration-500 ${i < effectivePages
                                     ? session?.status === 'completed' ? 'bg-emerald-500/60' : 'bg-indigo-500/60'
                                     : i === effectivePages && session?.status === 'running'
                                         ? 'bg-indigo-500/30 animate-pulse'
                                         : 'bg-slate-700/60'
-                            }`}
+                                }`}
                         />
                     ))}
                 </div>
@@ -445,13 +441,13 @@ export default function SessionPage() {
 
                 {/* ── Right Column ── */}
                 <div className="space-y-6">
-                    <SessionControl
+                    {/* <SessionControl
                         sessionId={sessionId}
                         isPaused={!!session?.is_paused}
                         status={session?.status || 'queued'}
                         liveStatus={session?.live_status}
                         innerMonologue={latestLog?.inner_monologue}
-                    />
+                    /> */}
 
                     {/* Step History */}
                     <div className="flex flex-col rounded-2xl border border-slate-700/50 bg-slate-800/50 overflow-hidden max-h-[600px]">
@@ -464,15 +460,14 @@ export default function SessionPage() {
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                            {logs.map((log) => {
+                            {logs.filter((log) => !(log.action_taken as any)?.info?.startsWith('scan_')).map((log) => {
                                 const action = log.action_taken as any;
                                 const isSystem = action?.type === 'system';
 
                                 return (
                                     <div key={log.id} className="relative pl-5 pb-2 last:pb-0 border-l-2 border-slate-700/50">
-                                        <div className={`absolute left-[-5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-slate-800 ${
-                                            isSystem ? 'bg-slate-600' : 'bg-indigo-500'
-                                        }`} />
+                                        <div className={`absolute left-[-5px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-slate-800 ${isSystem ? 'bg-slate-600' : 'bg-indigo-500'
+                                            }`} />
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
