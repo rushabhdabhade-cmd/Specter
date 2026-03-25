@@ -7,7 +7,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
     const { userId } = await auth();
 
     return (
-        <div className="flex min-h-screen flex-col bg-[#050505] text-white selection:bg-indigo-500/30 font-sans">
+        <div className="flex min-h-screen flex-col bg-[#0f1117] text-white selection:bg-indigo-500/30 font-sans">
             {/* Background Grain/Noise Overlay */}
             <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[100] bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
 
@@ -42,17 +42,11 @@ export default async function MarketingLayout({ children }: { children: React.Re
                         {!userId ? (
                             <>
                                 <SignInButton mode="modal">
-                                    <button className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all">
+                                    <button className="flex items-center gap-2 rounded-xl bg-white px-5 py-2 text-[10px] font-black uppercase tracking-widest text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_0_15px_rgba(255,255,255,0.1)]">
                                         Log In
                                     </button>
                                 </SignInButton>
-                                <Link
-                                    href="/sign-up"
-                                    className="flex items-center gap-2 rounded-xl bg-white px-5 py-2 text-[10px] font-black uppercase tracking-widest text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
-                                >
-                                    Deploy
-                                    <ArrowRight className="h-3.5 w-3.5" />
-                                </Link>
+
                             </>
                         ) : (
                             <div className="flex items-center gap-5">
@@ -72,7 +66,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
             <main className="flex-1">{children}</main>
 
             {/* Premium Footer */}
-            <footer className="relative border-t border-white/5 bg-[#050505] pt-32 pb-16 overflow-hidden">
+            <footer className="relative border-t border-white/5 bg-[#0f1117] pt-32 pb-16 overflow-hidden">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-px bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
 
                 <div className="mx-auto max-w-7xl px-6">

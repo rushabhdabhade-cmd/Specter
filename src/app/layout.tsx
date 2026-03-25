@@ -20,7 +20,7 @@ export default function RootLayout({
       }}
     >
       <html lang="en" className="dark">
-        <body className="min-h-screen bg-[#050505] antialiased">{children}</body>
+        <body className="min-h-screen bg-[#0f1117] antialiased">{children}</body>
       </html>
     </ClerkProvider>
   );

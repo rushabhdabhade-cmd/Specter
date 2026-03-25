@@ -8,7 +8,7 @@ import {
 
 export default function Home() {
   return (
-    <div className="flex flex-col bg-[#050505] overflow-hidden selection:bg-indigo-500/30">
+    <div className="flex flex-col bg-[#0f1117] overflow-hidden selection:bg-indigo-500/30">
       {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
       <section className="relative flex min-h-screen flex-col items-center justify-center px-6 pt-32 pb-40 text-center">
         {/* Background Ambient Glows */}
@@ -27,7 +27,7 @@ export default function Home() {
           </h1>
 
           <p className="mx-auto max-w-3xl text-xl md:text-2xl font-medium text-slate-400 leading-relaxed italic opacity-80">
-            &ldquo;Specter orchestrates high-fidelity synthetic users that navigate, think, and feel through your interface exactly like your customers.&rdquo;
+            &ldquo;Specter simulates real users that browse, click, and react to your website — so you can fix UX problems before your customers ever find them.&rdquo;
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-8 pt-10">
@@ -35,7 +35,7 @@ export default function Home() {
               href="/dashboard"
               className="group relative flex items-center gap-4 rounded-2xl bg-white px-12 py-6 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-slate-200 active:scale-95 shadow-[0_30px_60px_-15px_rgba(255,255,255,0.2)]"
             >
-              Start Synthesis
+              Get Started Free
               <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
             </Link>
 
@@ -258,17 +258,17 @@ export default function Home() {
       </section>
 
       {/* ── FEATURES GRID ───────────────────────────────────────────────── */}
-      <section className="px-6 py-10 bg-[#050505]">
+      <section className="px-6 py-10 bg-[#0f1117]">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 mb-32">
             <div className="max-w-xl space-y-6">
               <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
                 <BarChart3 className="h-5 w-5 text-indigo-400" />
               </div>
-              <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-white leading-[0.9]">Built for modern <br /> <span className="text-indigo-400 italic">UX Protocols.</span></h2>
+              <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-white leading-[0.9]">Built for modern <br /> <span className="text-indigo-400 italic">UX teams.</span></h2>
             </div>
-            <p className="max-w-sm text-lg font-medium text-slate-500 italic border-l border-white/10 pl-8 pb-4">
-              "We replaced manual QA and traditional user testing with Specter. It's like having 1,000 users in your terminal 24/7."
+            <p className="max-w-sm text-lg font-medium text-slate-300 border-l-2 border-indigo-500/40 pl-8 pb-4">
+              "We replaced manual QA and traditional user testing with Specter. It's like having 1,000 users testing your site 24/7."
             </p>
           </div>
 
@@ -361,9 +361,9 @@ export default function Home() {
           <div className="absolute -bottom-48 -left-48 h-96 w-96 bg-white/5 blur-[100px] rounded-full" />
 
           <div className="relative z-10 space-y-12">
-            <h2 className="text-5xl md:text-8xl font-black tracking-tighter text-white leading-[0.85]">Join the <br /> <span className="italic text-indigo-200">synthesis revolution.</span></h2>
-            <p className="max-w-2xl mx-auto text-xl font-medium text-indigo-100/60 leading-relaxed italic">
-              "Deploy your first cohort in under 5 minutes. No integration required. Just a URL and a vision."
+            <h2 className="text-5xl md:text-8xl font-black tracking-tighter text-white leading-[0.85]">Start testing <br /> <span className="italic text-white/80">smarter today.</span></h2>
+            <p className="max-w-2xl mx-auto text-xl font-medium text-white/70 leading-relaxed">
+              Run your first AI user test in under 5 minutes. No integration required — just a URL.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
               <Link
@@ -394,15 +394,15 @@ function FeatureCard({ icon: Icon, title, description, color }: { icon: any, tit
   };
 
   return (
-    <div className={`relative p-10 rounded-[48px] border border-white/5 bg-[#0a0a0a] group hover:border-white/20 transition-all duration-700 overflow-hidden`}>
+    <div className={`relative p-10 rounded-[48px] border border-slate-700/50 bg-slate-800/40 group hover:border-slate-600/70 transition-all duration-700 overflow-hidden`}>
       <div className={`absolute inset-0 bg-gradient-to-br ${colors[color]} opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
       <div className="relative z-10 space-y-8">
-        <div className={`h-16 w-16 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center ${colors[color].split(' ').pop()} group-hover:scale-110 group-hover:bg-white/[0.05] transition-all duration-500`}>
+        <div className={`h-16 w-16 rounded-2xl bg-slate-700/50 border border-slate-600/40 flex items-center justify-center ${colors[color].split(' ').pop()} group-hover:scale-110 transition-all duration-500`}>
           <Icon className="h-8 w-8" />
         </div>
         <div className="space-y-4">
           <h3 className="text-3xl font-black tracking-tight text-white group-hover:translate-x-2 transition-transform duration-500">{title}</h3>
-          <p className="text-base font-medium text-slate-500 leading-relaxed italic group-hover:text-slate-400 transition-colors">{description}</p>
+          <p className="text-base font-medium text-slate-300 leading-relaxed group-hover:text-white transition-colors">{description}</p>
         </div>
       </div>
     </div>

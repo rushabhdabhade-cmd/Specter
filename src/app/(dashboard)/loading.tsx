@@ -17,11 +17,11 @@ export default function DashboardLoading() {
                     <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-bounce" />
                 </div>
                 <div className="flex flex-col gap-1">
-                    <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-500">
-                        Protocol Synchronization
+                    <p className="text-sm font-semibold text-slate-400">
+                        Loading...
                     </p>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-800 italic">
-                        Fetching Intelligent Briefing...
+                    <p className="text-xs text-slate-500">
+                        Fetching your data
                     </p>
                 </div>
             </div>
