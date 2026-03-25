@@ -25,42 +25,52 @@ export class BrowserService {
                 ? (apiKey || process.env.GEMINI_API_KEY)
                 : (apiKey || process.env.OPENAI_API_KEY);
 
-            const stagehandConfig: any = {
-                env: 'LOCAL',
-                verbose: 0,
-                disableAPI: true,
-                model: {
-                    modelName,
-                    apiKey: resolvedApiKey,
-                },
-                localBrowserLaunchOptions: {
-                    headless: true,
-                    viewport: { width: 1280, height: 800 },
-                    args: [
-                        // Required for Docker/ECS containers
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu',
-                        // Memory reduction
-                        '--disable-extensions',
-                        '--disable-plugins',
-                        '--disable-background-networking',
-                        '--disable-background-timer-throttling',
-                        '--disable-sync',
-                        '--disable-translate',
-                        '--disable-default-apps',
-                        '--disable-notifications',
-                        '--disable-hang-monitor',
-                        '--no-first-run',
-                        '--mute-audio',
-                        '--disable-component-update',
-                    ]
-                }
-            };
+            const useBrowserbase = !!process.env.BROWSERBASE_API_KEY;
 
+            const stagehandConfig: any = useBrowserbase
+                // ── Browserbase (Railway / production) ──────────────────────────────
+                // Browser runs in Browserbase cloud — no local Chromium needed.
+                // BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID must be set.
+                ? {
+                    env: 'BROWSERBASE',
+                    apiKey: process.env.BROWSERBASE_API_KEY,
+                    projectId: process.env.BROWSERBASE_PROJECT_ID,
+                    verbose: 0,
+                    disableAPI: true,
+                    model: { modelName, apiKey: resolvedApiKey },
+                }
+                // ── Local Chromium (dev / no Browserbase configured) ─────────────────
+                : {
+                    env: 'LOCAL',
+                    verbose: 0,
+                    disableAPI: true,
+                    model: { modelName, apiKey: resolvedApiKey },
+                    localBrowserLaunchOptions: {
+                        headless: true,
+                        viewport: { width: 1280, height: 800 },
+                        args: [
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-gpu',
+                            '--disable-extensions',
+                            '--disable-plugins',
+                            '--disable-background-networking',
+                            '--disable-background-timer-throttling',
+                            '--disable-sync',
+                            '--disable-translate',
+                            '--disable-default-apps',
+                            '--disable-notifications',
+                            '--disable-hang-monitor',
+                            '--no-first-run',
+                            '--mute-audio',
+                            '--disable-component-update',
+                        ]
+                    }
+                };
+
+            console.log(`Initializing Stagehand (${useBrowserbase ? 'Browserbase' : 'local Chromium'})...`);
             this.stagehand = new Stagehand(stagehandConfig);
-            console.log('Initializing Stagehand...');
             await this.stagehand.init();
             await this.setupPage();
             console.log('Stagehand ready.');
