@@ -1,63 +1,14 @@
 import Link from 'next/link';
-import { Ghost, Github, Twitter, Linkedin, ArrowRight } from 'lucide-react';
-import { SignInButton, UserButton } from '@clerk/nextjs';
-import { auth } from '@clerk/nextjs/server';
-import NavLinks from '@/components/marketing/NavLinks';
+import { Github, Twitter, Linkedin } from 'lucide-react';
+import { Ghost } from 'lucide-react';
+import MarketingNavbar from '@/components/marketing/MarketingNavbar';
 
 export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
-    const { userId } = await auth();
-
     return (
-        <div className="flex min-h-screen flex-col bg-white text-slate-900 font-sans">
+        <div className="flex min-h-screen flex-col font-sans">
 
-            {/* ── NAVBAR ── */}
-            <header className="fixed top-0 left-0 right-0 z-50 bg-slate-50 border-b border-slate-200">
-                <div className="mx-auto max-w-6xl px-6">
-                    <nav className="flex h-[60px] items-center justify-between gap-8">
-
-                        {/* Logo */}
-                        <Link href="/" className="flex items-center gap-2 flex-shrink-0 group">
-                            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-white group-hover:bg-indigo-600 transition-colors">
-                                <Ghost className="h-3.5 w-3.5 fill-current" />
-                            </div>
-                            <span className="text-sm font-semibold text-slate-900 tracking-tight">Specter</span>
-                        </Link>
-
-                        {/* Center links — client component for active state */}
-                        <NavLinks />
-
-                        {/* Right side */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            {!userId ? (
-                                <>
-                                    <SignInButton mode="modal">
-                                        <button className="px-3.5 py-1.5 text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all">
-                                            Log in
-                                        </button>
-                                    </SignInButton>
-                                    <Link
-                                        href="/dashboard"
-                                        className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-600 transition-colors"
-                                    >
-                                        Get started
-                                        <ArrowRight className="h-3.5 w-3.5" />
-                                    </Link>
-                                </>
-                            ) : (
-                                <div className="flex items-center gap-3">
-                                    <Link
-                                        href="/dashboard"
-                                        className="px-3.5 py-1.5 text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all"
-                                    >
-                                        Dashboard
-                                    </Link>
-                                    <UserButton appearance={{ elements: { userButtonAvatarBox: 'h-7 w-7 rounded-md' } }} />
-                                </div>
-                            )}
-                        </div>
-                    </nav>
-                </div>
-            </header>
+            {/* ── NAVBAR — transparent on homepage, glassmorphism after scroll ── */}
+            <MarketingNavbar />
 
             <main className="flex-1">{children}</main>
 

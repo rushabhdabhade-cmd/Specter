@@ -128,6 +128,26 @@ export class Orchestrator {
                 console.error(`Session ${sessionId} attempt ${attempt} failed:`, err.message);
                 this.updateLiveStatus(sessionId, `Error: ${err.message}`);
 
+                // Browserbase/CDP session timeout — treat as partial completion.
+                // Retrying won't help: the remote browser is gone. Save whatever
+                // data was collected and generate a report from it.
+                const isBrowserTimeout = err.message?.includes('socket-close')
+                    || err.message?.includes('CDP transport closed')
+                    || err.message?.includes('session timed out')
+                    || err.message?.includes('Target page, context or browser has been closed')
+                    || err.message?.includes('Browser has been closed');
+
+                if (isBrowserTimeout) {
+                    console.log(`Session ${sessionId}: Browserbase timeout — saving partial results.`);
+                    await this.flushLogs();
+                    await (this.supabase.from('persona_sessions') as any).update({
+                        status: 'completed',
+                        completed_at: new Date().toISOString(),
+                        exit_reason: 'Browser session timed out — partial results saved'
+                    }).eq('id', sessionId);
+                    break;
+                }
+
                 const isConfigError = err.message?.includes('model not found')
                     || err.message?.includes('No endpoints found')
                     || err.message?.includes('non-JSON response');
