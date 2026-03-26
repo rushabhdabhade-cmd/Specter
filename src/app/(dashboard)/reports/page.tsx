@@ -54,20 +54,20 @@ export default async function ReportsPage() {
     });
 
     return (
-        <div className="animate-in fade-in space-y-8 duration-700">
+        <div className="animate-in fade-in space-y-8 duration-500">
 
             {/* ── Header ── */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white">Reports</h1>
-                    <p className="text-base text-slate-400 mt-1">
-                        UX test results for all your projects. See scores, friction points, and AI recommendations.
+                    <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                        UX test results for all your projects — scores, problems found, and AI recommendations.
                     </p>
                 </div>
-                <div className="flex items-center gap-3 bg-slate-800/60 border border-slate-700/50 rounded-xl px-5 py-3 flex-shrink-0">
-                    <BarChart3 className="h-5 w-5 text-indigo-400" />
+                <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-xl px-4 py-3 flex-shrink-0">
+                    <BarChart3 className="h-4 w-4 text-indigo-500" />
                     <div>
-                        <p className="text-xl font-black text-white leading-none">{reports.length}</p>
+                        <p className="text-lg font-bold text-slate-900 leading-none">{reports.length}</p>
                         <p className="text-xs text-slate-400 mt-0.5">total reports</p>
                     </div>
                 </div>

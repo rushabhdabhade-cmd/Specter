@@ -33,7 +33,7 @@ export function RefreshButton({ testRunId, variant = 'full' }: { testRunId: stri
                 onClick={() => handleRefresh(true)}
                 disabled={isRefreshing || isRegenerating}
                 title="Force re-generate AI analysis (uses LLM tokens)"
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 text-[11px] font-bold text-indigo-300 hover:bg-indigo-500/20 transition-all disabled:opacity-50"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-indigo-500 bg-indigo-500/10 px-3 text-[11px] font-bold text-indigo-600 hover:bg-indigo-500/20 transition-all disabled:opacity-50"
             >
                 <Sparkles className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-pulse' : ''}`} />
                 {isRegenerating ? 'Regenerating...' : 'Regenerate'}

@@ -39,16 +39,16 @@ export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListP
         return () => { supabase.removeChannel(channel); };
     }, [testRunId, supabase]);
 
-    const statusConfig: Record<string, { label: string; color: string; Icon: any }> = {
-        queued:    { label: 'Queued',    color: '#64748b', Icon: Clock },
-        running:   { label: 'Running',   color: '#3b82f6', Icon: Activity },
-        completed: { label: 'Completed', color: '#10b981', Icon: CheckCircle2 },
-        abandoned: { label: 'Abandoned', color: '#f59e0b', Icon: XCircle },
-        error:     { label: 'Error',     color: '#ef4444', Icon: XCircle },
+    const statusConfig: Record<string, { label: string; classes: string; iconClass: string; Icon: any }> = {
+        queued:    { label: 'Queued',    classes: 'bg-slate-50 border-slate-200 text-slate-500',    iconClass: 'text-slate-400',   Icon: Clock },
+        running:   { label: 'Running',   classes: 'bg-blue-50 border-blue-200 text-blue-600',       iconClass: 'text-blue-500',    Icon: Activity },
+        completed: { label: 'Completed', classes: 'bg-emerald-50 border-emerald-200 text-emerald-600', iconClass: 'text-emerald-500', Icon: CheckCircle2 },
+        abandoned: { label: 'Abandoned', classes: 'bg-amber-50 border-amber-200 text-amber-600',    iconClass: 'text-amber-500',   Icon: XCircle },
+        error:     { label: 'Error',     classes: 'bg-red-50 border-red-200 text-red-600',          iconClass: 'text-red-500',     Icon: XCircle },
     };
 
     return (
-        <div className="grid gap-4">
+        <div className="grid gap-3">
             {sessions.map((session) => {
                 const status = session.status || 'queued';
                 const cfg    = statusConfig[status] || statusConfig.queued;
@@ -57,20 +57,17 @@ export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListP
                 return (
                     <div
                         key={session.id}
-                        className="rounded-2xl border border-slate-700/50 bg-slate-800/50 p-5 transition-all hover:border-slate-600/60 hover:bg-slate-800/70"
+                        className="rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-indigo-200 hover:shadow-sm"
                     >
                         {/* Top row */}
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex items-center gap-4 min-w-0">
-                                <div
-                                    className="h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 border"
-                                    style={{ background: cfg.color + '15', borderColor: cfg.color + '35' }}
-                                >
-                                    <User className="h-5 w-5" style={{ color: cfg.color }} />
+                                <div className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${cfg.classes}`}>
+                                    <User className={`h-4.5 w-4.5 ${cfg.iconClass}`} />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-sm font-bold text-white truncate">
-                                        {session.persona_configs?.name || 'Unnamed Persona'}
+                                    <p className="text-sm font-semibold text-slate-900 truncate">
+                                        {session.persona_configs?.name || 'Unnamed User'}
                                     </p>
                                     {session.persona_configs?.goal_prompt && (
                                         <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[420px]">
@@ -80,17 +77,14 @@ export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListP
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3 flex-shrink-0">
-                                <div
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold"
-                                    style={{ color: cfg.color, borderColor: cfg.color + '40', background: cfg.color + '12' }}
-                                >
+                            <div className="flex items-center gap-2.5 flex-shrink-0">
+                                <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium ${cfg.classes}`}>
                                     <StatusIcon className={`h-3.5 w-3.5 ${status === 'running' ? 'animate-pulse' : ''}`} />
                                     {cfg.label}
                                 </div>
                                 <Link
                                     href={`/sessions/${session.id}`}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/60 border border-slate-600/40 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-700 transition-all"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 transition-all"
                                 >
                                     <Play className="h-3 w-3" />
                                     View Session
@@ -100,7 +94,7 @@ export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListP
 
                         {/* Timing + exit reason */}
                         {(session.started_at || session.exit_reason) && (
-                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 pt-3 border-t border-slate-700/50">
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 pt-3 border-t border-slate-100">
                                 {session.started_at && (
                                     <span className="flex items-center gap-1.5 text-xs text-slate-400">
                                         <Clock className="h-3 w-3" />
@@ -109,21 +103,21 @@ export function LiveSessionList({ initialSessions, testRunId }: LiveSessionListP
                                 )}
                                 {session.completed_at && (
                                     <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                                        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                                         Finished {isMounted ? new Date(session.completed_at).toLocaleTimeString() : '...'}
                                     </span>
                                 )}
                                 {session.exit_reason && (
-                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-lg border ${
                                         status === 'completed'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                            : 'bg-amber-50 text-amber-600 border-amber-200'
                                     }`}>
                                         {session.exit_reason.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase())}
                                     </span>
                                 )}
                                 {session.execution_mode === 'manual' && status === 'running' && (
-                                    <span className="text-xs text-amber-400 font-semibold">
+                                    <span className="text-xs text-amber-600 font-medium">
                                         ⚠ Waiting for manual approval
                                     </span>
                                 )}

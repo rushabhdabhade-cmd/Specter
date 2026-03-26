@@ -69,21 +69,27 @@ export function LiveDashboardStats({ initialStats, userId }: LiveDashboardStatsP
             sub: 'Websites being tested',
             value: stats.projectsCount,
             icon: FolderOpen,
-            color: '#6366f1',
+            iconBg: 'bg-indigo-50 border-indigo-100',
+            iconColor: 'text-indigo-500',
+            valueColor: 'text-slate-900',
         },
         {
             label: 'Test Runs',
             sub: 'Total tests executed',
             value: stats.runsCount,
             icon: FlaskConical,
-            color: '#10b981',
+            iconBg: 'bg-emerald-50 border-emerald-100',
+            iconColor: 'text-emerald-500',
+            valueColor: 'text-slate-900',
         },
         {
-            label: 'AI Personas',
+            label: 'AI Users',
             sub: 'Simulated users run',
             value: stats.personasCount,
             icon: Users,
-            color: '#f59e0b',
+            iconBg: 'bg-amber-50 border-amber-100',
+            iconColor: 'text-amber-500',
+            valueColor: 'text-slate-900',
         },
     ];
 
@@ -92,24 +98,20 @@ export function LiveDashboardStats({ initialStats, userId }: LiveDashboardStatsP
             {statConfig.map((stat) => (
                 <div
                     key={stat.label}
-                    className="group relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-800/50 p-6 transition-all duration-300 hover:border-slate-600/60 hover:bg-slate-800/80"
+                    className="rounded-xl border border-slate-200 bg-white p-6 transition-all hover:border-indigo-200 hover:shadow-sm"
                 >
-                    <div className="flex items-start justify-between mb-6">
+                    <div className="flex items-start justify-between mb-5">
                         <div>
-                            <p className="text-sm font-bold text-white">{stat.label}</p>
+                            <p className="text-sm font-semibold text-slate-900">{stat.label}</p>
                             <p className="text-xs text-slate-400 mt-0.5">{stat.sub}</p>
                         </div>
-                        <div
-                            className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                            style={{ background: stat.color + '18', border: `1px solid ${stat.color}30` }}
-                        >
-                            <stat.icon className="h-4 w-4" style={{ color: stat.color }} />
+                        <div className={`h-9 w-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${stat.iconBg}`}>
+                            <stat.icon className={`h-4 w-4 ${stat.iconColor}`} />
                         </div>
                     </div>
-
-                    <div className="text-4xl font-black tracking-tight" style={{ color: stat.color }}>
+                    <p className={`text-3xl font-bold tracking-tight ${stat.valueColor}`}>
                         {stat.value}
-                    </div>
+                    </p>
                 </div>
             ))}
         </div>

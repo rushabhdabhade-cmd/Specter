@@ -167,7 +167,7 @@ export function ReportActions() {
         <div className="flex items-center gap-2 no-print">
             <button
                 onClick={handleShare}
-                className="flex h-11 items-center gap-2 rounded-xl border border-white/5 bg-white/5 px-6 text-xs font-bold text-white hover:bg-white/10 transition-all active:scale-95 min-w-[100px] justify-center"
+                className="flex h-11 items-center gap-2 rounded-xl border border-black/10 bg-white/5 px-6 text-xs font-bold text-black hover:bg-white/10 transition-all active:scale-95 min-w-[100px] justify-center"
             >
                 {copied ? (
                     <>

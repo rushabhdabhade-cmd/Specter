@@ -8,7 +8,6 @@ import {
 } from 'recharts';
 import { Sparkles, MousePointerClick } from 'lucide-react';
 
-
 interface FeedbackLog {
     step_number: number;
     emotion_tag: string;
@@ -27,14 +26,14 @@ interface FeedbackSummaryProps {
 }
 
 const EMOTION_COLORS: Record<string, string> = {
-    delight: '#10b981',
-    satisfaction: '#34d399',
-    curiosity: '#818cf8',
-    surprise: '#fbbf24',
-    neutral: '#475569',
-    confusion: '#3b82f6',
-    boredom: '#94a3b8',
-    frustration: '#ef4444',
+    delight:        '#10b981',
+    satisfaction:   '#34d399',
+    curiosity:      '#818cf8',
+    surprise:       '#fbbf24',
+    neutral:        '#475569',
+    confusion:      '#3b82f6',
+    boredom:        '#94a3b8',
+    frustration:    '#ef4444',
     disappointment: '#f87171',
 };
 
@@ -56,7 +55,7 @@ async function scrollToStep(personaName: string, stepNumber: number) {
     setTimeout(() => el.removeAttribute('data-highlighted'), 2000);
 }
 
-/* Custom tooltip for line chart */
+/* Custom tooltip for area chart */
 const HealthTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     const health = payload[0]?.value;
@@ -64,13 +63,13 @@ const HealthTooltip = ({ active, payload, label }: any) => {
     const color = health > 70 ? '#10b981' : health > 40 ? '#f59e0b' : '#ef4444';
     const emotionColor = EMOTION_COLORS[emotion] || '#94a3b8';
     return (
-        <div className="rounded-xl border border-white/10 bg-slate-800 p-3 shadow-xl text-xs space-y-1">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg text-xs space-y-1">
             <p className="text-slate-400">Step {label}</p>
-            <p className="font-black" style={{ color }}>UX Health: {health}%</p>
+            <p className="font-semibold" style={{ color }}>Health: {health}%</p>
             {emotion && (
-                <p className="font-bold capitalize" style={{ color: emotionColor }}>{emotion}</p>
+                <p className="font-medium capitalize" style={{ color: emotionColor }}>{emotion}</p>
             )}
-            <p className="text-slate-500 text-[10px]">Click to jump to this step</p>
+            <p className="text-slate-400 text-[10px]">Click to jump to this step</p>
         </div>
     );
 };
@@ -118,7 +117,6 @@ function topPhrases(logs: FeedbackLog[], limit = 8): { phrase: string; count: nu
 export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSummaryProps) {
     const [selectedEmotion, setSelectedEmotion] = useState<string | null>(null);
 
-    // Sentiment Radar Data
     const sentimentGroups = ['delight', 'satisfaction', 'curiosity', 'surprise', 'neutral', 'confusion', 'boredom', 'frustration', 'disappointment'];
     const radarData = sentimentGroups.map(emo => {
         const matchingLogs = logs.filter(l => l.emotion_tag === emo);
@@ -139,15 +137,12 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
         };
     });
 
-    // Emotions that actually appeared
     const activeEmotions = radarData.filter(d => d.A > 0);
 
-    // Steps for selected emotion
     const selectedSteps = selectedEmotion
         ? logs.filter(l => l.emotion_tag === selectedEmotion).map(l => l.step_number).sort((a, b) => a - b)
         : [];
 
-    // Cumulative Health score for Area chart
     let currentHealth = 100;
     const healthData = [...logs]
         .sort((a, b) => a.step_number - b.step_number)
@@ -161,10 +156,9 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
             return { step: l.step_number, health: Math.round(currentHealth), emotion: l.emotion_tag };
         });
 
-    const worstHealth = healthData.length > 0 ? Math.min(...healthData.map(d => d.health)) : 100;
-    const currentLevel = healthData[healthData.length - 1]?.health ?? 100;
+    const worstHealth   = healthData.length > 0 ? Math.min(...healthData.map(d => d.health)) : 100;
+    const currentLevel  = healthData[healthData.length - 1]?.health ?? 100;
 
-    // All UX feedback quotes
     const feedbackQuotes = Array.from(
         new Set(
             logs
@@ -174,24 +168,24 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
     ).slice(0, 12);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
 
             {/* ── Sentiment Pulse ── */}
-            <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
                 <div>
-                    <h3 className="text-sm font-bold text-white">Sentiment Pulse</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Emotion breakdown</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                        How intense each emotion was across the session. A larger spike means that emotion appeared more strongly and frequently. Click any emotion below to see which steps triggered it.
+                        How strongly each emotion came through across this session. Larger spikes mean that emotion appeared more often. Click an emotion to see which steps triggered it.
                     </p>
                 </div>
 
-                <div className="h-64">
+                <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
-                            <PolarGrid stroke="rgba(148,163,184,0.2)" />
+                            <PolarGrid stroke="rgba(148,163,184,0.25)" />
                             <PolarAngleAxis
                                 dataKey="subject"
-                                tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }}
+                                tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
                                 tickLine={false}
                             />
                             <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
@@ -201,17 +195,16 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
                                 stroke="#6366f1"
                                 strokeWidth={2}
                                 fill="#6366f1"
-                                fillOpacity={0.35}
+                                fillOpacity={0.15}
                                 dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }}
                             />
                         </RadarChart>
                     </ResponsiveContainer>
                 </div>
 
-                {/* Clickable emotion legend */}
                 {activeEmotions.length > 0 && (
                     <div className="space-y-3">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
                             <MousePointerClick className="h-3 w-3" />
                             Click an emotion to see which steps
                         </p>
@@ -223,21 +216,18 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
                                     <button
                                         key={emo}
                                         onClick={() => setSelectedEmotion(isSelected ? null : emo)}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold capitalize transition-all"
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium capitalize transition-all"
                                         style={{
                                             borderColor: isSelected ? color : color + '40',
-                                            background: isSelected ? color + '20' : color + '0a',
-                                            color: isSelected ? color : '#94a3b8',
+                                            background:  isSelected ? color + '15' : color + '08',
+                                            color:       isSelected ? color : '#64748b',
                                         }}
                                     >
-                                        <span
-                                            className="h-2 w-2 rounded-full flex-shrink-0"
-                                            style={{ background: color }}
-                                        />
+                                        <span className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
                                         {emo}
                                         <span
-                                            className="ml-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md"
-                                            style={{ background: color + '25', color }}
+                                            className="ml-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                                            style={{ background: color + '20', color }}
                                         >
                                             {steps.length}
                                         </span>
@@ -246,20 +236,19 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
                             })}
                         </div>
 
-                        {/* Step chips for selected emotion */}
                         {selectedEmotion && selectedSteps.length > 0 && (
                             <div className="flex flex-wrap items-center gap-2 pt-1">
-                                <span className="text-[10px] text-slate-500 font-bold">Jump to:</span>
+                                <span className="text-[10px] text-slate-400 font-medium">Jump to:</span>
                                 {selectedSteps.map(step => {
                                     const color = EMOTION_COLORS[selectedEmotion] || '#94a3b8';
                                     return (
                                         <button
                                             key={step}
                                             onClick={() => personaName && scrollToStep(personaName, step)}
-                                            className="px-2.5 py-1 rounded-md border text-[10px] font-bold transition-all hover:scale-105"
+                                            className="px-2.5 py-1 rounded-md border text-[10px] font-medium transition-all hover:scale-105"
                                             style={{
                                                 borderColor: color + '40',
-                                                background: color + '15',
+                                                background:  color + '10',
                                                 color,
                                             }}
                                         >
@@ -275,37 +264,34 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
 
             {/* ── UX Health Journey + Stats ── */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                <div className="lg:col-span-3 rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 space-y-3">
+                <div className="lg:col-span-3 rounded-xl border border-slate-200 bg-white p-6 space-y-3">
                     <div>
-                        <h3 className="text-sm font-bold text-white">UX Health Journey</h3>
+                        <h3 className="text-sm font-semibold text-slate-900">Experience over time</h3>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            Satisfaction score from 100% at start, adjusting up or down after each step based on emotion. Drops = friction. <span className="text-indigo-400 font-semibold">Click any dot to jump to that step.</span>
+                            Starts at 100% and adjusts up or down with each step based on how the user felt. Drops show friction points. <span className="text-indigo-500 font-medium">Click any dot to jump to that step.</span>
                         </p>
                     </div>
 
                     <div className="h-52">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                            <AreaChart
-                                data={healthData}
-                                margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
-                            >
+                            <AreaChart data={healthData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="healthColor" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                        <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.2} />
+                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.1)" />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
                                 <XAxis
                                     dataKey="step"
-                                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }}
-                                    axisLine={{ stroke: 'rgba(148,163,184,0.15)' }}
+                                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 600 }}
+                                    axisLine={{ stroke: 'rgba(148,163,184,0.2)' }}
                                     tickLine={false}
-                                    label={{ value: 'Step', position: 'insideBottomRight', offset: -5, fill: '#475569', fontSize: 9 }}
+                                    label={{ value: 'Step', position: 'insideBottomRight', offset: -5, fill: '#94a3b8', fontSize: 9 }}
                                 />
                                 <YAxis
                                     domain={[0, 100]}
-                                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }}
+                                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 600 }}
                                     axisLine={false}
                                     tickLine={false}
                                 />
@@ -313,22 +299,20 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
                                 <Area
                                     type="monotone"
                                     dataKey="health"
-                                    stroke="#10b981"
+                                    stroke="#6366f1"
                                     fillOpacity={1}
                                     fill="url(#healthColor)"
                                     strokeWidth={2}
                                     dot={(dotProps: any) => {
                                         const { cx, cy, payload } = dotProps;
-                                        const h = payload.health;
+                                        const h    = payload.health;
                                         const fill = h > 70 ? '#10b981' : h > 40 ? '#f59e0b' : '#ef4444';
                                         return (
                                             <circle
                                                 key={`dot-${payload.step}`}
-                                                cx={cx}
-                                                cy={cy}
-                                                r={5}
+                                                cx={cx} cy={cy} r={5}
                                                 fill={fill}
-                                                stroke="#1e293b"
+                                                stroke="#fff"
                                                 strokeWidth={2}
                                                 style={{ cursor: 'pointer' }}
                                                 onClick={(e) => {
@@ -340,16 +324,14 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
                                     }}
                                     activeDot={(dotProps: any) => {
                                         const { cx, cy, payload } = dotProps;
-                                        const h = payload.health;
+                                        const h    = payload.health;
                                         const fill = h > 70 ? '#10b981' : h > 40 ? '#f59e0b' : '#ef4444';
                                         return (
                                             <circle
                                                 key={`active-${payload.step}`}
-                                                cx={cx}
-                                                cy={cy}
-                                                r={7}
+                                                cx={cx} cy={cy} r={7}
                                                 fill={fill}
-                                                stroke="#1e293b"
+                                                stroke="#fff"
                                                 strokeWidth={2}
                                                 style={{ cursor: 'pointer' }}
                                                 onClick={(e) => {
@@ -366,32 +348,32 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
                 </div>
 
                 {/* Stats */}
-                <div className="lg:col-span-2 rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 flex flex-col justify-center space-y-6">
+                <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-center space-y-5">
                     {[
                         {
-                            label: 'Initial Health',
+                            label: 'Started at',
                             value: '100%',
                             color: '#6366f1',
                             sub: 'All sessions start at full health',
                         },
                         {
-                            label: 'Final Level',
+                            label: 'Ended at',
                             value: `${currentLevel}%`,
                             color: currentLevel > 70 ? '#10b981' : currentLevel > 40 ? '#f59e0b' : '#ef4444',
-                            sub: 'Where the session ended up',
+                            sub: 'Where the session ended',
                         },
                         {
-                            label: 'Worst Point',
+                            label: 'Lowest point',
                             value: `${worstHealth}%`,
                             color: '#ef4444',
                             sub: 'The most friction the user felt',
                         },
                     ].map(({ label, value, color, sub }) => (
-                        <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '50' }}>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black leading-none">{label}</p>
+                        <div key={label} className="border-l-2 pl-4" style={{ borderColor: color + '60' }}>
+                            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 leading-none">{label}</p>
                             <div className="flex items-baseline gap-2 mt-1.5">
-                                <p className="text-2xl font-black" style={{ color }}>{value}</p>
-                                <p className="text-[10px] text-slate-500">{sub}</p>
+                                <p className="text-2xl font-bold" style={{ color }}>{value}</p>
+                                <p className="text-[10px] text-slate-400">{sub}</p>
                             </div>
                         </div>
                     ))}
@@ -400,38 +382,38 @@ export function FeedbackSummary({ logs, summary, id, personaName }: FeedbackSumm
 
             {/* AI summary */}
             {summary && (
-                <div className="group relative rounded-xl border border-indigo-500/15 bg-indigo-500/[0.03] p-6 overflow-hidden">
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="h-6 w-6 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                            <Sparkles className="h-3 w-3 text-indigo-400" />
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 space-y-2">
+                    <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-md bg-indigo-100 border border-indigo-200 flex items-center justify-center">
+                            <Sparkles className="h-3 w-3 text-indigo-500" />
                         </div>
-                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">AI Observation</h3>
+                        <h3 className="text-xs font-semibold text-indigo-600">AI observation</h3>
                     </div>
-                    <p className="text-sm text-slate-200 leading-relaxed italic">&ldquo;{summary}&rdquo;</p>
+                    <p className="text-sm text-slate-700 leading-relaxed italic pl-3 border-l-2 border-indigo-200">&ldquo;{summary}&rdquo;</p>
                 </div>
             )}
 
             {/* UX Feedback quotes */}
             {feedbackQuotes.length > 0 && (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
                     <div>
-                        <h3 className="text-sm font-bold text-white">UX Feedback Log</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">All persona observations — unfiltered</p>
+                        <h3 className="text-sm font-semibold text-slate-900">What the user said</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">All feedback observations from this session</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {feedbackQuotes.map((quote, i) => {
-                            const matchedLog = logs.find(l => l.action_taken?.ux_feedback === quote);
-                            const emotion = matchedLog?.emotion_tag || 'neutral';
-                            const color = EMOTION_COLORS[emotion];
+                            const matchedLog  = logs.find(l => l.action_taken?.ux_feedback === quote);
+                            const emotion     = matchedLog?.emotion_tag || 'neutral';
+                            const color       = EMOTION_COLORS[emotion];
                             return (
                                 <div
                                     key={i}
-                                    className="rounded-xl p-4 border text-xs italic text-slate-300 leading-relaxed"
-                                    style={{ borderColor: color + '25', background: color + '08' }}
+                                    className="rounded-xl p-4 border text-sm italic text-slate-600 leading-relaxed"
+                                    style={{ borderColor: color + '30', background: color + '06' }}
                                 >
-                                    <span style={{ color }} className="not-italic font-black mr-1">&ldquo;</span>
+                                    <span style={{ color }} className="not-italic font-semibold mr-1">&ldquo;</span>
                                     {quote}
-                                    <span style={{ color }} className="not-italic font-black ml-1">&rdquo;</span>
+                                    <span style={{ color }} className="not-italic font-semibold ml-1">&rdquo;</span>
                                 </div>
                             );
                         })}

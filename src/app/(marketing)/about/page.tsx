@@ -1,122 +1,180 @@
 import Link from 'next/link';
-import {
-    History, Target, Users, Sparkles,
-    ArrowRight, Globe, ShieldCheck, Heart
-} from 'lucide-react';
+import { Github, Linkedin, ArrowRight, Globe, Shield, Zap, Heart } from 'lucide-react';
 
 export default function AboutPage() {
     return (
-        <div className="flex flex-col bg-[#050505] overflow-hidden">
-            {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
-            <section className="relative px-6 pt-40 pb-40 text-center">
-                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 h-96 w-96 bg-emerald-500/10 blur-[150px] rounded-full" />
-                <div className="relative animate-in fade-in slide-in-from-bottom-12 duration-1000 space-y-10 max-w-4xl mx-auto">
-                    <div className="inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2 backdrop-blur-3xl shadow-2xl">
-                        <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Our Protocol</span>
+        <div className="flex flex-col bg-white">
+
+            {/* ── HERO ── */}
+            <section className="px-6 pt-36 pb-20 bg-gradient-to-b from-slate-50 to-white text-center">
+                <div className="mx-auto max-w-2xl space-y-5 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 shadow-sm">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                        <span className="text-xs font-medium text-slate-500">About Specter</span>
                     </div>
-
-                    <h1 className="text-6xl md:text-9xl font-black tracking-tighter text-white leading-[0.85]">
-                        Redefining the <br /> <span className="text-emerald-400 italic">User Echo.</span>
+                    <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-slate-900 leading-tight">
+                        Built to make testing
+                        <br />
+                        <span className="text-indigo-600">simple and honest.</span>
                     </h1>
-
-                    <p className="mx-auto max-w-3xl text-xl md:text-2xl font-medium text-slate-400 leading-relaxed italic opacity-80">
-                        Specter was founded on a simple realization: the gap between building a product and understanding how a human feels using it is far too large.
+                    <p className="text-lg text-slate-500 leading-relaxed">
+                        Specter helps you understand how real people experience your website — before you ship, before you guess, and before you lose them.
                     </p>
                 </div>
             </section>
 
-            {/* ── CORE BELIEFS ────────────────────────────────────────────────── */}
-            <section className="px-6 py-40 border-y border-white/5 bg-white/[0.01]">
-                <div className="mx-auto max-w-7xl">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-24 items-center">
-                        <div className="space-y-8">
-                            <h2 className="text-4xl md:text-6xl font-black tracking-tighter text-white leading-tight">Eliminating the <br /> <span className="opacity-40 italic">Guesswork.</span></h2>
-                            <p className="text-lg font-medium text-slate-500 italic leading-relaxed">
-                                Traditional user testing is slow, expensive, and limited by human fatigue. We believe the future of design lies in behavioral synthesis—dynamic, high-fidelity modeling that tests your assumptions in real-time.
+            {/* ── WHY I BUILT THIS ── */}
+            <section className="px-6 py-20 bg-white">
+                <div className="mx-auto max-w-3xl">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
+                        <div className="space-y-5">
+                            <h2 className="text-2xl font-bold text-slate-900">Why I built Specter</h2>
+                            <p className="text-slate-500 leading-relaxed">
+                                Most developers ship features and hope they work. Real user testing is slow, expensive, and hard to set up — so it usually gets skipped.
                             </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-6">
-                                <ValueItem
-                                    icon={Target}
-                                    title="Precision First"
-                                    desc="We don't settle for 'good enough' data. Our engine models sub-second emotional response."
-                                />
-                                <ValueItem
-                                    icon={ShieldCheck}
-                                    title="Total Privacy"
-                                    desc="With local engine support, your behavioral data never has to leave your infra."
-                                />
-                            </div>
+                            <p className="text-slate-500 leading-relaxed">
+                                I built Specter to close that gap. You paste a URL, and within minutes you have AI users browsing your site, thinking out loud, and telling you exactly what's confusing them.
+                            </p>
+                            <p className="text-slate-500 leading-relaxed">
+                                No setup, no waiting, no guessing. Just feedback you can actually act on.
+                            </p>
                         </div>
-                        <div className="relative group">
-                            <div className="aspect-square rounded-[64px] bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border border-white/5 flex items-center justify-center p-12 overflow-hidden rotate-3 group-hover:rotate-0 transition-transform duration-1000">
-                                <div className="h-full w-full rounded-[48px] bg-black/60 backdrop-blur-3xl border border-white/10 flex items-center justify-center relative overflow-hidden">
-                                    <Sparkles className="h-24 w-24 text-emerald-400 animate-pulse" />
-                                    <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:20px_20px]" />
+
+                        <div className="space-y-4">
+                            {[
+                                { icon: Zap, title: 'Fast feedback', desc: 'Get your first results in under 5 minutes — no recruiting, no scheduling.' },
+                                { icon: Globe, title: 'Runs anywhere', desc: 'Use Gemini or OpenRouter in the cloud, or Ollama locally on your own machine.' },
+                                { icon: Shield, title: 'Privacy first', desc: 'Run tests entirely on your own hardware. Your data stays yours.' },
+                                { icon: Heart, title: 'Built for builders', desc: 'Designed for developers and product teams who move fast and need real answers.' },
+                            ].map(({ icon: Icon, title, desc }) => (
+                                <div key={title} className="flex items-start gap-4 p-4 rounded-xl border border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm transition-all">
+                                    <div className="h-9 w-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
+                                        <Icon className="h-4 w-4 text-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-900">{title}</p>
+                                        <p className="text-sm text-slate-500 mt-0.5 leading-relaxed">{desc}</p>
+                                    </div>
                                 </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* ── BUILDER ── */}
+            <section className="px-6 py-20 bg-slate-50 border-y border-slate-100">
+                <div className="mx-auto max-w-3xl">
+                    <h2 className="text-xl font-bold text-slate-900 mb-10">Who's behind it</h2>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-8 flex flex-col sm:flex-row gap-8 items-start">
+
+                        {/* Avatar placeholder */}
+                        <div className="h-20 w-20 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+                            R
+                        </div>
+
+                        <div className="space-y-4 flex-1">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-900">Rushabh Dabhade</h3>
+                                <p className="text-sm text-slate-500 mt-0.5">Full Stack Developer · Bhusawal, India</p>
+                            </div>
+                            <p className="text-sm text-slate-600 leading-relaxed">
+                                I'm a full stack developer who loves building things that actually get used. I work across the stack — React, Node.js, Next.js, and cloud infrastructure. Specter started as a side project to scratch my own itch: I wanted a faster way to know if the thing I just built made sense to people who weren't me.
+                            </p>
+                            <p className="text-sm text-slate-600 leading-relaxed">
+                                I'm available for freelance work and always happy to talk about what you're building.
+                            </p>
+                            <div className="flex items-center gap-3 pt-1">
+                                <Link
+                                    href="https://github.com/Coder-Rushabh"
+                                    target="_blank"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-all"
+                                >
+                                    <Github className="h-4 w-4" />
+                                    GitHub
+                                </Link>
+                                <Link
+                                    href="https://www.linkedin.com/in/rushabh-dabhade/"
+                                    target="_blank"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-all"
+                                >
+                                    <Linkedin className="h-4 w-4" />
+                                    LinkedIn
+                                </Link>
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* ── THE COHORT ──────────────────────────────────────────────────── */}
-            <section className="px-6 py-60">
-                <div className="mx-auto max-w-7xl">
-                    <div className="text-center space-y-6 mb-32">
-                        <h2 className="text-5xl md:text-7xl font-black tracking-tighter text-white italic opacity-80">Join the Cohort.</h2>
-                        <p className="text-lg font-medium text-slate-500 italic max-w-2xl mx-auto">
-                            We're a team of behavioral scientists, engine designers, and UX fundamentalists building the future of automated synthesis.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                        <StatCard label="Synthesis Sessions Ran" value="1.2M+" />
-                        <StatCard label="Global Contributors" value="150+" />
-                        <StatCard label="Years of R&D" value="4.5" />
-                    </div>
-                </div>
-            </section>
-
-            {/* ── CTA ─────────────────────────────────────────────────────────── */}
-            <section className="px-6 py-40">
-                <div className="mx-auto max-w-5xl rounded-[64px] bg-emerald-600 p-16 md:p-32 text-center shadow-[0_64px_128px_-32px_rgba(16,185,129,0.5)] relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 h-full w-full bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1),transparent)]" />
-
-                    <div className="relative z-10 space-y-12">
-                        <h2 className="text-5xl md:text-8xl font-black tracking-tighter text-white leading-[0.85]">Let's build <br /> <span className="italic text-emerald-100/60 uppercase">The Protocol.</span></h2>
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
-                            <Link
-                                href="/sign-up"
-                                className="w-full sm:w-auto rounded-2xl bg-white px-12 py-6 text-base font-black uppercase tracking-[0.2em] text-black hover:bg-slate-200 transition-all shadow-2xl active:scale-95"
-                            >
-                                Join Now
-                            </Link>
+            {/* ── WHAT SPECTER IS ── */}
+            <section className="px-6 py-20 bg-white">
+                <div className="mx-auto max-w-3xl space-y-10">
+                    <h2 className="text-xl font-bold text-slate-900">What Specter is (and isn't)</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                            <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">What it is</p>
+                            <ul className="space-y-3">
+                                {[
+                                    'A fast way to spot UX problems before users do',
+                                    'AI users that browse your site like real people',
+                                    'Plain-English reports with specific recommendations',
+                                    'A tool that runs in the cloud or on your own machine',
+                                    'Built for small teams and solo developers',
+                                ].map((item) => (
+                                    <li key={item} className="flex items-start gap-2.5 text-sm text-slate-600">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
+                                        {item}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <div className="space-y-4">
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">What it isn't</p>
+                            <ul className="space-y-3">
+                                {[
+                                    'A replacement for talking to real users',
+                                    'A load testing or performance tool',
+                                    'An analytics or heatmap platform',
+                                    'Only for big companies — anyone can use it',
+                                    'A black box — you can see every step each AI user took',
+                                ].map((item) => (
+                                    <li key={item} className="flex items-start gap-2.5 text-sm text-slate-500">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-slate-300 flex-shrink-0 mt-1.5" />
+                                        {item}
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     </div>
                 </div>
             </section>
+
+            {/* ── CTA ── */}
+            <section className="px-6 py-16 bg-slate-50 border-t border-slate-100">
+                <div className="mx-auto max-w-xl text-center space-y-5">
+                    <h2 className="text-2xl font-bold text-slate-900">Want to try it?</h2>
+                    <p className="text-slate-500 text-sm leading-relaxed">
+                        The free plan gets you 3 test runs with no credit card. Takes about 5 minutes to set up.
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <Link
+                            href="/dashboard"
+                            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm"
+                        >
+                            Start for free
+                            <ArrowRight className="h-4 w-4" />
+                        </Link>
+                        <Link
+                            href="/pricing"
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-all"
+                        >
+                            See pricing
+                        </Link>
+                    </div>
+                </div>
+            </section>
+
         </div>
     );
-}
-
-function ValueItem({ icon: Icon, title, desc }: { icon: any, title: string, desc: string }) {
-    return (
-        <div className="space-y-3">
-            <div className="flex items-center gap-3 text-emerald-400">
-                <Icon className="h-5 w-5" />
-                <h4 className="text-lg font-black uppercase tracking-tight text-white">{title}</h4>
-            </div>
-            <p className="text-sm font-medium text-slate-600 italic leading-relaxed">{desc}</p>
-        </div>
-    )
-}
-
-function StatCard({ label, value }: { label: string, value: string }) {
-    return (
-        <div className="p-12 rounded-[48px] border border-white/5 bg-white/[0.01] text-center space-y-4 hover:bg-white/[0.03] transition-all group">
-            <p className="text-6xl md:text-8xl font-black tracking-tighter text-white group-hover:scale-105 transition-transform duration-700">{value}</p>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">{label}</p>
-        </div>
-    )
 }

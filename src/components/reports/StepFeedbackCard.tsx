@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
     MousePointerClick, Type, ArrowDown, Clock,
     Navigation, CheckCircle2, XCircle, Quote,
-    TrendingDown, TrendingUp, Minus, ChevronRight, ChevronDown, Sparkles
+    ChevronRight, ChevronDown, Sparkles
 } from 'lucide-react';
 
 interface StepFeedbackCardProps {
@@ -29,229 +29,194 @@ interface StepFeedbackCardProps {
 }
 
 const EMOTION_CONFIG: Record<string, any> = {
-    delight: { label: 'Delight', hex: '#10b981', bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
-    satisfaction: { label: 'Satisfaction', hex: '#34d399', bg: 'bg-emerald-400/10', text: 'text-emerald-300', border: 'border-emerald-400/20' },
-    curiosity: { label: 'Curiosity', hex: '#818cf8', bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' },
-    surprise: { label: 'Surprise', hex: '#fbbf24', bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' },
-    neutral: { label: 'Neutral', hex: '#64748b', bg: 'bg-slate-800/40', text: 'text-slate-400', border: 'border-slate-700' },
-    confusion: { label: 'Confusion', hex: '#3b82f6', bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
-    boredom: { label: 'Boredom', hex: '#94a3b8', bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-600' },
-    frustration: { label: 'Frustration', hex: '#ef4444', bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
-    disappointment: { label: 'Disappointment', hex: '#f87171', bg: 'bg-red-400/10', text: 'text-red-300', border: 'border-red-400/20' },
+    delight:        { label: 'Delight',        hex: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200' },
+    satisfaction:   { label: 'Satisfaction',   hex: '#34d399', bg: 'bg-emerald-50', text: 'text-emerald-500', border: 'border-emerald-200' },
+    curiosity:      { label: 'Curiosity',      hex: '#818cf8', bg: 'bg-indigo-50',  text: 'text-indigo-500',  border: 'border-indigo-200' },
+    surprise:       { label: 'Surprise',       hex: '#fbbf24', bg: 'bg-amber-50',   text: 'text-amber-600',   border: 'border-amber-200' },
+    neutral:        { label: 'Neutral',        hex: '#64748b', bg: 'bg-slate-50',   text: 'text-slate-500',   border: 'border-slate-200' },
+    confusion:      { label: 'Confusion',      hex: '#3b82f6', bg: 'bg-blue-50',    text: 'text-blue-600',    border: 'border-blue-200' },
+    boredom:        { label: 'Boredom',        hex: '#94a3b8', bg: 'bg-slate-50',   text: 'text-slate-400',   border: 'border-slate-200' },
+    frustration:    { label: 'Frustration',    hex: '#ef4444', bg: 'bg-red-50',     text: 'text-red-600',     border: 'border-red-200' },
+    disappointment: { label: 'Disappointment', hex: '#f87171', bg: 'bg-red-50',     text: 'text-red-500',     border: 'border-red-200' },
 };
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
-    click: <MousePointerClick className="h-3 w-3" />,
-    type: <Type className="h-3 w-3" />,
-    scroll: <ArrowDown className="h-3 w-3" />,
-    wait: <Clock className="h-3 w-3" />,
+    click:    <MousePointerClick className="h-3 w-3" />,
+    type:     <Type className="h-3 w-3" />,
+    scroll:   <ArrowDown className="h-3 w-3" />,
+    wait:     <Clock className="h-3 w-3" />,
     navigate: <Navigation className="h-3 w-3" />,
     complete: <CheckCircle2 className="h-3 w-3" />,
-    fail: <XCircle className="h-3 w-3" />,
+    fail:     <XCircle className="h-3 w-3" />,
 };
-
-function IntensityBadge({ intensity }: { intensity: number }) {
-    const pct = Math.min(100, Math.round(intensity * 100));
-    const color = intensity > 0.7 ? 'text-white' : 'text-slate-500';
-    return <span className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest ${color}`}>Intensity: {pct}%</span>;
-}
 
 export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
     const [pathsOpen, setPathsOpen] = useState(false);
-    const cfg = EMOTION_CONFIG[step.emotion_tag] ?? EMOTION_CONFIG.neutral;
+    const cfg        = EMOTION_CONFIG[step.emotion_tag] ?? EMOTION_CONFIG.neutral;
     const actionType = step.action_taken?.type ?? 'system';
-    let uxFeedback = step.action_taken?.ux_feedback as any;
+    let uxFeedback   = step.action_taken?.ux_feedback as any;
     if (uxFeedback && typeof uxFeedback === 'object') {
         uxFeedback = uxFeedback.overall || uxFeedback.feedback || JSON.stringify(uxFeedback);
     }
-    const hasFeedback = uxFeedback && uxFeedback !== 'undefined' && String(uxFeedback).length > 5;
-    const intensity = step.action_taken?.emotional_intensity ?? 0.5;
-    const paths = step.action_taken?.possible_paths ?? [];
+    const hasFeedback  = uxFeedback && uxFeedback !== 'undefined' && String(uxFeedback).length > 5;
+    const paths        = step.action_taken?.possible_paths ?? [];
     const hasScreenshot = !!step.screenshot_url;
-    const stepKey = personaName ? `${personaName}-${step.step_number}` : undefined;
+    const stepKey      = personaName ? `${personaName}-${step.step_number}` : undefined;
 
     return (
         <div
             data-step-key={stepKey}
-            className={`group/card rounded-3xl border overflow-hidden transition-all duration-500 ${cfg.border} bg-slate-800/60 hover:bg-slate-800/80 hover:border-white/10 hover:shadow-lg data-[highlighted]:ring-2 data-[highlighted]:ring-indigo-500/60 data-[highlighted]:shadow-[0_0_32px_rgba(99,102,241,0.25)]`}
+            className={`group/card rounded-xl border overflow-hidden transition-all duration-300 ${cfg.border} bg-white hover:shadow-sm data-[highlighted]:ring-2 data-[highlighted]:ring-indigo-400`}
         >
             {/* Emotion accent top bar */}
-            <div className="h-1 w-full" style={{ background: cfg.hex }} />
+            <div className="h-0.5 w-full" style={{ background: cfg.hex }} />
 
-            <div className={`flex flex-col ${hasScreenshot ? 'lg:flex-row' : ''} gap-0`}>
+            <div className={`flex flex-col ${hasScreenshot ? 'lg:flex-row' : ''}`}>
 
-                {/* ── Screenshot panel (left on lg, top on mobile) ───────────────── */}
+                {/* ── Screenshot panel ── */}
                 {hasScreenshot && (
-                    <div className="lg:w-[480px] flex-shrink-0 relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-700/50 bg-slate-900/60 group-hover/card:bg-slate-900/80 transition-colors">
-                        {/* Overlay Gradient for top legibility */}
-                        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/80 via-black/40 to-transparent z-[5]" />
-
+                    <div className="lg:w-[440px] flex-shrink-0 relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-100 bg-slate-50">
                         {/* Step badge overlay */}
-                        <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+                        <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
                             <div
-                                className="h-8 w-8 rounded-2xl flex items-center justify-center text-[11px] font-black text-white shadow-xl backdrop-blur-md border border-white/20"
-                                style={{ background: cfg.hex + 'dd' }}
+                                className="h-7 w-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shadow-md"
+                                style={{ background: cfg.hex }}
                             >
                                 {step.step_number}
                             </div>
-                            <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest backdrop-blur-md border border-white/5 shadow-lg ${cfg.bg} ${cfg.text}`}>
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
                                 {cfg.label}
                             </span>
                         </div>
 
                         {/* Action type badge */}
-                        <div className="absolute top-4 right-4 z-10">
-                            <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-white/10 text-[9px] font-black text-white backdrop-blur-md shadow-lg group-hover/card:border-white/20 transition-all">
+                        <div className="absolute top-3 right-3 z-10">
+                            <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-medium text-slate-600 shadow-sm">
                                 {ACTION_ICONS[actionType]}
-                                <span className="uppercase tracking-widest">{actionType}</span>
+                                <span className="capitalize">{actionType}</span>
                             </span>
                         </div>
 
                         {/* Screenshot */}
-                        <div className="relative h-full">
+                        <div className="relative">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src={step.screenshot_url}
                                 alt={`Step ${step.step_number}`}
-                                className="w-full object-cover object-top max-h-[300px] lg:max-h-none lg:h-full filter brightness-[0.85] group-hover/card:brightness-100 transition-all duration-700"
+                                className="w-full object-cover object-top max-h-[280px] lg:max-h-none lg:h-full"
                                 loading="lazy"
                             />
-                            {/* Inner Border / Shadow Overlay */}
-                            <div className="absolute inset-0 shadow-[inset_0_0_30px_rgba(0,0,0,0.8)] pointer-events-none" />
                         </div>
 
-                        {/* Gradient footer on screenshot */}
-                        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black via-black/60 to-transparent flex items-end px-4 pb-4 z-[5]">
+                        {/* URL footer */}
+                        <div className="border-t border-slate-100 px-4 py-2.5 bg-white">
                             <a
                                 href={step.current_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={e => e.stopPropagation()}
-                                className="flex items-center gap-1.5 opacity-60 group-hover/card:opacity-100 transition-opacity hover:opacity-100 cursor-pointer"
+                                className="flex items-center gap-1.5 hover:underline"
                             >
-                                <Navigation className="h-3 w-3 text-slate-400" />
-                                <p className="text-[10px] font-mono text-white/80 truncate max-w-[320px] hover:underline">{step.current_url}</p>
+                                <Navigation className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                <p className="text-[10px] font-mono text-slate-400 truncate max-w-[320px]">{step.current_url}</p>
                             </a>
                         </div>
                     </div>
                 )}
 
-                {/* ── Feedback panel (right on lg, bottom on mobile) ─────────────── */}
-                <div className="flex-1 p-8 space-y-6 bg-gradient-to-b from-white/[0.01] to-transparent">
+                {/* ── Feedback panel ── */}
+                <div className="flex-1 p-6 space-y-5">
 
                     {/* Header — step info without screenshot */}
                     {!hasScreenshot && (
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
                                 <div
-                                    className="h-8 w-8 rounded-2xl flex items-center justify-center text-[10px] font-black text-white border border-white/10 shadow-lg"
+                                    className="h-7 w-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white"
                                     style={{ background: cfg.hex }}
                                 >
                                     {step.step_number}
                                 </div>
-                                <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 ${cfg.bg} ${cfg.text}`}>
-                                    {ACTION_ICONS[actionType]} {actionType}
+                                <span className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+                                    {ACTION_ICONS[actionType]} <span className="capitalize">{actionType}</span>
                                 </span>
-                                <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 ${cfg.bg} ${cfg.text}`}>
+                                <span className={`px-2 py-1 rounded-lg text-[10px] font-medium border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
                                     {cfg.label}
                                 </span>
                                 {step.action_taken?.specific_emotion && (
-                                    <span className="px-2.5 py-1 rounded-xl text-[9px] font-bold text-slate-400 bg-white/5 border border-white/5 italic">
+                                    <span className="px-2 py-1 rounded-lg text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200 italic">
                                         &ldquo;{step.action_taken.specific_emotion}&rdquo;
                                     </span>
                                 )}
                             </div>
-                            <IntensityBadge intensity={intensity} />
                         </div>
                     )}
 
-                    {/* Score delta (screenshot mode — stacked) */}
-                    {hasScreenshot && (
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                            <div className="flex items-center gap-2">
-                                {/* <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 shadow-sm ${cfg.bg} ${cfg.text}`}>
-                                    {cfg.label}
-                                </span> */}
-                                {step.action_taken?.specific_emotion && (
-                                    <span className="px-2.5 py-1 rounded-xl text-[9px] font-bold text-slate-400 bg-white/5 border border-white/5 italic">
-                                        &ldquo;{step.action_taken.specific_emotion}&rdquo;
-                                    </span>
-                                )}
-                                {/* <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border border-white/5 bg-white/5 text-slate-300`}>
-                                    {ACTION_ICONS[actionType]} {actionType}
-                                </span> */}
-                            </div>
-                            <IntensityBadge intensity={intensity} />
+                    {/* Screenshot header row */}
+                    {hasScreenshot && step.action_taken?.specific_emotion && (
+                        <div className="pb-3 border-b border-slate-100">
+                            <span className="text-xs text-slate-500 italic">
+                                &ldquo;{step.action_taken.specific_emotion}&rdquo;
+                            </span>
                         </div>
                     )}
 
                     {/* Inner monologue */}
-                    <div className="space-y-2">
-                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Persona Reasoning</p>
-                        <p className="text-[14px] text-slate-300 leading-relaxed font-semibold">
+                    <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">What the user was thinking</p>
+                        <p className="text-sm text-slate-700 leading-relaxed">
                             {step.inner_monologue}
                         </p>
                     </div>
 
-                    {/* UX Feedback — the core insight */}
+                    {/* UX Feedback */}
                     {hasFeedback && (
-                        <div className={`group/feedback rounded-2xl border p-5 space-y-3 transition-all ${cfg.border} hover:border-white/10`} style={{ background: cfg.hex + '05' }}>
+                        <div className={`rounded-xl border p-4 space-y-2 ${cfg.bg} ${cfg.border}`}>
                             <div className="flex items-center gap-2">
-                                <div className="p-1 rounded-lg" style={{ background: cfg.hex + '20' }}>
-                                    <Quote className="h-3.5 w-3.5 flex-shrink-0" style={{ color: cfg.hex }} />
-                                </div>
-                                <p className="text-[10px] font-black uppercase tracking-[0.15em]" style={{ color: cfg.hex }}>
-                                    UX/UI Feedback
+                                <Quote className="h-3.5 w-3.5 flex-shrink-0" style={{ color: cfg.hex }} />
+                                <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: cfg.hex }}>
+                                    Feedback
                                 </p>
                             </div>
-                            <p className="text-[13px] text-slate-100 leading-relaxed italic pl-3 border-l-2 border-slate-800" style={{ borderColor: cfg.hex + '40' }}>
+                            <p className="text-sm text-slate-700 leading-relaxed italic pl-3 border-l-2" style={{ borderColor: cfg.hex + '50' }}>
                                 &ldquo;{uxFeedback}&rdquo;
                             </p>
                         </div>
                     )}
 
-                    {/* Proposed Solution — MANDATORY action advice */}
+                    {/* Proposed solution */}
                     {step.action_taken?.proposed_solution && (
-                        <div className="relative group/sol rounded-2xl border border-indigo-500/10 bg-gradient-to-br from-indigo-500/[0.03] via-transparent to-transparent p-5 space-y-4 hover:border-indigo-500/30 transition-all overflow-hidden">
-                            {/* Subtle background glow */}
-                            <div className="absolute inset-0 bg-indigo-500/5 blur-3xl rounded-3xl -z-10 group-hover/sol:bg-indigo-500/10 transition-all" />
-
+                        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-2">
                             <div className="flex items-center gap-2">
-                                <div className="p-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                                    <Sparkles className="h-4 w-4 text-indigo-400" />
+                                <div className="h-5 w-5 rounded-md bg-indigo-100 border border-indigo-200 flex items-center justify-center">
+                                    <Sparkles className="h-3 w-3 text-indigo-500" />
                                 </div>
-                                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-indigo-400">
-                                    Strategic Fix / Solution
+                                <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-500">
+                                    Suggested fix
                                 </p>
                             </div>
-                            <div className="flex gap-4">
-                                <div className="h-auto w-1 bg-gradient-to-b from-indigo-500 to-indigo-500/20 rounded-full" />
-                                <p className="text-[14px] text-white font-bold leading-relaxed">
-                                    {step.action_taken.proposed_solution}
-                                </p>
-                            </div>
+                            <p className="text-sm text-slate-700 font-medium leading-relaxed pl-3 border-l-2 border-indigo-200">
+                                {step.action_taken.proposed_solution}
+                            </p>
                         </div>
                     )}
 
                     {/* Details footer */}
                     {(step.action_taken?.selector || step.action_taken?.text) && (
-                        <div className="flex items-center gap-4 pt-4 border-t border-white/5 flex-wrap">
-                            {/* Selector */}
+                        <div className="flex items-center gap-4 pt-3 border-t border-slate-100 flex-wrap">
                             {step.action_taken?.selector && (
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Target</span>
-                                    <code className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/50 border border-white/5 text-[10px] text-indigo-400 font-mono">
+                                    <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Target</span>
+                                    <code className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[10px] text-indigo-600 font-mono">
                                         <MousePointerClick className="h-2.5 w-2.5" />
                                         <span className="max-w-[140px] truncate">{step.action_taken.selector}</span>
                                     </code>
                                 </div>
                             )}
-
-                            {/* Typed text */}
                             {step.action_taken?.text && (
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Typed</span>
-                                    <code className="px-2 py-1 rounded-lg bg-slate-900/50 border border-white/5 text-[10px] text-amber-300 font-mono">
+                                    <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Typed</span>
+                                    <code className="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[10px] text-amber-600 font-mono">
                                         {step.action_taken.text}
                                     </code>
                                 </div>
@@ -259,20 +224,20 @@ export function StepFeedbackCard({ step, personaName }: StepFeedbackCardProps) {
                         </div>
                     )}
 
-                    {/* Navigation paths accordion */}
+                    {/* Navigation paths */}
                     {paths.length > 0 && (
-                        <div className="pt-2">
+                        <div className="pt-1">
                             <button
                                 onClick={() => setPathsOpen(!pathsOpen)}
-                                className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500 hover:text-slate-300 transition-colors"
+                                className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400 hover:text-slate-700 transition-colors"
                             >
                                 {pathsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                                {paths.length} Navigation Paths Identified
+                                {paths.length} navigation paths identified
                             </button>
                             {pathsOpen && (
                                 <div className="mt-3 flex flex-wrap gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
                                     {paths.map((p, i) => (
-                                        <span key={i} className="px-2 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] font-mono text-slate-400 hover:border-white/10 transition-colors">
+                                        <span key={i} className="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[10px] font-mono text-slate-500 hover:border-slate-300 transition-colors">
                                             {p}
                                         </span>
                                     ))}

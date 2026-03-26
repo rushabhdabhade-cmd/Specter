@@ -36,7 +36,7 @@ export function StopButton({ runId, status }: StopButtonProps) {
         <button
             onClick={handleStop}
             disabled={loading}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-red-500 text-sm font-bold transition-all border border-red-500/20 active:scale-95"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed text-red-600 text-sm font-medium transition-all active:scale-95"
         >
             {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

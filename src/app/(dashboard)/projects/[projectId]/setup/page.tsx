@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Users, Loader2, Sparkles, X, ChevronDown, ShoppingCart, Home, Settings, Target } from 'lucide-react';
+import { Globe, Zap, Plus, Check, ArrowLeft, User as UserIcon, Users, Loader2, Sparkles, X, ShoppingCart, Home, Settings, Target } from 'lucide-react';
 import Link from 'next/link';
 import { createTestRun, generateAIPersonas, suggestAudienceArchetypes } from '../../actions';
 import { SAMPLE_PERSONAS } from '@/lib/constants/personas';
@@ -42,7 +42,6 @@ export default function NewTestRunPage() {
   const [url, setUrl] = useState('');
   const [scope, setScope] = useState('');
 
-  // Auth state
   const [requiresAuth, setRequiresAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -69,12 +68,10 @@ export default function NewTestRunPage() {
   ]);
   const [selectedPersonaId, setSelectedPersonaId] = useState(1);
 
-  // AI Generation State
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiStep, setAiStep] = useState<'pending' | 'editor'>('pending');
 
-  // Auto-generate cohort when entering Step 2
   useEffect(() => {
     if (step === 2 && aiStep === 'pending' && !isAnalyzing && !isGenerating) {
       autoGenerateCohort();
@@ -86,7 +83,6 @@ export default function NewTestRunPage() {
     setIsGenerating(false);
     setError(null);
     try {
-      // Phase 1: scan site and get archetypes (always cached per URL)
       const archetypes = await suggestAudienceArchetypes({
         url,
         llmProvider,
@@ -95,7 +91,6 @@ export default function NewTestRunPage() {
       });
       const archetypeIds = (archetypes as any[]).map((a: any) => a.id);
 
-      // Phase 2: generate personas
       setIsAnalyzing(false);
       setIsGenerating(true);
       const generated = await generateAIPersonas({
@@ -110,7 +105,7 @@ export default function NewTestRunPage() {
       setSelectedPersonaId((generated as any)[0]?.id || 1);
       setAiStep('editor');
     } catch (err: any) {
-      setError(err.message || 'Auto-generation failed. You can add personas manually below.');
+      setError(err.message || 'Auto-generation failed. You can add users manually below.');
       setAiStep('editor');
     } finally {
       setIsAnalyzing(false);
@@ -133,7 +128,7 @@ export default function NewTestRunPage() {
       const newId = Math.max(...personas.map((p) => p.id), 0) + 1;
       const newPersona: Persona = {
         id: newId,
-        name: 'New Persona',
+        name: 'New User',
         geolocation: '',
         ageRange: '',
         techLiteracy: 'Medium',
@@ -194,84 +189,65 @@ export default function NewTestRunPage() {
       if (err.message === 'NEXT_REDIRECT' || err.digest?.startsWith('NEXT_REDIRECT')) {
         throw err;
       }
-      setError(err.message || 'Failed to launch test run. Please check your Supabase connection.');
+      setError(err.message || 'Failed to start test run. Please check your connection.');
       setIsLaunching(false);
     }
   };
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 flex min-h-full flex-col items-center pt-8 pb-20 duration-700">
-      {/* Progress Indicator */}
-      <div className="relative mb-24 flex w-full max-w-2xl items-center justify-between px-8">
-        {/* Connection Lines */}
-        <div className="absolute left-[12%] right-[12%] top-5 -z-10 h-[1px] bg-slate-700/60">
+    <div className="animate-in fade-in slide-in-from-bottom-4 flex min-h-full flex-col items-center pt-8 pb-20 duration-500">
+
+      {/* ── Step Indicator ── */}
+      <div className="relative mb-16 flex w-full max-w-lg items-center justify-between px-4">
+        {/* Connection line */}
+        <div className="absolute left-[12%] right-[12%] top-5 -z-10 h-px bg-slate-200">
           <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 transition-all duration-1000 ease-in-out shadow-[0_0_15px_rgba(99,102,241,0.5)]"
+            className="h-full bg-indigo-500 transition-all duration-700 ease-in-out"
             style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}
           />
         </div>
 
-        {/* Step 1 */}
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 1
-              ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
-              : 'border border-slate-600 bg-slate-800 text-slate-400'
-              }`}
-          >
-            {step > 1 ? <Check className="h-5 w-5" strokeWidth={3} /> : '01'}
+        {[
+          { num: 1, label: 'Website' },
+          { num: 2, label: 'AI Users' },
+          { num: 3, label: 'Launch' },
+        ].map(({ num, label }) => (
+          <div key={num} className="flex flex-col items-center gap-2.5">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 ${
+              step > num
+                ? 'bg-indigo-600 text-white'
+                : step === num
+                ? 'bg-indigo-600 text-white ring-4 ring-indigo-100'
+                : 'bg-white border-2 border-slate-200 text-slate-400'
+            }`}>
+              {step > num ? <Check className="h-4 w-4" strokeWidth={2.5} /> : num}
+            </div>
+            <span className={`text-xs font-medium transition-colors ${step >= num ? 'text-slate-700' : 'text-slate-400'}`}>
+              {label}
+            </span>
           </div>
-          <span className={`text-[10px] font-bold uppercase tracking-[0.15em] transition-colors duration-500 ${step >= 1 ? 'text-white' : 'text-slate-400'}`}>Target Domain</span>
-        </div>
-
-        {/* Step 2 */}
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 2
-              ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
-              : 'border border-slate-600 bg-slate-800 text-slate-400'
-              }`}
-          >
-            {step > 2 ? <Check className="h-5 w-5" strokeWidth={3} /> : '02'}
-          </div>
-          <span className={`text-[10px] font-bold uppercase tracking-[0.15em] transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-400'}`}>AI Personas</span>
-        </div>
-
-        {/* Step 3 */}
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 3
-              ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
-              : 'border border-slate-600 bg-slate-800 text-slate-400'
-              }`}
-          >
-            <Zap className={`h-5 w-5 ${step >= 3 ? 'fill-current' : ''}`} />
-          </div>
-          <span className={`text-[10px] font-bold uppercase tracking-[0.15em] transition-colors duration-500 ${step >= 3 ? 'text-white' : 'text-slate-400'}`}>Launch</span>
-        </div>
+        ))}
       </div>
 
-
+      {/* ── Step 1: Website ── */}
       {step === 1 && (
-        <div className="flex w-full max-w-2xl flex-col items-center space-y-10 text-center">
-          <div className="space-y-3">
-            <h1 className="text-4xl font-bold tracking-tight text-white">Where are we going?</h1>
-            <p className="text-lg text-slate-400">
-              Enter the URL of the web application you want Specter to explore.
+        <div className="flex w-full max-w-2xl flex-col items-center space-y-8 text-center">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-slate-900">Which website do you want to test?</h1>
+            <p className="text-slate-500">
+              Enter the URL and Specter will send AI users to explore it.
             </p>
           </div>
 
-          <div className="w-full space-y-8 rounded-2xl border border-slate-700/50 bg-slate-800/50 p-10 relative overflow-hidden">
+          <div className="w-full space-y-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
 
-            <div className="space-y-3 text-left">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                  <Globe className="h-4 w-4 text-indigo-400" />
-                </div>
-                <span className="text-sm font-semibold text-white">Website URL <span className="text-red-400 ml-0.5">*</span></span>
+            <div className="space-y-2.5 text-left">
+              <div className="flex items-center gap-2.5">
+                <Globe className="h-4 w-4 text-indigo-500" />
+                <label className="text-sm font-medium text-slate-700">Website URL <span className="text-red-400">*</span></label>
               </div>
               {error && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in fade-in slide-in-from-top-1">
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm animate-in fade-in slide-in-from-top-1">
                   {error}
                 </div>
               )}
@@ -279,147 +255,62 @@ export default function NewTestRunPage() {
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl px-5 py-4 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all"
-                placeholder="https://yourapp.build"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
+                placeholder="https://yourapp.com"
               />
             </div>
 
-            <div className="space-y-3 text-left">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                  <Target className="h-4 w-4 text-indigo-400" />
-                </div>
-                <div>
-                  <span className="text-sm font-semibold text-white">Testing Scope</span>
-                  <span className="ml-2 text-xs text-slate-400">(optional)</span>
-                </div>
+            <div className="space-y-2.5 text-left">
+              <div className="flex items-center gap-2.5">
+                <Target className="h-4 w-4 text-indigo-500" />
+                <label className="text-sm font-medium text-slate-700">Focus area <span className="text-slate-400 text-xs font-normal">(optional)</span></label>
               </div>
               <textarea
-                rows={4}
+                rows={3}
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl px-5 py-4 text-base text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all resize-none"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all resize-none"
                 placeholder="e.g. Focus on user onboarding and payment flows, ignore the help center."
               />
             </div>
 
-            {/* Credentials Section */}
-            {/* <div className="space-y-6 text-left pt-2 border-t border-white/5">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <UserIcon className="h-4 w-4" />
-                  <span className="text-xs font-bold uppercase tracking-widest">Access Control</span>
-                </div>
-                <p className="text-sm text-slate-500">
-                  Does this application require a login to access certain pages or features?
-                </p>
+            {/* AI Model Selection */}
+            <div className="space-y-3 text-left pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <Zap className="h-4 w-4 text-indigo-500" />
+                <label className="text-sm font-medium text-slate-700">AI Model</label>
               </div>
 
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setRequiresAuth(false)}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${!requiresAuth
-                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
-                    }`}
-                >
-                  <span className="text-sm font-bold">Public App</span>
-                  <span className="text-[10px] uppercase opacity-60">No login required</span>
-                </button>
-                <button
-                  onClick={() => setRequiresAuth(true)}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${requiresAuth
-                    ? 'bg-white/5 border-white/20 text-white shadow-lg'
-                    : 'bg-transparent border-white/5 text-slate-600 hover:border-white/10'
-                    }`}
-                >
-                  <span className="text-sm font-bold">Protected App</span>
-                  <span className="text-[10px] uppercase opacity-60">Credentials needed</span>
-                </button>
-              </div>
-
-              {requiresAuth && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                    <p className="text-[10px] text-slate-500 font-medium">
-                      Specter will use these credentials to bypass the login wall during testing.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Username / Email</label>
-                      <input
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all shadow-inner"
-                        placeholder="test@example.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Password</label>
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-[#111111] border border-white/5 rounded-xl p-4 text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all shadow-inner"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div> */}
-
-
-            {/* AI Engine Section */}
-            <div className="space-y-5 text-left pt-2 border-t border-slate-700/50">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                  <Zap className="h-4 w-4 text-indigo-400" />
-                </div>
-                <span className="text-sm font-semibold text-white">AI Engine</span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setLlmProvider('gemini'); setLlmApiKey(''); setLlmModelName(''); }}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'gemini' ? 'bg-indigo-500/10 border-indigo-500/40 text-white shadow-lg' : 'bg-slate-700/30 border-slate-600/50 text-slate-300 hover:border-slate-500 hover:text-white'}`}
-                >
-                  <span className="text-sm font-bold">Gemini</span>
-                  <span className="text-[10px] opacity-60 leading-tight">Google Flash 2.0 · Free tier</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLlmProvider('openrouter')}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'openrouter' ? 'bg-indigo-500/10 border-indigo-500/40 text-white shadow-lg' : 'bg-slate-700/30 border-slate-600/50 text-slate-300 hover:border-slate-500 hover:text-white'}`}
-                >
-                  <span className="text-sm font-bold">OpenRouter</span>
-                  <span className="text-[10px] opacity-60 leading-tight">100+ vision models</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setLlmProvider('ollama'); setLlmModelName(''); }}
-                  className={`flex flex-col items-start gap-2 p-4 rounded-2xl border transition-all text-left ${llmProvider === 'ollama' ? 'bg-indigo-500/10 border-indigo-500/40 text-white shadow-lg' : 'bg-slate-700/30 border-slate-600/50 text-slate-300 hover:border-slate-500 hover:text-white'}`}
-                >
-                  <span className="text-sm font-bold">Local</span>
-                  <span className="text-[10px] opacity-60 leading-tight">Ollama · No API needed</span>
-                </button>
+              <div className="grid grid-cols-3 gap-2.5">
+                {[
+                  { id: 'gemini', label: 'Gemini', sub: 'Google Flash 2.0 · Free' },
+                  { id: 'openrouter', label: 'OpenRouter', sub: '100+ vision models' },
+                  { id: 'ollama', label: 'Local', sub: 'Ollama · No API needed' },
+                ].map(({ id, label, sub }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => { setLlmProvider(id as any); if (id !== 'openrouter') { setLlmApiKey(''); if (id !== 'ollama') setLlmModelName(''); } }}
+                    className={`flex flex-col items-start gap-1.5 p-3.5 rounded-xl border transition-all text-left ${llmProvider === id ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-100' : 'bg-white border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <span className="text-sm font-semibold text-slate-900">{label}</span>
+                    <span className="text-xs text-slate-400 leading-tight">{sub}</span>
+                  </button>
+                ))}
               </div>
 
               {llmProvider === 'openrouter' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Model ID</label>
+                      <label className="text-xs font-medium text-slate-600">Model ID</label>
                       <a
                         href="https://openrouter.ai/models?fmt=cards&input_modalities=image"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-bold uppercase tracking-widest"
+                        className="text-xs text-indigo-600 hover:text-indigo-700 transition-colors"
                       >
-                        Browse vision models ↗
+                        Browse models ↗
                       </a>
                     </div>
                     <input
@@ -427,52 +318,49 @@ export default function NewTestRunPage() {
                       value={llmModelName}
                       onChange={(e) => setLlmModelName(e.target.value)}
                       placeholder="e.g. anthropic/claude-3-5-sonnet"
-                      className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all font-mono text-sm"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-mono text-sm"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">OpenRouter API Key</label>
+                    <label className="text-xs font-medium text-slate-600">OpenRouter API Key</label>
                     <input
                       type="password"
                       value={llmApiKey}
                       onChange={(e) => setLlmApiKey(e.target.value)}
-                      placeholder="sk-or-v1-••••••••••••••••••••••••••••••"
-                      className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all"
+                      placeholder="sk-or-v1-••••••••••••••••••••"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
                     />
                   </div>
                 </div>
               )}
 
-              {/* Custom Persona Prompt */}
+              {/* Custom persona instructions */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Custom Persona Instructions</label>
-                  <span className="text-xs text-slate-400">Optional</span>
+                  <label className="text-xs font-medium text-slate-600">Guide the AI users <span className="text-slate-400 font-normal">(optional)</span></label>
                 </div>
                 <textarea
                   value={personaPrompt}
                   onChange={(e) => setPersonaPrompt(e.target.value)}
-                  placeholder="e.g. Focus on first-time users who are non-technical, aged 40+, and skeptical of new software..."
+                  placeholder="e.g. Focus on first-time users who are non-technical, aged 40+..."
                   rows={3}
-                  className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/60 transition-all resize-none text-sm leading-relaxed"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all resize-none text-sm"
                 />
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Guide the AI when generating personas. Leave blank to let it decide automatically.
+                <p className="text-xs text-slate-400">
+                  Guide the AI when creating test users. Leave blank to let it decide automatically.
                 </p>
               </div>
-
             </div>
 
             <button
               onClick={() => {
                 let targetUrl = url.trim();
                 if (!targetUrl) {
-                  setError('Application URL is required.');
+                  setError('Please enter a website URL.');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                   return;
                 }
 
-                // Add protocol if missing
                 if (!targetUrl.startsWith('http')) {
                   targetUrl = `https://${targetUrl}`;
                 }
@@ -482,7 +370,7 @@ export default function NewTestRunPage() {
                   if (!parsed.hostname.includes('.')) {
                     throw new Error('Invalid hostname');
                   }
-                  setUrl(parsed.href); // Save the normalized URL (ensures consistent cache keys)
+                  setUrl(parsed.href);
                 } catch (e) {
                   setError('Please enter a valid URL (e.g., https://example.com)');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -491,7 +379,7 @@ export default function NewTestRunPage() {
 
                 if (llmProvider === 'openrouter') {
                   if (!llmModelName.trim()) {
-                    setError('Please enter a model ID for OpenRouter (e.g. anthropic/claude-3-5-sonnet).');
+                    setError('Please enter a model ID for OpenRouter.');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                   }
@@ -504,71 +392,73 @@ export default function NewTestRunPage() {
 
                 setStep(2);
               }}
-              className="relative w-full py-8 mt-4 rounded-[32px] bg-white text-black font-black uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all active:scale-[0.98] shadow-[0_20px_40px_-12px_rgba(255,255,255,0.3)] group overflow-hidden"
+              className="w-full py-3.5 mt-2 rounded-xl bg-indigo-600 text-white font-semibold flex items-center justify-center gap-2.5 transition-all hover:bg-indigo-700 active:scale-[0.99] shadow-sm"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 via-transparent to-indigo-400/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-              <span className="relative">Configure Persona Cohort</span>
-              <ChevronRight className="relative h-5 w-5 group-hover:translate-x-1.5 transition-transform" strokeWidth={3} />
+              Set up AI users
+              <Check className="h-4 w-4" />
             </button>
           </div>
         </div>
       )}
 
+      {/* ── Step 2: AI Users ── */}
       {step === 2 && (
-        <div className="w-full max-w-5xl flex flex-col items-center space-y-10">
-          <div className="text-center space-y-3">
-            <h1 className="text-4xl font-bold tracking-tight text-white">Build your cohort</h1>
-            <p className="text-slate-400 text-lg">
-              {isAnalyzing || isGenerating ? 'Specter is scanning your site and generating personas...' : 'Review and refine the AI-generated personas. (Limit: 5)'}
+        <div className="w-full max-w-5xl flex flex-col items-center space-y-8">
+          <div className="text-center space-y-2">
+            <h1 className="text-2xl font-bold text-slate-900">Set up your AI users</h1>
+            <p className="text-slate-500">
+              {isAnalyzing || isGenerating ? 'Specter is scanning your site and creating AI users...' : 'Review and edit the AI-generated users. (Max 5)'}
             </p>
           </div>
 
           {(isAnalyzing || isGenerating) ? (
-            <div className="w-full max-w-3xl bg-slate-800/50 border border-slate-700/50 rounded-2xl p-10 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
-              <div className="flex flex-col items-center justify-center py-20 space-y-6">
+            <div className="w-full max-w-3xl bg-white border border-slate-200 rounded-2xl p-10 shadow-sm animate-in fade-in slide-in-from-bottom-4">
+              <div className="flex flex-col items-center justify-center py-16 space-y-5">
                 <div className="relative">
-                  <Loader2 className="h-16 w-16 animate-spin text-white/20" />
-                  <Sparkles className="absolute inset-0 m-auto h-8 w-8 text-white animate-pulse" />
+                  <Loader2 className="h-14 w-14 animate-spin text-slate-200" />
+                  <Sparkles className="absolute inset-0 m-auto h-7 w-7 text-indigo-500 animate-pulse" />
                 </div>
-                <div className="space-y-2 text-center">
-                  <h2 className="text-xl font-bold text-white uppercase tracking-tighter">
-                    {isAnalyzing ? 'Scanning your site...' : 'Crafting your cohort...'}
+                <div className="space-y-1.5 text-center">
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {isAnalyzing ? 'Scanning your site...' : 'Creating AI users...'}
                   </h2>
-                  <p className="text-slate-500 text-sm">
+                  <p className="text-slate-400 text-sm">
                     {isAnalyzing
                       ? `Analyzing ${(() => { try { return new URL(url).hostname; } catch { return url; } })()} to understand your audience`
-                      : 'Generating personas based on your site context'}
+                      : 'Generating users based on your site context'}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setStep(1)}
-                className="w-full pt-4 text-slate-400 text-xs font-semibold hover:text-white transition-colors"
+                className="w-full pt-4 text-slate-400 text-sm hover:text-slate-700 transition-colors"
               >
                 ← Cancel
               </button>
             </div>
           ) : (
             <>
-              <div className="w-full flex gap-8 items-start">
+              <div className="w-full flex gap-6 items-start">
                 {/* Sidebar List */}
-                <div className="w-72 flex flex-col gap-4 sticky top-8">
-                  <div className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">Your Cohort</div>
-                  <div className="space-y-2">
+                <div className="w-64 flex flex-col gap-3 sticky top-8">
+                  <div className="text-xs font-medium text-slate-500 px-1">Your AI users</div>
+                  <div className="space-y-1.5">
                     {personas.map((p, idx) => (
                       <div key={p.id} className="group relative">
                         <button
                           onClick={() => setSelectedPersonaId(p.id)}
-                          className={`w-full text-left p-4 rounded-xl border flex items-center gap-4 transition-all ${selectedPersonaId === p.id
-                            ? 'bg-[#1a1a1a] border-white/10 text-white shadow-lg'
-                            : 'bg-transparent border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300'
-                            }`}
+                          className={`w-full text-left px-3.5 py-3 rounded-xl border flex items-center gap-3 transition-all ${
+                            selectedPersonaId === p.id
+                              ? 'bg-indigo-50 border-indigo-200 text-slate-900 shadow-sm'
+                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                          }`}
                         >
-                          <span className={`min-w-[24px] h-6 px-1 rounded flex items-center justify-center text-[10px] font-bold shrink-0 ${selectedPersonaId === p.id ? 'bg-white text-black' : 'bg-slate-700 text-slate-300'
-                            }`}>
+                          <span className={`min-w-[22px] h-5.5 px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 flex items-center justify-center ${
+                            selectedPersonaId === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                          }`}>
                             {idx + 1}
                           </span>
-                          <span className="font-semibold text-sm truncate">{p.name}</span>
+                          <span className="text-sm font-medium truncate">{p.name}</span>
                         </button>
                         {personas.length > 1 && (
                           <button
@@ -576,7 +466,7 @@ export default function NewTestRunPage() {
                               e.stopPropagation();
                               removePersona(p.id);
                             }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-red-50 border border-red-200 text-red-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -584,22 +474,22 @@ export default function NewTestRunPage() {
                       </div>
                     ))}
 
-                    <div className="pt-2 space-y-2">
+                    <div className="pt-1.5 space-y-1.5">
                       <button
                         onClick={() => setShowLibrary(true)}
-                        className="w-full p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20 flex flex-col items-center justify-center gap-2 group transition-all"
+                        className="w-full p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100 flex items-center justify-center gap-2 transition-all text-sm font-medium"
                       >
-                        <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Browse Library</span>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Browse library
                       </button>
 
                       {personas.length < 5 && (
                         <button
                           onClick={addPersona}
-                          className="w-full p-4 rounded-xl border border-dashed border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300 flex flex-col items-center justify-center gap-2 group transition-all"
+                          className="w-full p-3 rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700 flex items-center justify-center gap-2 transition-all text-sm"
                         >
-                          <Plus className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                          <span className="text-[10px] font-bold uppercase tracking-tighter">Add Persona</span>
+                          <Plus className="h-3.5 w-3.5" />
+                          Add user
                         </button>
                       )}
                     </div>
@@ -607,137 +497,138 @@ export default function NewTestRunPage() {
 
                   <button
                     onClick={() => { setAiStep('pending'); autoGenerateCohort(); }}
-                    className="w-full py-4 text-indigo-500/60 text-[10px] font-bold uppercase tracking-widest hover:text-indigo-400 transition-colors"
+                    className="w-full py-2.5 text-indigo-500 text-xs font-medium hover:text-indigo-700 transition-colors"
                   >
-                    ↺ Regenerate Cohort
+                    ↺ Regenerate
                   </button>
                 </div>
 
-                {/* Editor Area */}
-                <div className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-2xl p-8 space-y-8 shadow-2xl relative overflow-hidden">
-                  <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-700/50">
-                    <div className="space-y-1">
-                      <h2 className="text-xl font-bold text-white">Edit Persona</h2>
-                      <p className="text-xs font-semibold text-slate-400">Attributes & Behaviour</p>
+                {/* Editor */}
+                <div className="flex-1 bg-white border border-slate-200 rounded-2xl p-7 space-y-6 shadow-sm">
+                  <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                    <div className="space-y-0.5">
+                      <h2 className="text-base font-semibold text-slate-900">Edit user</h2>
+                      <p className="text-xs text-slate-400">Adjust profile and behavior</p>
                     </div>
-                    <div className="bg-slate-700/60 px-2 py-1 rounded text-xs font-bold text-slate-300 border border-slate-600/50 uppercase">
+                    <div className="bg-slate-100 px-2 py-1 rounded text-xs font-medium text-slate-500">
                       #{selectedPersona.id}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6 text-left">
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Category Name</label>
+                  <div className="grid grid-cols-2 gap-5 text-left">
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-slate-600">User type name</label>
                       <input
                         type="text"
                         value={selectedPersona.name}
                         onChange={(e) => updatePersona(selectedPersona.id, 'name', e.target.value)}
-                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-sm"
                       />
                     </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Geolocation</label>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-slate-600">Location</label>
                       <input
                         type="text"
                         value={selectedPersona.geolocation}
-                        placeholder="e.g. United States / Region"
+                        placeholder="e.g. United States"
                         onChange={(e) => updatePersona(selectedPersona.id, 'geolocation', e.target.value)}
-                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-sm"
                       />
                     </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Age Range</label>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-slate-600">Age range</label>
                       <input
                         type="text"
                         value={selectedPersona.ageRange}
                         placeholder="e.g. 22-35"
                         onChange={(e) => updatePersona(selectedPersona.id, 'ageRange', e.target.value)}
-                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-sm"
                       />
                     </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Technical Literacy</label>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-slate-600">Tech skill level</label>
                       <select
                         value={selectedPersona.techLiteracy}
                         onChange={(e) => updatePersona(selectedPersona.id, 'techLiteracy', e.target.value)}
-                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all appearance-none"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all appearance-none text-sm"
                       >
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
                         <option value="High">High</option>
                       </select>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cohort Size</label>
+                        <label className="text-xs font-medium text-slate-600">Run count</label>
                         <span className="text-xs text-slate-400">How many run in parallel</span>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5">
                         <input
                           type="number"
                           min="1"
                           max="10"
                           value={selectedPersona.personaCount}
                           onChange={(e) => updatePersona(selectedPersona.id, 'personaCount', parseInt(e.target.value) || 1)}
-                          className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
+                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-sm"
                         />
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-700/60 border border-slate-600/50">
-                          <Users className="h-5 w-5 text-slate-400" />
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 border border-slate-200">
+                          <Users className="h-4 w-4 text-slate-400" />
                         </div>
                       </div>
                     </div>
-                    <div className="col-span-2 space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Domain Familiarity</label>
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-xs font-medium text-slate-600">App familiarity</label>
                       <input
                         type="text"
                         value={selectedPersona.domainFamiliarity}
                         placeholder="e.g. Familiar with SaaS tools"
                         onChange={(e) => updatePersona(selectedPersona.id, 'domainFamiliarity', e.target.value)}
-                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all text-sm"
                       />
                     </div>
-                    <div className="col-span-2 space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Mindset / Prompt</label>
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-xs font-medium text-slate-600">Goal & behavior</label>
                       <textarea
-                        rows={5}
+                        rows={4}
                         value={selectedPersona.prompt}
                         placeholder="e.g. Skeptical budget-cutter looking for pricing first"
                         onChange={(e) => updatePersona(selectedPersona.id, 'prompt', e.target.value)}
-                        className="w-full bg-slate-900/60 border border-slate-600/50 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500/60 hover:border-slate-500 transition-all resize-none"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all resize-none text-sm"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="w-full flex flex-col gap-4 pt-2">
+              <div className="w-full flex flex-col gap-3 pt-2">
                 {error && (
-                  <div className="w-full p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium animate-in fade-in slide-in-from-top-2">
+                  <div className="w-full p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm animate-in fade-in slide-in-from-top-2">
                     {error}
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     disabled={isLaunching}
                     onClick={() => { setStep(1); setAiStep('pending'); setError(null); }}
-                    className="px-10 py-6 rounded-2xl bg-slate-700/50 border border-slate-600/50 text-white font-bold hover:bg-slate-700 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                    className="px-6 py-3.5 rounded-xl bg-white border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
+                    <ArrowLeft className="h-4 w-4" />
                     Back
                   </button>
                   <button
                     disabled={isLaunching}
                     onClick={handleLaunch}
-                    className="py-6 rounded-2xl bg-white text-black font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(255,255,255,0.1)] group disabled:bg-slate-300 disabled:cursor-not-allowed"
+                    className="py-3.5 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {isLaunching ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Launching Workers...
+                        Starting test...
                       </>
                     ) : (
                       <>
-                        Confirm Cohort & Launch
-                        <Zap className="h-4 w-4 fill-current group-hover:scale-110 transition-transform" />
+                        Start test run
+                        <Zap className="h-4 w-4" />
                       </>
                     )}
                   </button>
@@ -748,67 +639,67 @@ export default function NewTestRunPage() {
         </div>
       )}
 
-      {/* Persona Library Modal */}
+      {/* ── User Library Modal ── */}
       {showLibrary && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="relative w-full max-w-4xl max-h-[85vh] bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl max-h-[85vh] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="p-8 border-b border-slate-700/50 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                  <Sparkles className="h-6 w-6 text-indigo-400" />
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center">
+                  <Sparkles className="h-5 w-5 text-indigo-500" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-white">Persona Library</h2>
-                  <p className="text-xs text-slate-500 font-medium">Ready-to-use personas with distinct behaviors & expertise.</p>
+                  <h2 className="text-lg font-semibold text-slate-900">User Library</h2>
+                  <p className="text-xs text-slate-400">Ready-to-use AI user profiles.</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowLibrary(false)}
-                className="h-10 w-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-500 hover:text-white transition-colors"
+                className="h-9 w-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {SAMPLE_PERSONAS.map((sample) => (
                   <div
                     key={sample.id}
-                    className="group p-6 rounded-2xl border border-slate-700/50 bg-slate-700/20 hover:bg-slate-700/40 hover:border-indigo-500/40 transition-all cursor-pointer relative"
+                    className="group p-5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30 transition-all cursor-pointer relative"
                     onClick={() => addFromLibrary(sample)}
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="space-y-1">
-                        <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{sample.name}</h3>
-                        <p className="text-[10px] text-slate-400 font-medium">{sample.description}</p>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="space-y-0.5">
+                        <h3 className="text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{sample.name}</h3>
+                        <p className="text-xs text-slate-400">{sample.description}</p>
                       </div>
-                      <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border
-                        ${sample.techLiteracy === 'High' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                          sample.techLiteracy === 'Low' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
-                            'bg-blue-500/10 border-blue-500/20 text-blue-500'}`}>
-                        {sample.techLiteracy} Literacy
+                      <div className={`px-2.5 py-1 rounded-full text-xs font-medium border flex-shrink-0 ml-3 ${
+                        sample.techLiteracy === 'High' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                        sample.techLiteracy === 'Low' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                          'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                        {sample.techLiteracy}
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-3 w-3 text-slate-400" />
-                        <span className="text-[10px] text-slate-400 font-medium">{sample.geolocation}</span>
-                        <div className="h-1 w-1 rounded-full bg-slate-700" />
-                        <span className="text-[10px] text-slate-400 font-medium">{sample.ageRange} years</span>
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <Globe className="h-3 w-3" />
+                        <span>{sample.geolocation}</span>
+                        <span>·</span>
+                        <span>{sample.ageRange} years</span>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-black/40 border border-white/10 text-[11px] text-slate-300 leading-relaxed italic">
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs text-slate-500 leading-relaxed">
                         &ldquo;{sample.prompt.slice(0, 120)}...&rdquo;
                       </div>
                     </div>
 
-                    <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                      <div className="h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                        <Plus className="h-4 w-4 text-white" />
+                    <div className="absolute bottom-5 right-5 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                      <div className="h-7 w-7 rounded-full bg-indigo-600 flex items-center justify-center shadow-sm">
+                        <Plus className="h-3.5 w-3.5 text-white" />
                       </div>
                     </div>
                   </div>
@@ -817,14 +708,20 @@ export default function NewTestRunPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 border-t border-slate-700/50 bg-slate-800/80 text-center">
-              <p className="text-xs text-slate-400 font-semibold">
-                Select a persona to add it to your testing cohort
+            <div className="p-4 border-t border-slate-100 bg-slate-50 text-center">
+              <p className="text-xs text-slate-400">
+                Click a user to add them to your test
               </p>
             </div>
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 10px; }
+      `}</style>
     </div>
   );
 }
