@@ -4,6 +4,7 @@ import {
   Sparkles, Layers, MousePointer2, Users, Clock, Brain,
 } from 'lucide-react';
 import ScrollyHero from '@/components/marketing/ScrollyHero';
+import LegoModelWrapper from '@/components/marketing/LegoModelWrapper';
 
 export default function Home() {
   return (
@@ -12,32 +13,11 @@ export default function Home() {
       {/* ── SCROLLYTELLING HERO (0–500vh sticky canvas) ── */}
       <ScrollyHero />
 
-      {/* ── STATS ─────────────────────────────────────────────────────── */}
-      <section className="py-20 border-y border-white/6 bg-[#0a0a1a]">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-12 text-center">
-            {[
-              { label: 'Issues found', value: '852k+', icon: Target },
-              { label: 'AI users created', value: '42k+', icon: Users },
-              { label: 'Testing hours saved', value: '125k', icon: Clock },
-              { label: 'Accuracy rate', value: '99.4%', icon: ShieldCheck },
-            ].map((stat, i) => (
-              <div key={i} className="space-y-3 group">
-                <div className="mx-auto h-12 w-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-indigo-400 group-hover:border-indigo-500/30 transition-all">
-                  <stat.icon className="h-5 w-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-4xl font-bold tracking-tight text-white/90">{stat.value}</p>
-                  <p className="text-sm text-white/40">{stat.label}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── 3D AI PERSONA MODEL ── */}
+      <LegoModelWrapper />
 
       {/* ── FEATURES ──────────────────────────────────────────────────── */}
-      <section className="px-6 py-32 bg-[#060610]">
+      <section className="px-6 py-32 bg-[#060610] border-t border-white/5">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 mb-20">
             <div className="max-w-xl space-y-4">

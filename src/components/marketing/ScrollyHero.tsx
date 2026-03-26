@@ -221,10 +221,10 @@ export default function ScrollyHero() {
         <div
           ref={b3}
           style={{ opacity: 0 }}
-          className="absolute inset-0 flex items-center justify-end pr-16 md:pr-28 pointer-events-none"
+          className="absolute inset-0 flex items-center justify-start pl-8 md:pl-28 max-w-[1600px] mx-auto pointer-events-none"
         >
-          <div className="max-w-lg space-y-6 text-right">
-            <div className="h-px w-16 bg-cyan-600/40 ml-auto" />
+          <div className="max-w-xl space-y-6 text-left">
+            <div className="h-px w-16 bg-cyan-600/60" />
             <h2
               className="text-5xl md:text-6xl font-bold tracking-tight"
               style={gradientText('#0f172a', '#312e81')}
@@ -277,22 +277,46 @@ export default function ScrollyHero() {
           style={{ opacity: 0 }}
           className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 pointer-events-none"
         >
-          <h2
-            className="text-6xl md:text-[5.5rem] font-extrabold tracking-tight mb-4 leading-[1.02]"
-            style={gradientText('#0f172a', '#312e81')}
-          >
-            Ship with confidence.<br />Launch with proof.
-          </h2>
+          {/* Soft white radial glow behind text — same light-BG feel as other beats */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                'radial-gradient(ellipse 55% 45% at 50% 50%, rgba(255,255,255,0.45) 0%, transparent 70%)',
+            }}
+          />
 
-
-          <div className="flex flex-col sm:flex-row items-center gap-4 pointer-events-auto">
-            <Link
-              href="/dashboard"
-              className="px-8 py-4 rounded-xl bg-white font-semibold text-sm text-[#0f172a] transition-all hover:scale-105 active:scale-95 shadow-[0_4px_24px_rgba(79,70,229,0.25)]"
+          <div className="relative space-y-5 max-w-3xl">
+            <h2
+              className="text-[2.2rem] sm:text-[3.2rem] md:text-[4.2rem] font-extrabold tracking-tight leading-[1.08]"
+              style={{
+                ...gradientText('#0f172a', '#312e81'),
+                filter: 'drop-shadow(0 0 18px rgba(255,255,255,0.7))',
+              }}
             >
-              Start your first test
-            </Link>
+              Ship with confidence.<br />Launch with proof.
+            </h2>
 
+            <p
+              className="text-base sm:text-lg font-medium"
+              style={{ color: '#334155', filter: 'drop-shadow(0 1px 8px rgba(255,255,255,0.8))' }}
+            >
+              Specter. Designed for teams who care what users actually experience.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 pointer-events-auto">
+              <Link
+                href="/product"
+                className="px-7 py-3.5 rounded-xl text-sm font-semibold text-slate-800 hover:text-slate-900 transition-all hover:scale-105 active:scale-95 pointer-events-auto"
+                style={{
+                  background: 'rgba(255,255,255,0.88)',
+                  border: '1px solid rgba(15,23,42,0.12)',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.28), 0 1px 4px rgba(0,0,0,0.18)',
+                }}
+              >
+                Start your first test →
+              </Link>
+            </div>
           </div>
         </div>
 
