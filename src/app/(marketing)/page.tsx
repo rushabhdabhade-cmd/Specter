@@ -203,7 +203,7 @@ function FeatureCard({
   description,
   accent,
 }: {
-  icon: React.ElementType;
+  icon: React.ElementType<{ className?: string }>;
   title: string;
   description: string;
   accent: string;
