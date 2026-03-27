@@ -186,44 +186,32 @@ export async function suggestAudienceArchetypes(formData: {
     }
 
     // Browser scraping always uses env Gemini key (Stagehand requirement)
-    console.log(`[suggestAudienceArchetypes] Starting browser discovery for ${formData.url}`);
     const browser = new BrowserService();
     let siteContext = "";
 
     try {
-        console.log(`[suggestAudienceArchetypes] Initializing browser...`);
-        const initStart = Date.now();
         await browser.init("google/gemini-2.0-flash", process.env.GEMINI_API_KEY);
-        console.log(`[suggestAudienceArchetypes] Browser init'd in ${Date.now() - initStart}ms. Navigating...`);
-        
-        const navStart = Date.now();
         await browser.navigate(formData.url);
-        console.log(`[suggestAudienceArchetypes] Navigated in ${Date.now() - navStart}ms. Observing...`);
-        
-        const obsStart = Date.now();
         const observation = await browser.observe();
-        console.log(`[suggestAudienceArchetypes] Observed in ${Date.now() - obsStart}ms.`);
 
         siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
         if (observation.sections) {
             siteContext += observation.sections.map((s: any, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
         }
-    } catch (err: any) {
-        console.error(`[suggestAudienceArchetypes] Browser discovery failed: ${err.message}`);
-        siteContext = `URL: ${formData.url} (Discovery failed)`;
+        console.log('Site context captured successfully.');
+    } catch (err) {
+        console.error('Browser discovery failed for archetype suggestion fallback to URL:', err);
+        siteContext = `URL: ${formData.url}`;
     } finally {
-        console.log(`[suggestAudienceArchetypes] Closing browser.`);
-        await browser.close().catch(() => {});
+        await browser.close();
     }
 
     const provider = formData.llmProvider || 'gemini';
     const apiKey = formData.llmApiKey || (provider === 'gemini' ? process.env.GEMINI_API_KEY : undefined);
-    console.log(`[suggestAudienceArchetypes] Using LLM provider: ${provider}`);
     const llm = new LLMService({ provider, apiKey, modelName: formData.llmModelName });
 
-    const suggestStart = Date.now();
     const suggested = await llm.suggestArchetypes(siteContext);
-    console.log(`[suggestAudienceArchetypes] LLM suggested archetypes in ${Date.now() - suggestStart}ms.`);
+    console.log(`LLM suggested ${(suggested as any).length || 0} archetypes.`);
 
     // Cache the result
     try {
@@ -274,44 +262,31 @@ export async function generateAIPersonas(formData: {
     }
 
     // Browser scraping always uses env Gemini key (Stagehand requirement)
-    console.log(`[generateAIPersonas] Starting browser discovery for ${formData.url}`);
     const browser = new BrowserService();
     let siteContext = "";
 
     try {
-        console.log(`[generateAIPersonas] Initializing browser...`);
-        const initStart = Date.now();
         await browser.init("google/gemini-2.0-flash", process.env.GEMINI_API_KEY);
-        console.log(`[generateAIPersonas] Browser init'd in ${Date.now() - initStart}ms. Navigating...`);
-        
-        const navStart = Date.now();
         await browser.navigate(formData.url);
-        console.log(`[generateAIPersonas] Navigated in ${Date.now() - navStart}ms. Observing...`);
-        
-        const obsStart = Date.now();
         const observation = await browser.observe();
-        console.log(`[generateAIPersonas] Observed in ${Date.now() - obsStart}ms.`);
 
         siteContext = `URL: ${formData.url}\nTitle: ${observation.title}\n`;
         if (observation.sections) {
             siteContext += observation.sections.map((s: any, i: number) => `Section ${i}: ${s.domContext}`).join('\n');
         }
-    } catch (err: any) {
-        console.error(`[generateAIPersonas] Browser discovery failed: ${err.message}`);
-        siteContext = `URL: ${formData.url} (Discovery failed)`;
+    } catch (err) {
+        console.error('Browser discovery failed for persona generation:', err);
+        siteContext = `URL: ${formData.url} (Manual discovery failed, using URL only)`;
     } finally {
-        console.log(`[generateAIPersonas] Closing browser.`);
-        await browser.close().catch(() => {});
+        await browser.close();
     }
 
     const provider = formData.llmProvider || 'gemini';
     const apiKey = formData.llmApiKey || (provider === 'gemini' ? process.env.GEMINI_API_KEY : undefined);
-    console.log(`[generateAIPersonas] Using LLM provider: ${provider}`);
     const llm = new LLMService({ provider, apiKey, modelName: formData.llmModelName });
 
-    const genStart = Date.now();
     const personas = await llm.generatePersonas(siteContext, formData.userPrompt, formData.archetypes);
-    console.log(`[generateAIPersonas] LLM generated personas in ${Date.now() - genStart}ms.`);
+    console.log(`LLM generated ${personas.length} personas.`);
 
     const result = personas.map((p: any, idx: number) => ({
         id: idx + 1,

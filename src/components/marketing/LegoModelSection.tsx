@@ -5,7 +5,7 @@ import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { Target, ShieldCheck, BrainCircuit, Sparkles, Search, UserPlus, Heart, Zap, Lock, MousePointer2 } from 'lucide-react';
+import { Target, ShieldCheck, BrainCircuit, Sparkles } from 'lucide-react';
 
 const TOTAL_FRAMES = 120;
 function frameSrc(i: number) {
@@ -241,9 +241,8 @@ export default function LegoModelSection() {
       // ── Thoughts (Stage 3) ──
       bubblesRef.current.forEach((bubble, i) => {
         if (!bubble) return;
-        // Stagger more bubbles over a shorter interval for a "swarm" effect
-        const popStart = 0.15 + (i * 0.04); 
-        const popEnd = popStart + 0.12;
+        const popStart = 0.2 + (i * 0.1);
+        const popEnd = popStart + 0.15;
         if (s3 <= popStart) {
           bubble.style.opacity = '0';
           bubble.style.transform = 'scale(0.8) translateY(20px)';
@@ -289,51 +288,21 @@ export default function LegoModelSection() {
 
         {/* STAGE 3: Portal & Thoughts */}
         <div ref={stage3Ref} className="absolute inset-0 z-20 pointer-events-none will-change-transform opacity-0" style={{ transform: 'translate3d(0, 100vh, 0)' }}>
-          <div ref={bgCircleRef} className="absolute top-1/2 left-1/2 w-[10vw] h-[10vw] rounded-full bg-[#72b2cc] will-change-transform z-0 origin-center pointer-events-none" style={{ opacity: 0, transform: 'translate(-50%, -50%) scale(0)', animation: 'pulse-circle 4s ease-in-out infinite alternate' }} />
+          <div ref={bgCircleRef} className="absolute top-1/2 left-1/2 w-[10vw] h-[10vw] rounded-full bg-[#72b2cc] will-change-transform z-0 origin-center pointer-events-none" style={{ opacity: 0, transform: 'translate(-50%, -50%) scale(0)' }} />
           <div className="relative w-full h-full flex items-center justify-center max-w-6xl mx-auto px-6">
             {[
-              { icon: BrainCircuit, text: "Wait, where is the pricing?", top: '15%', left: '10%', d: '1.2s' },
-              { icon: Sparkles, text: "Found it! Super intuitive UI.", top: '25%', right: '15%', d: '0.8s' },
-              { icon: ShieldCheck, text: "Checkout finished in 20s!", bottom: '35%', left: '12%', d: '1.5s' },
-              { icon: Target, text: "Friction Point: Confusion at Step 3", bottom: '20%', right: '10%', d: '2.1s' },
-              { icon: Search, text: "This font is way too small.", top: '10%', right: '35%', d: '0.5s' },
-              { icon: UserPlus, text: "Why do I need to sign up?", bottom: '15%', left: '35%', d: '1.8s' },
-              { icon: Heart, text: "Love the micro-interactions!", top: '45%', left: '8%', d: '2.5s' },
-              { icon: Zap, text: "Navigation is a bit clunky.", top: '65%', right: '8%', d: '1.0s' },
-              { icon: Lock, text: "Is this site secure?", bottom: '8%', right: '40%', d: '3.0s' },
-              { icon: MousePointer2, text: "Menu button is hard to hit", top: '55%', right: '25%', d: '1.3s' },
+              { icon: BrainCircuit, text: "Wait, where is the pricing?", top: '15%', left: '10%' },
+              { icon: Sparkles, text: "Found it! Super intuitive UI.", top: '35%', right: '20%' },
+              { icon: ShieldCheck, text: "Checkout finished in 20s!", bottom: '35%', left: '15%' },
+              { icon: Target, text: "Friction Point: Confusion at Step 3", bottom: '25%', right: '15%' },
             ].map((bubble, i) => (
-              <div 
-                key={i} 
-                ref={(el) => { if (el) bubblesRef.current[i] = el; }} 
-                className="absolute z-50 hidden md:flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white/80 backdrop-blur-md border border-white shadow-xl text-sm font-bold text-slate-700 will-change-transform" 
-                style={{ 
-                  top: bubble.top, 
-                  bottom: bubble.bottom, 
-                  left: bubble.left, 
-                  right: bubble.right, 
-                  opacity: 0, 
-                  transform: 'scale(0.8) translateY(20px)',
-                  animation: `float-bubble 3s ease-in-out infinite alternate ${bubble.d}`
-                }}
-              >
+              <div key={i} ref={(el) => { if (el) bubblesRef.current[i] = el; }} className="absolute z-50 hidden md:flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white/80 backdrop-blur-md border border-white shadow-xl text-sm font-bold text-slate-700 will-change-transform" style={{ top: bubble.top, bottom: bubble.bottom, left: bubble.left, right: bubble.right, opacity: 0, transform: 'scale(0.8) translateY(20px)' }}>
                 <bubble.icon className="h-4 w-4 text-indigo-500" />
                 {bubble.text}
               </div>
             ))}
           </div>
         </div>
-
-        <style jsx>{`
-          @keyframes float-bubble {
-            from { transform: translate(0, 0); }
-            to { transform: translate(0, -10px); }
-          }
-          @keyframes pulse-circle {
-            from { filter: brightness(1); }
-            to { filter: brightness(1.1) saturate(1.2); }
-          }
-        `}</style>
 
         {/* PERSISTENT LEGO MODEL (Stage 1 and 3) */}
         <div ref={canvasWrapperRef} className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none will-change-transform">
