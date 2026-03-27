@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Users, Loader2, Sparkles, X, ChevronDown, ShoppingCart, Home, Settings } from 'lucide-react';
+import { Globe, Zap, Plus, ChevronRight, Check, ArrowLeft, User as UserIcon, Users, Loader2, Sparkles, X, ChevronDown, ShoppingCart, Home, Settings, Target } from 'lucide-react';
 import Link from 'next/link';
 import { createTestRun, generateAIPersonas, suggestAudienceArchetypes } from '../../actions';
 import { SAMPLE_PERSONAS } from '@/lib/constants/personas';
@@ -212,52 +212,52 @@ export default function NewTestRunPage() {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 flex min-h-full flex-col items-center pt-8 pb-20 duration-700">
       {/* Progress Indicator */}
-      <div className="relative mb-20 flex w-full max-w-xl items-center justify-between px-4">
+      <div className="relative mb-24 flex w-full max-w-2xl items-center justify-between px-8">
         {/* Connection Lines */}
-        <div className="absolute left-[10%] top-5 -z-10 h-[2px] w-[80%] bg-white/5">
+        <div className="absolute left-[12%] right-[12%] top-5 -z-10 h-[1px] bg-white/5">
           <div
-            className="h-full bg-white/40 transition-all duration-700 ease-in-out shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+            className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 transition-all duration-1000 ease-in-out shadow-[0_0_15px_rgba(99,102,241,0.5)]"
             style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}
           />
         </div>
 
         {/* Step 1 */}
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4">
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ${step >= 1
-              ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-110'
-              : 'border border-white/10 bg-[#0a0a0a] text-slate-500'
+            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 1
+              ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
+              : 'border border-white/5 bg-white/[0.02] text-slate-600'
               }`}
           >
-            {step > 1 ? <Check className="h-5 w-5" /> : '1'}
+            {step > 1 ? <Check className="h-5 w-5" strokeWidth={3} /> : '01'}
           </div>
-          <span className={`text-[10px] font-bold uppercase tracking-widest transition-colors duration-500 ${step >= 1 ? 'text-white' : 'text-slate-600'}`}>Target</span>
+          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 1 ? 'text-white' : 'text-slate-600'}`}>Target Domain</span>
         </div>
 
         {/* Step 2 */}
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4">
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ${step >= 2
-              ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-110'
-              : 'border border-white/10 bg-[#0a0a0a] text-slate-500'
+            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 2
+              ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
+              : 'border border-white/5 bg-white/[0.02] text-slate-600'
               }`}
           >
-            {step > 2 ? <Check className="h-5 w-5" /> : '2'}
+            {step > 2 ? <Check className="h-5 w-5" strokeWidth={3} /> : '02'}
           </div>
-          <span className={`text-[10px] font-bold uppercase tracking-widest transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-600'}`}>Cohort</span>
+          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 2 ? 'text-white' : 'text-slate-600'}`}>User Archetype</span>
         </div>
 
         {/* Step 3 */}
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4">
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ${step >= 3
-              ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-110'
-              : 'border border-white/10 bg-[#0a0a0a] text-slate-500'
+            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black transition-all duration-500 ${step >= 3
+              ? 'bg-white text-black shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-110'
+              : 'border border-white/5 bg-white/[0.02] text-slate-600'
               }`}
           >
             <Zap className={`h-5 w-5 ${step >= 3 ? 'fill-current' : ''}`} />
           </div>
-          <span className={`text-[10px] font-bold uppercase tracking-widest transition-colors duration-500 ${step >= 3 ? 'text-white' : 'text-slate-600'}`}>Launch</span>
+          <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-500 ${step >= 3 ? 'text-white' : 'text-slate-600'}`}>Deployment</span>
         </div>
       </div>
 
@@ -276,32 +276,38 @@ export default function NewTestRunPage() {
             </p>
           </div>
 
-          <div className="w-full space-y-8 rounded-[32px] border border-white/5 bg-[#0a0a0a] p-10 shadow-2xl">
-            <div className="space-y-4 text-left">
-              <div className="flex items-center gap-2 text-slate-400">
-                <Globe className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-widest">Application URL <span className="text-red-500 lowercase normal-case italic opacity-70 ml-1 text-[10px] font-medium">(Required)</span></span>
+          <div className="w-full space-y-10 rounded-[48px] border border-white/5 bg-[#0a0a0a] p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] backdrop-blur-3xl relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-50" />
+
+            <div className="space-y-6 text-left relative focus-within:translate-y-[-4px] transition-transform duration-500">
+              <div className="flex items-center gap-3 text-slate-400">
+                <div className="h-8 w-8 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center shadow-inner">
+                  <Globe className="h-4 w-4 text-indigo-400" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Primary Domain URL <span className="text-red-500/50 ml-1 font-bold">*</span></span>
               </div>
               <input
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-[#111111] border border-white/5 rounded-2xl p-5 text-lg text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all shadow-inner"
+                className="w-full bg-[#111111]/50 backdrop-blur-md border border-white/5 rounded-3xl p-6 text-xl text-white placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/30 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
                 placeholder="https://yourapp.build"
               />
             </div>
 
-            <div className="space-y-4 text-left">
-              <div className="flex items-center gap-2 text-slate-400">
-                <Zap className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-widest">Testing Scope (Optional)</span>
+            <div className="space-y-6 text-left relative group/scope">
+              <div className="flex items-center gap-3 text-slate-400">
+                <div className="h-8 w-8 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center shadow-inner">
+                  <Target className="h-4 w-4 text-indigo-400" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Testing Scope & Constraints</span>
               </div>
               <textarea
                 rows={4}
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="w-full bg-[#111111] border border-white/5 rounded-2xl p-5 text-lg text-white placeholder:text-slate-700 focus:outline-none focus:border-white/10 transition-all resize-none shadow-inner"
-                placeholder="e.g. Focus on the checkout flow, ignore the blog section."
+                className="w-full bg-[#111111]/50 backdrop-blur-md border border-white/5 rounded-3xl p-6 text-lg text-white placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/30 transition-all resize-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+                placeholder="e.g. Focus on user onboarding and payment flows, ignore the help center."
               />
             </div>
 
@@ -468,10 +474,11 @@ export default function NewTestRunPage() {
                 }
                 setStep(2);
               }}
-              className="w-full py-6 rounded-[20px] bg-[#fff] hover:bg-[#d4d4d4] hover:text-black text-black font-bold flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg group border border-white/5"
+              className="relative w-full py-8 mt-4 rounded-[32px] bg-white text-black font-black uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all active:scale-[0.98] shadow-[0_20px_40px_-12px_rgba(255,255,255,0.3)] group overflow-hidden"
             >
-              Configure Persona Cohort
-              <ChevronRight className="h-5 w-5 text-slate-500 group-hover:text-white group-hover:translate-x-1 transition-all" />
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 via-transparent to-indigo-400/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="relative">Configure Persona Cohort</span>
+              <ChevronRight className="relative h-5 w-5 group-hover:translate-x-1.5 transition-transform" strokeWidth={3} />
             </button>
           </div>
         </div>

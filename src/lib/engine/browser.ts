@@ -1,9 +1,16 @@
 import { Stagehand } from '@browserbasehq/stagehand';
-import { Observation, Action, ObservationSection } from './types';
+import { Observation, Action, ObservationSection, HeuristicMetrics } from './types';
 
 export class BrowserService {
     private stagehand: Stagehand | null = null;
     private page: any = null;
+    private metrics: HeuristicMetrics = {
+        broken_links: [],
+        navigation_latency: [],
+        request_failures: 0,
+        action_latency: [],
+        last_load_time: 0
+    };
 
     async init(modelName: string = "google/gemini-2.0-flash", apiKey?: string) {
         try {
@@ -43,6 +50,8 @@ export class BrowserService {
             // Listen for new pages globally in this context
             const pwContext = this.page?.context ? this.page.context() : context;
             if (pwContext && typeof pwContext.on === 'function') {
+                this.attachNetworkListeners(pwContext); // Attach to context for all pages
+
                 pwContext.on('page', async (newPage: any) => {
                     console.log(`✨ New tab detected: ${newPage.url()}. Switching...`);
                     this.page = newPage;
@@ -67,15 +76,52 @@ export class BrowserService {
         }
     }
 
+    private attachNetworkListeners(target: any) {
+        if (!target || typeof target.on !== 'function') return;
+
+        try {
+            target.on('response', (response: any) => {
+                try {
+                    const status = typeof response.status === 'function' ? response.status() : 0;
+                    if (status >= 400) {
+                        const url = typeof response.url === 'function' ? response.url() : 'unknown';
+                        if (!this.metrics.broken_links.includes(url)) {
+                            console.warn(`🚦 Broken link/error detected: ${status} - ${url}`);
+                            this.metrics.broken_links.push(`${status}: ${url}`);
+                        }
+                    }
+                } catch (e) {
+                    // Ignore transient response errors
+                }
+            });
+
+            target.on('requestfailed', (request: any) => {
+                this.metrics.request_failures++;
+                try {
+                    const url = typeof request.url === 'function' ? request.url() : 'unknown';
+                    const error = typeof request.failure === 'function' ? request.failure()?.errorText : 'unknown';
+                    console.warn(`🚦 Request failed: ${url} - ${error}`);
+                } catch (e) {
+                    // Ignore transient request errors
+                }
+            });
+        } catch (err: any) {
+            console.warn(`⚠️ Could not attach network listeners: ${err.message}`);
+        }
+    }
+
     async navigate(url: string) {
         if (!this.page) {
             console.error('❌ Cannot navigate: Browser page not initialized.');
             return;
         }
+        const start = Date.now();
         try {
-            // Stagehand Page uses timeoutMs instead of timeout
             await this.page.goto(url, { waitUntil: 'load', timeoutMs: 60000 });
             await this.page.waitForLoadState('networkidle', 5000).catch(() => { });
+            const duration = Date.now() - start;
+            this.metrics.navigation_latency.push(duration);
+            this.metrics.last_load_time = duration;
         } catch (err: any) {
             console.error(`Navigation to ${url} failed:`, err.message);
             if (this.page.url() === 'about:blank') throw err;
@@ -254,6 +300,10 @@ export class BrowserService {
         if (this.stagehand) await this.stagehand.close().catch(() => { });
         this.page = null;
         this.stagehand = null;
+    }
+
+    getMetrics(): HeuristicMetrics {
+        return { ...this.metrics };
     }
 
     static async shutdown() {

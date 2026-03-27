@@ -46,6 +46,14 @@ export interface PersonaProfile {
     goal_prompt: string;
 }
 
+export interface HeuristicMetrics {
+    broken_links: string[];
+    navigation_latency: number[]; // MS
+    request_failures: number;
+    action_latency: number[]; // MS for Stagehand acts
+    last_load_time: number;
+}
+
 export interface LLMProvider {
     decideNextAction(observation: Observation, persona: PersonaProfile, history: Action[], blacklist?: string[], triedElements?: string[]): Promise<Action>;
     analyzeSection(observation: Observation, persona: PersonaProfile, sectionLabel: string): Promise<{
