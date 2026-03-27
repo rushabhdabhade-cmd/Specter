@@ -297,12 +297,7 @@ export default function ScrollyHero() {
               Ship with confidence.<br />Launch with proof.
             </h2>
 
-            <p
-              className="text-base sm:text-lg font-medium"
-              style={{ color: '#334155', filter: 'drop-shadow(0 1px 8px rgba(255,255,255,0.8))' }}
-            >
-              Specter. Designed for teams who care what users actually experience.
-            </p>
+
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 pointer-events-auto">
               <Link
