@@ -1,167 +1,198 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Globe, Wand2, ArrowRight } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Globe, ArrowRight, Zap, Eye, Smartphone, MousePointer2, Users } from 'lucide-react';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 
-const URLS = [
-  'www.airbnb.com',
-  'www.notion.so',
-  'www.linear.app',
-  'www.uber.com',
-  'www.figma.com',
-  'www.stripe.com'
+const EXAMPLE_URLS = [
+  'yourapp.com',
+  'app.stripe.com',
+  'notion.so/dashboard',
+  'figma.com/files',
+  'linear.app/team',
+];
+
+const PERSONAS = [
+  { label: 'Power User, 28', icon: Zap, color: '#6366f1', bg: '#eef2ff', x: '-120px', y: '-32px' },
+  { label: 'First-time visitor', icon: Eye, color: '#0ea5e9', bg: '#e0f2fe', x: '110px', y: '-48px' },
+  { label: 'Mobile user', icon: Smartphone, color: '#8b5cf6', bg: '#f3e8ff', x: '-140px', y: '48px' },
+  { label: 'Casual browser', icon: MousePointer2, color: '#ec4899', bg: '#fdf2f8', x: '130px', y: '44px' },
+  { label: 'Enterprise buyer', icon: Users, color: '#f59e0b', bg: '#fffbeb', x: '-8px', y: '72px' },
 ];
 
 export default function UrlTypewriterSection() {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const inView = useInView(svgRef, { once: false, margin: '-10% 0px' });
-  const [index, setIndex] = useState(0);
-  const [subIndex, setSubIndex] = useState(0);
-  const [reverse, setReverse] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  const inView = useInView(sectionRef, { once: true, margin: '-15% 0px' });
+
+  const [urlIndex, setUrlIndex] = useState(0);
+  const [charIndex, setCharIndex] = useState(0);
+  const [deleting, setDeleting] = useState(false);
   const [blink, setBlink] = useState(true);
+  const [showPersonas, setShowPersonas] = useState(false);
+  const router = useRouter();
 
-  // Typewriter effect
   useEffect(() => {
-    if (subIndex === URLS[index].length + 1 && !reverse) {
-      setTimeout(() => setReverse(true), 2000);
+    const cur = EXAMPLE_URLS[urlIndex];
+    if (!deleting && charIndex === cur.length) {
+      setShowPersonas(true);
+      const t = setTimeout(() => { setDeleting(true); setShowPersonas(false); }, 2000);
+      return () => clearTimeout(t);
+    }
+    if (deleting && charIndex === 0) {
+      setDeleting(false);
+      setUrlIndex((i) => (i + 1) % EXAMPLE_URLS.length);
       return;
     }
+    const speed = deleting ? 45 : 75;
+    const t = setTimeout(() => setCharIndex((c) => c + (deleting ? -1 : 1)), speed);
+    return () => clearTimeout(t);
+  }, [charIndex, deleting, urlIndex]);
 
-    if (subIndex === 0 && reverse) {
-      setReverse(false);
-      setIndex((prev) => (prev + 1) % URLS.length);
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      setSubIndex((prev) => prev + (reverse ? -1 : 1));
-    }, Math.max(reverse ? 50 : 100, parseInt(Math.random() * 150 + '')));
-
-    return () => clearTimeout(timeout);
-  }, [subIndex, index, reverse]);
-
-  // Cursor blink
   useEffect(() => {
-    const timeout2 = setTimeout(() => {
-      setBlink((prev) => !prev);
-    }, 500);
-    return () => clearTimeout(timeout2);
-  }, [blink]);
+    const t = setInterval(() => setBlink((b) => !b), 520);
+    return () => clearInterval(t);
+  }, []);
 
   return (
-    <section className="relative py-20 flex flex-col items-center justify-center bg-[#f8fafc] overflow-hidden">
-      {/* Animated Curved SVG Line */}
-      <svg
-        ref={svgRef}
-        className="absolute inset-0 w-full h-full pointer-events-none"
-        viewBox="0 0 1000 600"
-        preserveAspectRatio="xMidYMid slice"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#7dd3fc" stopOpacity="0" />
-            <stop offset="30%" stopColor="#38bdf8" stopOpacity="0.9" />
-            <stop offset="70%" stopColor="#7dd3fc" stopOpacity="0.7" />
-            <stop offset="100%" stopColor="#bae6fd" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {/* Main wavy path: enters top-center, curves left then right then exits bottom-center */}
-        <motion.path
-          d="M 500 -20 C 500 80, 280 120, 320 200 C 360 280, 680 300, 660 390 C 640 460, 420 480, 500 620"
-          stroke="url(#lineGrad)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={inView ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
-          transition={{ duration: 2.2, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-        />
-        {/* Glowing dot that travels along the path */}
-        <motion.circle
-          r="4"
-          fill="#38bdf8"
-          filter="url(#dotGlow)"
-          initial={{ opacity: 0 }}
-          animate={inView ? { opacity: [0, 1, 1, 0] } : { opacity: 0 }}
-          transition={{ duration: 2.2, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-        >
-          <animateMotion
-            dur="2.2s"
-            begin={inView ? '0.1s' : 'indefinite'}
-            fill="freeze"
-            path="M 500 -20 C 500 80, 280 120, 320 200 C 360 280, 680 300, 660 390 C 640 460, 420 480, 500 620"
-          />
-        </motion.circle>
-        <defs>
-          <filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-      </svg>
+    <section
+      ref={sectionRef}
+      className="relative py-20 flex flex-col items-center justify-center overflow-hidden"
+      style={{
+        background: 'linear-gradient(135deg, #f0f4ff 0%, #fafbff 35%, #f5f0ff 65%, #eef6ff 100%)',
+      }}
+    >
+      {/* Subtle dot grid */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: 'radial-gradient(circle, #a5b4fc 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
+          opacity: 0.2,
+        }}
+      />
 
-      {/* Decorative Background Elements */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none overflow-hidden opacity-30">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-200 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-200 blur-[120px]" />
-      </div>
+      {/* Soft aurora blobs */}
+      <div className="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(165,180,252,0.35) 0%, transparent 70%)' }} />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(125,211,252,0.3) 0%, transparent 70%)' }} />
+      <div className="absolute top-[30%] right-[15%] w-[300px] h-[300px] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(196,181,253,0.25) 0%, transparent 70%)' }} />
 
-      <div className="relative z-10 max-w-4xl w-full px-6 text-center">
+      {/* Top + bottom edge fade to blend with neighbouring sections */}
+      <div className="absolute inset-x-0 top-0 h-24 pointer-events-none bg-gradient-to-b from-white/60 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-24 pointer-events-none bg-gradient-to-t from-white/60 to-transparent" />
+
+      <div className="relative z-10 max-w-3xl w-full px-6 flex flex-col items-center text-center gap-7">
+
+        {/* Heading */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          initial={{ opacity: 0, y: 16 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, delay: 0.1 }}
+          className="flex flex-col gap-1"
         >
-          <h2 className="text-4xl mb-10 md:text-5xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-[#0f172a] to-[#312e81] leading-[1.2] py-2">
-            Test Your Product.
+          <h2 className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight text-slate-900 leading-[1.0]">
+            One URL.
           </h2>
-
+          <h2 className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.0] bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-500">
+            Multiple Personas.
+          </h2>
         </motion.div>
 
-        {/* Premium Browser Bar */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          whileInView={{ opacity: 1, scale: 1 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.2, duration: 0.8 }}
-          className="relative group mx-auto max-w-3xl"
+        {/* Subtext */}
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="text-base md:text-lg text-slate-500 max-w-xl leading-relaxed"
         >
-          <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-[2.5rem] blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+          Paste your product URL and Specter spins up AI personas that browse, click, and break things — like real users would.
+        </motion.p>
 
-          <div className="relative flex items-center bg-white/70 border border-white/50 rounded-[2rem] p-2 md:p-3 overflow-hidden">
-            {/* World Icon - added translate-y-[1px] for optical centering with bold text */}
-            <div className="flex-shrink-0 ml-4 mr-3 text-slate-400 group-hover:text-indigo-500 transition-colors translate-y-[1px]">
-              <Globe className="h-5 w-5 md:h-6 md:w-6" />
-            </div>
+        {/* URL Input + Personas */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.7, delay: 0.3 }}
+          className="relative w-full max-w-xl mt-2"
+        >
 
-            {/* URL Input Area (Mock) */}
-            <div className="flex-grow text-left py-2 md:py-3 px-1 flex items-center overflow-hidden">
-              <span className="text-lg md:text-2xl font-bold text-slate-800 tracking-tight flex items-center leading-none">
-                https://{URLS[index].substring(0, subIndex)}
-                <span className={`${blink ? 'opacity-100' : 'opacity-0'} transition-opacity inline-block w-0.5 h-5 md:h-7 bg-indigo-500 ml-1`} />
+
+          {/* Input box */}
+          <div
+            className="relative flex items-center gap-3 bg-white border-2 rounded-2xl px-5 py-4 shadow-xl transition-all duration-300"
+            style={{
+              borderColor: showPersonas ? '#6366f1' : '#e2e8f0',
+              boxShadow: showPersonas
+                ? '0 0 0 4px rgba(99,102,241,0.12), 0 20px 40px rgba(99,102,241,0.1)'
+                : '0 8px 30px rgba(0,0,0,0.06)',
+            }}
+          >
+            <Globe className="w-5 h-5 text-slate-400 flex-shrink-0" />
+            <span className="flex-1 text-left font-mono text-base text-slate-400 select-none">
+              https://
+              <span className="text-slate-800 font-medium">
+                {EXAMPLE_URLS[urlIndex].slice(0, charIndex)}
               </span>
-            </div>
-
-            {/* Scan Button */}
-            <button className="flex-shrink-0 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 md:py-4 px-6 md:px-10 rounded-[1.5rem] shadow-lg shadow-indigo-600/20 transition-all active:scale-95 group/btn overflow-hidden relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover/btn:animate-[shimmer_1.5s_infinite] pointer-events-none" />
-              <span className="hidden sm:inline">Start Analysis</span>
-              <Wand2 className="h-5 w-5 group-hover/btn:rotate-12 transition-transform" />
-            </button>
+              <span
+                className="inline-block w-[2px] h-[0.9em] bg-indigo-500 align-middle ml-px"
+                style={{ opacity: blink ? 1 : 0, transition: 'opacity 0.1s' }}
+              />
+            </span>
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => router.push('/dashboard')}
+              className="relative flex-shrink-0 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl overflow-hidden transition-colors"
+            >
+              {/* Shimmer */}
+              <motion.span
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
+                initial={{ x: '-100%' }}
+                animate={{ x: '200%' }}
+                transition={{ repeat: Infinity, duration: 2.5, ease: 'linear', repeatDelay: 1 }}
+              />
+              Analyze
+              <ArrowRight className="w-4 h-4" />
+            </motion.button>
           </div>
 
 
         </motion.div>
-      </div>
 
-      <style jsx>{`
-        @keyframes shimmer {
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
+        {/* Steps */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={inView ? { opacity: 1 } : {}}
+          transition={{ duration: 0.8, delay: 0.5 }}
+          className="flex items-center gap-0 mt-2"
+        >
+          {[
+            { num: '01', label: 'Paste your URL' },
+            { num: '02', label: 'AI personas are generated' },
+            { num: '03', label: 'Read insights instantly' },
+          ].map((step, i) => (
+            <motion.div
+              key={step.num}
+              initial={{ opacity: 0, x: -8 }}
+              animate={inView ? { opacity: 1, x: 0 } : {}}
+              transition={{ duration: 0.4, delay: 0.55 + i * 0.1 }}
+              className="flex items-center"
+            >
+              <div className="flex items-center gap-2 px-4 py-2">
+                <span className="text-[11px] font-black text-indigo-400 tabular-nums">{step.num}</span>
+                <span className="text-sm text-slate-500">{step.label}</span>
+              </div>
+              {i < 2 && (
+                <div className="w-6 h-px bg-slate-200 flex-shrink-0" />
+              )}
+            </motion.div>
+          ))}
+        </motion.div>
+
+      </div>
     </section>
   );
 }

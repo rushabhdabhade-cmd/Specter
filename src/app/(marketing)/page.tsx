@@ -5,7 +5,6 @@ import {
 import ScrollyHero from '@/components/marketing/ScrollyHero';
 import UrlTypewriterSection from '@/components/marketing/UrlTypewriterSection';
 import LegoModelWrapper from '@/components/marketing/LegoModelWrapper';
-import ReportTetrisSection from '@/components/marketing/ReportTetrisSection';
 
 export default function Home() {
   return (
@@ -20,8 +19,6 @@ export default function Home() {
       {/* ── 3D AI PERSONA MODEL ── */}
       <LegoModelWrapper />
 
-      {/* ── INTERACTIVE REPORT TETRIS ── */}
-      <ReportTetrisSection />
 
 
       {/* ── CTA ───────────────────────────────────────────────────────── */}
