@@ -406,6 +406,31 @@ function sampleSections(sections: ObservationSection[], max = MAX_LLM_SECTIONS):
     return result;
 }
 
+// ─── Gemini JSON repair ───────────────────────────────────────────────────────
+// Gemini occasionally embeds literal control characters (newlines, tabs) inside
+// JSON string values even with responseMimeType:'application/json'. This breaks
+// JSON.parse. We sanitize and extract before giving up.
+
+function safeParseGeminiJson(raw: string): any {
+    // 1. Try as-is
+    try { return JSON.parse(raw); } catch { /* fall through */ }
+    // 2. Escape literal control chars that are invalid inside JSON strings
+    const sanitized = raw.replace(/[\u0000-\u001F]/g, ch => {
+        if (ch === '\n') return '\\n';
+        if (ch === '\r') return '\\r';
+        if (ch === '\t') return '\\t';
+        return '';
+    });
+    try { return JSON.parse(sanitized); } catch { /* fall through */ }
+    // 3. Extract first { … } block in case of leading/trailing prose
+    const start = sanitized.indexOf('{');
+    const end = sanitized.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+        try { return JSON.parse(sanitized.slice(start, end + 1)); } catch { /* fall through */ }
+    }
+    throw new Error(`Failed to parse Gemini JSON: ${raw.slice(0, 120)}`);
+}
+
 // ─── Gemini Provider ──────────────────────────────────────────────────────────
 // Uses gemini-2.0-flash for everything — free tier available, fast, vision-capable
 
@@ -436,7 +461,7 @@ export class GeminiProvider implements LLMProvider {
             prompt,
             { inlineData: { data: observation.screenshot, mimeType: 'image/jpeg' } }
         ]));
-        const action = JSON.parse(result.response.text());
+        const action = safeParseGeminiJson(result.response.text());
 
         // Normalize possible_paths
         if (!Array.isArray(action.possible_paths)) {
@@ -463,8 +488,7 @@ export class GeminiProvider implements LLMProvider {
         }
         try {
             const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
-            const raw = result.response.text();
-            const parsed = JSON.parse(raw);
+            const parsed = safeParseGeminiJson(result.response.text());
             // Back-fill any sampled-out sections with neutral placeholders so the
             // caller always gets one result entry per original section
             const sectionResults = sections.map(s => {
@@ -495,7 +519,7 @@ export class GeminiProvider implements LLMProvider {
         }
         try {
             const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
-            const parsed = JSON.parse(result.response.text());
+            const parsed = safeParseGeminiJson(result.response.text());
             // Back-fill sampled-out sections
             const sectionResults = sections.map(s => {
                 const found = parsed.sections?.find((r: any) => r.label === s.label);
