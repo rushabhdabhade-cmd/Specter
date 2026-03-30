@@ -1,7 +1,7 @@
 import { createAdminClient } from '../supabase/admin';
 import { BrowserService } from './browser';
 import { LLMService } from './llm';
-import { PersonaProfile } from './types';
+import { PersonaProfile, PageAnalysisResult } from './types';
 import { SiteMap } from './sitemap';
 import { generateAndStoreReport, checkAndFinalizeTestRun } from './reporter';
 import * as fs from 'fs';
@@ -30,6 +30,12 @@ export class Orchestrator {
     // Step log buffer — flushed in batches to reduce DB round-trips
     private logBuffer: any[] = [];
     private stepNumber = 1;
+
+    // Header/footer fingerprints seen across pages this session.
+    // When the same header/footer appears again we skip those slices in the LLM call
+    // to avoid re-analyzing identical chrome on every page.
+    private seenHeaderFp = new Set<string>();
+    private seenFooterFp = new Set<string>();
 
     constructor() {
         this.browser = new BrowserService();
@@ -317,26 +323,77 @@ export class Orchestrator {
                 }
             }
 
+            // ── Header / footer dedup ────────────────────────────────────────
+            // Fingerprint this page's header+footer and compare to previously seen pages.
+            // Slices whose chrome (header/footer) is identical to a prior page are marked
+            // so the LLM skips them — prevents re-analyzing the same nav on every page.
+            const { header: hFp, footer: fFp } = await this.browser.fingerprintHeaderFooter();
+            const headerSeen = hFp && this.seenHeaderFp.has(hFp);
+            const footerSeen = fFp && this.seenFooterFp.has(fFp);
+            if (hFp) this.seenHeaderFp.add(hFp);
+            if (fFp) this.seenFooterFp.add(fFp);
+
+            // Filter: remove Slice-1 if header already seen, remove last slice if footer already seen
+            const allSections = observation.sections;
+            const sectionsForLLM = allSections.filter((s, i) => {
+                if (i === 0 && headerSeen) return false;
+                if (i === allSections.length - 1 && footerSeen) return false;
+                return true;
+            });
+            // If all slices were filtered (e.g. single-slice page with seen header+footer)
+            // keep at least one so the LLM can still analyze the page
+            const llmSections = sectionsForLLM.length > 0 ? sectionsForLLM : allSections;
+
+            if (headerSeen || footerSeen) {
+                this.clog(sessionId, `║    Chrome dedup: header=${headerSeen ? 'skip' : 'new'}, footer=${footerSeen ? 'skip' : 'new'} → ${llmSections.length}/${allSections.length} slices to LLM`);
+            }
+
             // ── Phase 2: LLM reasoning ───────────────────────────────────────
             this.clog(sessionId, '║  ── PHASE 2: LLM REASONING ───────────────────────');
-            this.clog(sessionId, `║    Sections: ${observation.sections.map(s => s.label).join(', ')}`);
+            this.clog(sessionId, `║    Sections: ${llmSections.map(s => s.label).join(', ')}`);
             this.clog(sessionId, `║    Journey : ${siteMap.journeyNarrative.slice(0, 100) || '(start)'}`);
 
             this.updateLiveStatus(sessionId, `Analysing page ${pageIndex}: ${pageUrl}`);
             const llmStart = Date.now();
 
-            const analysis = await this.llm.analysePage(
-                observation.sections,
-                observation.url,
-                observation.title,
-                persona,
-                isAuth,
-                links,
-                siteMap.journeyNarrative
-            ).catch((err: any) => {
-                this.clog(sessionId, `║    ✖ LLM FAILED: ${err?.message}`);
-                return null;
-            });
+            // Auth pages: use the simpler analyzePageSections() — no next_links complexity,
+            // less likely to fail, still gives full section-level UX feedback on the design.
+            // Regular pages: use the full analysePage() with navigation intent.
+            let analysis: PageAnalysisResult | null = null;
+
+            if (isAuth) {
+                const authScan = await this.llm.analyzePageSections(
+                    llmSections,
+                    observation.url,
+                    observation.title,
+                    persona
+                ).catch((err: any) => {
+                    this.clog(sessionId, `║    ✖ AUTH LLM FAILED: ${err?.message}`);
+                    return null;
+                });
+                if (authScan) {
+                    analysis = {
+                        ...authScan,
+                        friction_points: [],
+                        positives: [],
+                        next_links: [],
+                        journey_narrative_update: ''
+                    };
+                }
+            } else {
+                analysis = await this.llm.analysePage(
+                    llmSections,
+                    observation.url,
+                    observation.title,
+                    persona,
+                    false,
+                    links,
+                    siteMap.journeyNarrative
+                ).catch((err: any) => {
+                    this.clog(sessionId, `║    ✖ LLM FAILED: ${err?.message}`);
+                    return null;
+                });
+            }
 
             if (!analysis) { await this.flushLogs(); continue; }
 
@@ -363,44 +420,59 @@ export class Orchestrator {
                 this.clog(sessionId, `║    Narrative: "${analysis.journey_narrative_update}"`);
             }
 
-            // ── DB log: one entry per section ────────────────────────────────
-            for (const sectionResult of analysis.sections) {
-                const matchedSection = observation.sections.find(s => s.label === sectionResult.label)
-                    ?? observation.sections[0];
+            // ── DB log: one entry per section (sequential step numbers) ─────────
+            // Each section gets its own step so the live view shows per-section feedback.
+            // Page-level data (friction_points, positives, summary) is attached to the
+            // last section so the frontend has it without a separate page_summary step.
+            for (let i = 0; i < analysis.sections.length; i++) {
+                const sectionResult = analysis.sections[i];
+                // Match screenshot from allSections (not llmSections — we want the original capture)
+                const matchedSection = allSections.find(s => s.label === sectionResult.label)
+                    ?? allSections[i]
+                    ?? allSections[0];
                 const localPath = await this.saveScreenshot(sessionId, this.stepNumber, matchedSection.screenshot);
+                const isLast = i === analysis.sections.length - 1;
                 this.log(
                     sessionId,
                     observation.url,
                     this.mapEmotion(sectionResult.emotional_state),
                     sectionResult.ux_feedback,
                     {
-                        type: 'system',
-                        info: isAuth ? 'auth_page_analyzed' : `scan_${(sectionResult.label || 'section').toLowerCase()}`,
-                        proposed_solution: sectionResult.proposed_solution,
+                        type: 'page_section',
+                        info: isAuth ? 'auth_section' : `section_${sectionResult.label ?? i + 1}`,
+                        label: sectionResult.label,
+                        proposed_solution: sectionResult.proposed_solution ?? null,
                         specific_emotion: sectionResult.emotional_state,
+                        // Page-level summary on last section so frontend has full context
+                        ...(isLast ? {
+                            page_summary: analysis.page_summary,
+                            friction_points: analysis.friction_points,
+                            positives: analysis.positives,
+                            overall_emotion: analysis.overall_emotion,
+                            overall_intensity: analysis.overall_intensity,
+                            technical_metrics: pageMetrics,
+                        } : {}),
                         local_screenshot_path: localPath
                     },
-                    localPath  // store file path as screenshot_url, not raw base64
+                    localPath
                 );
                 this.stepNumber++;
             }
 
-            // ── DB log: page summary ──────────────────────────────────────────
-            this.log(sessionId, observation.url, this.mapEmotion(analysis.overall_emotion), analysis.page_summary, {
-                type: 'page_summary',
-                info: 'page_complete',
-                friction_points: analysis.friction_points,
-                positives: analysis.positives,
-                overall_emotion: analysis.overall_emotion,
-                overall_intensity: analysis.overall_intensity,
-                technical_metrics: pageMetrics
-            });
-            this.stepNumber++;
-
             // ── Enqueue next links ────────────────────────────────────────────
+            // Validate LLM-suggested links against DOM-harvested links to prevent
+            // hallucinated URLs (e.g. /subscribe that doesn't exist) from being visited.
             if (!isAuth) {
-                siteMap.enqueue(analysis.next_links.length > 0
-                    ? [...analysis.next_links, ...links]
+                const harvestedNorm = new Set(links.map(l => this.normalizeUrl(l)));
+                const validNextLinks = analysis.next_links.filter(l =>
+                    harvestedNorm.has(this.normalizeUrl(l))
+                );
+                if (analysis.next_links.length !== validNextLinks.length) {
+                    const dropped = analysis.next_links.filter(l => !harvestedNorm.has(this.normalizeUrl(l)));
+                    this.clog(sessionId, `║    ⚠ Dropped ${dropped.length} hallucinated link(s): ${dropped.join(', ')}`);
+                }
+                siteMap.enqueue(validNextLinks.length > 0
+                    ? [...validNextLinks, ...links]
                     : links
                 );
             }

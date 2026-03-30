@@ -254,17 +254,18 @@ export class OpenAIProvider implements LLMProvider {
         return JSON.parse(response.choices[0].message.content || '{}');
     }
 
-    // Single API call for ALL page sections — replaces N separate analyzeSection() calls
+    // Single API call for sampled sections (max 4 to avoid token limits)
     async analyzePageSections(
         sections: ObservationSection[],
         pageUrl: string,
         pageTitle: string,
         persona: PersonaProfile
     ): Promise<PageScanAnalysis> {
-        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
+        const sampled = sampleSections(sections);
+        const prompt = buildPageScanPrompt(sampled, pageUrl, pageTitle, persona);
 
         const content: any[] = [{ type: 'text', text: prompt }];
-        for (const section of sections) {
+        for (const section of sampled) {
             content.push({
                 type: 'image_url',
                 image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' }
@@ -293,9 +294,10 @@ export class OpenAIProvider implements LLMProvider {
         availableLinks: string[],
         journeyNarrative: string
     ): Promise<PageAnalysisResult> {
-        const prompt = buildPageAnalysisPrompt(sections, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
+        const sampled = sampleSections(sections);
+        const prompt = buildPageAnalysisPrompt(sampled, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
         const content: any[] = [{ type: 'text', text: prompt }];
-        for (const section of sections) {
+        for (const section of sampled) {
             content.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${section.screenshot}`, detail: 'low' } });
         }
         try {
@@ -309,7 +311,8 @@ export class OpenAIProvider implements LLMProvider {
                 response_format: zodResponseFormat(PageAnalysisResultSchema, 'page_analysis')
             });
             return JSON.parse(response.choices[0].message.content || '{}');
-        } catch {
+        } catch (err: any) {
+            console.error(`[OpenAI] analysePage failed for ${pageUrl}: ${err?.message}`);
             return pageAnalysisFallback(sections);
         }
     }
@@ -384,6 +387,25 @@ async function withGeminiRetry<T>(fn: () => Promise<T>, maxRetries = 4): Promise
     throw new Error('Gemini retry limit exceeded');
 }
 
+// ─── Section sampler ─────────────────────────────────────────────────────────
+// Sending 8 images to a vision LLM in one call often hits token/rate limits and
+// returns an empty or truncated response → "Analysis unavailable" on every section.
+// Instead, sample up to MAX_LLM_SECTIONS representative slices (always including
+// the first and last) so the LLM gets full vertical coverage without being overloaded.
+
+const MAX_LLM_SECTIONS = 4;
+
+function sampleSections(sections: ObservationSection[], max = MAX_LLM_SECTIONS): ObservationSection[] {
+    if (sections.length <= max) return sections;
+    const result: ObservationSection[] = [sections[0]];
+    const step = (sections.length - 1) / (max - 1);
+    for (let i = 1; i < max - 1; i++) {
+        result.push(sections[Math.round(i * step)]);
+    }
+    result.push(sections[sections.length - 1]);
+    return result;
+}
+
 // ─── Gemini Provider ──────────────────────────────────────────────────────────
 // Uses gemini-2.0-flash for everything — free tier available, fast, vision-capable
 
@@ -426,35 +448,33 @@ export class GeminiProvider implements LLMProvider {
         return action;
     }
 
-    // Single call with all section images
+    // Single call with sampled section images (max 4 to avoid token/rate limits)
     async analyzePageSections(
         sections: ObservationSection[],
         pageUrl: string,
         pageTitle: string,
         persona: PersonaProfile
     ): Promise<PageScanAnalysis> {
-        const prompt = buildPageScanPrompt(sections, pageUrl, pageTitle, persona);
-
+        const sampled = sampleSections(sections);
+        const prompt = buildPageScanPrompt(sampled, pageUrl, pageTitle, persona);
         const parts: any[] = [prompt];
-        for (const section of sections) {
+        for (const section of sampled) {
             parts.push({ inlineData: { data: section.screenshot, mimeType: 'image/jpeg' } });
         }
-
-        const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
         try {
-            return JSON.parse(result.response.text());
-        } catch {
-            return {
-                sections: sections.map(s => ({
-                    label: s.label || 'Section',
-                    ux_feedback: 'Analysis unavailable',
-                    emotional_state: 'neutral',
-                    emotional_intensity: 0.3
-                })),
-                overall_emotion: 'neutral',
-                overall_intensity: 0.3,
-                page_summary: 'Analysis unavailable'
-            };
+            const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
+            const raw = result.response.text();
+            const parsed = JSON.parse(raw);
+            // Back-fill any sampled-out sections with neutral placeholders so the
+            // caller always gets one result entry per original section
+            const sectionResults = sections.map(s => {
+                const found = parsed.sections?.find((r: any) => r.label === s.label);
+                return found ?? { label: s.label, ux_feedback: parsed.page_summary ?? 'See page summary', emotional_state: parsed.overall_emotion ?? 'neutral', emotional_intensity: parsed.overall_intensity ?? 0.3 };
+            });
+            return { ...parsed, sections: sectionResults };
+        } catch (err: any) {
+            console.error(`[Gemini] analyzePageSections failed for ${pageUrl}: ${err?.message}`);
+            return pageAnalysisFallback(sections) as PageScanAnalysis;
         }
     }
 
@@ -467,22 +487,30 @@ export class GeminiProvider implements LLMProvider {
         availableLinks: string[],
         journeyNarrative: string
     ): Promise<PageAnalysisResult> {
-        const prompt = buildPageAnalysisPrompt(sections, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
+        const sampled = sampleSections(sections);
+        const prompt = buildPageAnalysisPrompt(sampled, pageUrl, pageTitle, persona, isAuthPage, availableLinks, journeyNarrative);
         const parts: any[] = [prompt];
-        for (const section of sections) {
+        for (const section of sampled) {
             parts.push({ inlineData: { data: section.screenshot, mimeType: 'image/jpeg' } });
         }
         try {
             const result = await withGeminiRetry(() => this.flashModel.generateContent(parts));
             const parsed = JSON.parse(result.response.text());
+            // Back-fill sampled-out sections
+            const sectionResults = sections.map(s => {
+                const found = parsed.sections?.find((r: any) => r.label === s.label);
+                return found ?? { label: s.label, ux_feedback: parsed.page_summary ?? 'See page summary', emotional_state: parsed.overall_emotion ?? 'neutral', emotional_intensity: parsed.overall_intensity ?? 0.3 };
+            });
             return {
                 ...parsed,
+                sections: sectionResults,
                 friction_points: Array.isArray(parsed.friction_points) ? parsed.friction_points : [],
                 positives: Array.isArray(parsed.positives) ? parsed.positives : [],
                 next_links: Array.isArray(parsed.next_links) ? parsed.next_links : [],
                 journey_narrative_update: parsed.journey_narrative_update || ''
             };
-        } catch {
+        } catch (err: any) {
+            console.error(`[Gemini] analysePage failed for ${pageUrl}: ${err?.message}`);
             return pageAnalysisFallback(sections);
         }
     }

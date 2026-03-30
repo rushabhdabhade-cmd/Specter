@@ -107,6 +107,14 @@ export class BrowserService {
 
         if (!this.page) throw new Error('Stagehand failure: Page object not found.');
         await this.page.setViewportSize?.({ width: 1280, height: 800 }).catch(() => { });
+
+        // Auto-dismiss browser-level dialogs (notification prompts, alerts, confirms).
+        // Stagehand wraps Playwright's page and doesn't proxy all events — use the
+        // underlying Playwright page (_page) if available, fall back gracefully.
+        try {
+            const rawPage = (this.page as any)._page ?? this.page;
+            rawPage.on('dialog', (dialog: any) => dialog.dismiss().catch(() => { }));
+        } catch (_) { }
     }
 
     // ─── Network ────────────────────────────────────────────────────────────────
@@ -140,7 +148,6 @@ export class BrowserService {
 
     async navigate(url: string) {
         if (!this.page) return;
-        // Snapshot metrics before this page load so getLastPageMetrics() can return deltas
         this._pageNavSnapshot = {
             brokenLinksCount: this.metrics.broken_links.length,
             requestFailures: this.metrics.request_failures,
@@ -148,12 +155,20 @@ export class BrowserService {
         const start = Date.now();
         try {
             await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            // 5 s cap — analytics/tracking scripts that never go idle shouldn't block capture.
-            // Gives SPAs (React/Next.js) enough time to load initial data.
+
+            // Round 1: wait for initial page resources (JS bundle, CSS, fonts)
             await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
-            
-            // Hard wait to ensure animations or post-hydration renders finish before we snap.
-            await this.page.waitForTimeout(1500);
+
+            // Gap: React/Vue/Angular fire useEffect / componentDidMount here.
+            // These trigger API calls (videos, feeds, user data) that start AFTER
+            // the first networkidle — giving them time to actually fire.
+            await this.page.waitForTimeout(600);
+
+            // Round 2: wait for those lazy API requests to finish
+            await this.page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => { });
+
+            // Final check: page must have real visible content, no spinners/skeletons
+            await this.waitForContent();
 
             const duration = Date.now() - start;
             this.metrics.navigation_latency.push(duration);
@@ -161,6 +176,65 @@ export class BrowserService {
         } catch (err: any) {
             console.error(`Navigation to ${url} failed:`, err.message);
         }
+    }
+
+    /**
+     * Waits until the page has meaningful visible content before we screenshot.
+     * Handles three common cases:
+     *   1. SPA hydration — React/Next.js pages are empty until JS runs
+     *   2. Skeleton/spinner loaders — visible loading indicators still present
+     *   3. Lazy-loaded sections — content streams in after initial paint
+     *
+     * Strategy: poll every 300ms for up to 8s checking:
+     *   - document.readyState === 'complete'
+     *   - visible text length > 100 chars (not a blank shell)
+     *   - no active loading indicators (spinners, skeletons, progress bars)
+     * Falls through silently if timeout reached — better a slightly early screenshot
+     * than hanging forever on a broken page.
+     */
+    private async waitForContent(timeoutMs = 8000): Promise<void> {
+        if (!this.page) return;
+        const deadline = Date.now() + timeoutMs;
+        const POLL = 300;
+
+        while (Date.now() < deadline) {
+            const ready = await this.page.evaluate(() => {
+                // 1. DOM must be fully parsed
+                if (document.readyState !== 'complete') return false;
+
+                // 2. Must have meaningful visible text (not just a blank shell or error page)
+                const text = (document.body?.innerText || '').trim();
+                if (text.length < 100) return false;
+
+                // 3. No active loading indicators visible in the DOM
+                const loadingSelectors = [
+                    '[class*="skeleton"]',
+                    '[class*="shimmer"]',
+                    '[class*="spinner"]',
+                    '[class*="loading"]',
+                    '[aria-label*="loading" i]',
+                    '[aria-busy="true"]',
+                    'progress',
+                ].join(',');
+                if (document.querySelector(loadingSelectors)) return false;
+
+                // 4. No API-pending empty-state placeholders
+                // These appear when the container renders before the data fetch completes
+                const PENDING_PATTERNS = /^(no (videos?|posts?|items?|results?|data|content) found\.?|loading\.\.\.|please wait|fetching|coming soon\.?)$/i;
+                const allText = Array.from(document.querySelectorAll('p, span, div, h2, h3'));
+                const hasPendingPlaceholder = allText.some(el => {
+                    if ((el as HTMLElement).children.length > 0) return false; // skip containers
+                    return PENDING_PATTERNS.test(((el as HTMLElement).innerText || '').trim());
+                });
+                if (hasPendingPlaceholder) return false;
+
+                return true;
+            }).catch(() => false);
+
+            if (ready) return;
+            await this.page.waitForTimeout(POLL);
+        }
+        // Timeout reached — proceed anyway (broken page or genuinely empty content)
     }
 
     /**
@@ -182,94 +256,75 @@ export class BrowserService {
     // ─── DOM extraction ─────────────────────────────────────────────────────────
 
     /**
-     * Returns only interactive elements visible in the current viewport.
-     * Deduplicates by text+role so the LLM sees a clean, compact list.
-     * Max 30 elements — enough for decision-making, not so many it blows the context.
+     * Fast DOM extraction using pure Playwright page.evaluate() — no stagehand.observe().
+     * Queries all interactive elements across the full page (not just viewport).
+     * ~100-200ms vs ~3-5s for stagehand.observe(). Max 60 elements.
      */
-    private async extractInteractiveElements(): Promise<any[]> {
-        if (!this.page || !this.stagehand) return [];
+    private async extractDOMFast(): Promise<any[]> {
+        if (!this.page) return [];
         try {
-            const observations: any[] = await this.stagehand.observe({ page: this.page }).catch(() => []);
-
-            const seen = new Set<string>();
-            const elements: any[] = [];
-
-            for (const ob of observations) {
-                if (!ob.selector) continue;
-
-                const text = (ob.description || ob.label || '').trim().slice(0, 80);
-                const role = (ob.method || 'element').toLowerCase();
-                const key = `${role}::${text}`;
-
-                if (!text || seen.has(key)) continue;
-                if (text.length < 2) continue;
-                seen.add(key);
-
-                let coords: any = null;
-                try {
-                    coords = await this.page.evaluate((sel: string) => {
-                        const el = sel.startsWith('xpath=')
-                            ? (document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement)
-                            : document.querySelector(sel) as HTMLElement;
-                        if (!el) return null;
-                        const r = el.getBoundingClientRect();
-                        if (r.width === 0 || r.height === 0) return null;
-                        if (r.bottom < 0 || r.top > window.innerHeight) return null;
-                        return {
-                            x: Math.round(r.left + window.scrollX),
-                            y: Math.round(r.top + window.scrollY),
-                            w: Math.round(r.width),
-                            h: Math.round(r.height)
-                        };
-                    }, ob.selector).catch(() => null);
-                } catch (_) { }
-
-                elements.push({
-                    index: elements.length,
-                    role,
-                    text,
-                    selector: ob.selector,
-                    coordinates: coords
-                });
-
-                if (elements.length >= 30) break;
-            }
-
-            return elements;
-        } catch (_) {
+            return await this.page.evaluate(() => {
+                const SELECTORS = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"]';
+                const seen = new Set<string>();
+                const result: any[] = [];
+                for (const el of Array.from(document.querySelectorAll(SELECTORS))) {
+                    if (result.length >= 60) break;
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) continue;
+                    const tag = el.tagName.toLowerCase();
+                    const role = el.getAttribute('role') || tag;
+                    const text = (
+                        (el as HTMLElement).innerText ||
+                        (el as HTMLInputElement).placeholder ||
+                        el.getAttribute('aria-label') || ''
+                    ).trim().slice(0, 80);
+                    if (!text || text.length < 2) continue;
+                    const key = `${role}::${text}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    let selector = tag;
+                    if ((el as HTMLElement).id) {
+                        selector = `#${(el as HTMLElement).id}`;
+                    } else if (el.className && typeof el.className === 'string') {
+                        const cls = el.className.trim().split(/\s+/).slice(0, 2).join('.');
+                        if (cls) selector = `${tag}.${cls}`;
+                    }
+                    result.push({
+                        index: result.length,
+                        role,
+                        text,
+                        selector,
+                        coordinates: {
+                            x: Math.round(rect.left + window.scrollX),
+                            y: Math.round(rect.top + window.scrollY),
+                            w: Math.round(rect.width),
+                            h: Math.round(rect.height)
+                        }
+                    });
+                }
+                return result;
+            });
+        } catch {
             return [];
         }
     }
 
     // ─── Capture a single viewport slice ────────────────────────────────────────
 
-    private async captureSlice(label: string, highQuality = false): Promise<ObservationSection> {
+    private async captureSlice(label: string): Promise<ObservationSection> {
         if (!this.page) throw new Error('Browser not initialized');
-
-        // Page is already loaded (navigate() waited for domcontentloaded).
-        // Only a short paint-settle delay is needed here — waiting again for
-        // domcontentloaded costs up to 2 s per slice (4 slices = up to 8 s wasted).
-        await this.page.waitForTimeout(400);
-
+        await this.page.waitForTimeout(80);
         const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
-        const screenshot = await this.page.screenshot({
-            type: 'jpeg',
-            quality: highQuality ? 60 : 40
-        });
-
-        const domContext = highQuality
-            ? JSON.stringify(await this.extractInteractiveElements())
-            : '[]';
-
+        const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 45 });
         return {
             screenshot: screenshot.toString('base64'),
-            domContext,
+            domContext: '[]',
             label,
             scrollY
         };
     }
 
-    // ─── Full-page scan: Top / Mid / Bottom + primary view ──────────────────────
+    // ─── Full-page scan: dynamic N-slice coverage ───────────────────────────────
 
     async observeFullPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
@@ -278,39 +333,162 @@ export class BrowserService {
 
     private async _observeFullPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
+        return this._captureAllSlices();
+    }
 
-        const sections: ObservationSection[] = [];
+    // ─── Popup / overlay dismissal ──────────────────────────────────────────────
+
+    /**
+     * Attempts to dismiss DOM-level popups between page slices.
+     * Called AFTER Slice-1 so the LLM still sees the popup as UX data on the first
+     * screenshot, but remaining slices show the actual page content underneath.
+     *
+     * Handles in order:
+     *   1. Escape key — closes most modals natively
+     *   2. Click common close / accept buttons (cookie banners, modals, overlays)
+     *   3. Force-hide any remaining fixed/sticky overlay that matches popup patterns
+     */
+    private async dismissPopups(): Promise<void> {
+        if (!this.page) return;
+        try {
+            // 1. Escape closes most modal dialogs without side effects
+            await this.page.keyboard.press('Escape').catch(() => { });
+            await this.page.waitForTimeout(150);
+
+            // 2. Click the first visible dismiss / accept button we can find
+            const DISMISS_SELECTORS = [
+                // Generic close buttons
+                '[aria-label="Close" i]',
+                '[aria-label="Dismiss" i]',
+                '[aria-label="close dialog" i]',
+                'button[class*="close" i]',
+                'button[class*="dismiss" i]',
+                '[data-dismiss]',
+                '[data-testid*="close" i]',
+                // Cookie / GDPR banners — prefer "decline" to avoid consent side-effects
+                'button[id*="onetrust-accept" i]',
+                'button[class*="cookie-accept" i]',
+                'button[class*="accept-cookie" i]',
+                '[class*="cookie-banner"] button',
+                '[id*="cookiebanner"] button',
+                '[class*="gdpr"] button',
+                '[id*="gdpr"] button',
+                '[class*="consent"] button',
+                '[id*="consent-banner"] button',
+                // Chat / support widgets
+                '[id*="intercom"] [aria-label*="close" i]',
+                '[class*="intercom-"] [aria-label*="close" i]',
+                // Generic modal/overlay patterns
+                '[role="dialog"] button[aria-label*="close" i]',
+                '[class*="modal"] [class*="close"]',
+                '[class*="overlay"] [class*="close"]',
+                '[class*="popup"] [class*="close"]',
+            ];
+
+            for (const sel of DISMISS_SELECTORS) {
+                try {
+                    const el = await this.page.$(sel);
+                    if (!el) continue;
+                    const box = await el.boundingBox().catch(() => null);
+                    if (!box || box.width === 0 || box.height === 0) continue;
+                    await el.click({ timeout: 800 }).catch(() => { });
+                    await this.page.waitForTimeout(200);
+                    break;
+                } catch (_) { }
+            }
+
+            // 3. If a blocking fixed/sticky overlay is still visible, hide it via JS.
+            //    This catches custom popups that don't use standard close-button patterns.
+            await this.page.evaluate(() => {
+                const POPUP_KEYWORDS = ['modal', 'overlay', 'popup', 'cookie', 'consent', 'banner', 'gdpr', 'newsletter', 'subscribe'];
+                for (const el of Array.from(document.querySelectorAll('*'))) {
+                    const style = window.getComputedStyle(el as HTMLElement);
+                    if (style.position !== 'fixed' && style.position !== 'sticky') continue;
+                    const rect = (el as HTMLElement).getBoundingClientRect();
+                    // Must cover a significant chunk of the viewport to count as blocking
+                    if (rect.width < window.innerWidth * 0.25 || rect.height < 60) continue;
+                    const cls = ((el as HTMLElement).className || '').toLowerCase();
+                    const id = ((el as HTMLElement).id || '').toLowerCase();
+                    if (POPUP_KEYWORDS.some(k => cls.includes(k) || id.includes(k))) {
+                        (el as HTMLElement).style.display = 'none';
+                    }
+                }
+            }).catch(() => { });
+
+        } catch (_) { }
+    }
+
+    // ─── Header / footer fingerprinting ─────────────────────────────────────────
+
+    /**
+     * Returns a short string fingerprint of the page's header and footer HTML.
+     * Used by the orchestrator to skip re-analysis of identical chrome across pages.
+     * Hashes the outerHTML of <header>/<footer> (or first/last landmark elements).
+     */
+    async fingerprintHeaderFooter(): Promise<{ header: string; footer: string }> {
+        if (!this.page) return { header: '', footer: '' };
+        return this.page.evaluate(() => {
+            function fingerprint(el: Element | null): string {
+                if (!el) return '';
+                const html = el.innerHTML.replace(/\s+/g, ' ').trim().slice(0, 800);
+                // Simple djb2 hash
+                let h = 5381;
+                for (let i = 0; i < html.length; i++) h = ((h << 5) + h) ^ html.charCodeAt(i);
+                return (h >>> 0).toString(36);
+            }
+            const header = document.querySelector('header, [role="banner"], nav:first-of-type');
+            const footer = document.querySelector('footer, [role="contentinfo"]');
+            return { header: fingerprint(header), footer: fingerprint(footer) };
+        }).catch(() => ({ header: '', footer: '' }));
+    }
+
+    // ─── Shared: dynamic N-slice full-page capture + fast DOM ───────────────────
+
+    private async _captureAllSlices(): Promise<Observation> {
+        if (!this.page) return this.emptyObservation();
+
+        // Ensure content is ready before we start snapping (guards post-click captures too)
+        await this.waitForContent(5000);
 
         await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(300);
-        sections.push(await this.captureSlice('Top'));
+        await this.page.waitForTimeout(80);
 
         const { vh, dh } = await this.page.evaluate(() => ({
             vh: window.innerHeight,
             dh: document.documentElement.scrollHeight
         }));
 
-        if (dh > vh * 1.5) {
-            await this.page.evaluate((y: number) => window.scrollTo(0, y), Math.round(vh * 0.85));
-            await this.page.waitForTimeout(300);
-            sections.push(await this.captureSlice('Mid'));
+        // One screenshot per viewport height, capped at 8 to avoid token overload
+        const sliceCount = Math.min(8, Math.ceil(dh / vh));
+        const sections: ObservationSection[] = [];
+
+        for (let i = 0; i < sliceCount; i++) {
+            await this.page.evaluate((y: number) => window.scrollTo(0, y), i * vh);
+            await this.page.waitForTimeout(80);
+            sections.push(await this.captureSlice(`Slice-${i + 1}`));
+
+            // After capturing Slice-1, try to dismiss any popup/overlay.
+            // Slice-1 already has the popup visible (real UX data for the LLM).
+            // Subsequent slices should show the actual page content underneath.
+            if (i === 0 && sliceCount > 1) {
+                await this.dismissPopups();
+            }
         }
 
-        if (dh > vh * 2.2) {
-            await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-            await this.page.waitForTimeout(300);
-            sections.push(await this.captureSlice('Bottom'));
-        }
-
+        // Return to top and extract full DOM once (~100ms, no stagehand)
         await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(300);
-        const primary = await this.captureSlice('Primary', true);
+        await this.page.waitForTimeout(50);
+        const dom = await this.extractDOMFast();
+        const domStr = JSON.stringify(dom);
 
-        if (sections.length > 0) sections[0] = { ...primary, label: 'Top' };
+        // Attach DOM to first slice — LLM uses it for click/navigation reasoning
+        if (sections.length > 0) {
+            sections[0] = { ...sections[0], domContext: domStr };
+        }
 
         return {
-            screenshot: primary.screenshot,
-            domContext: primary.domContext,
+            screenshot: sections[0]?.screenshot ?? '',
+            domContext: domStr,
             url: this.page.url(),
             title: await this.page.title(),
             dimensions: { width: 1280, height: 800 },
@@ -323,14 +501,16 @@ export class BrowserService {
     async observe(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
         try {
-            const slice = await this.captureSlice('Current', true);
+            const slice = await this.captureSlice('Current');
+            const dom = await this.extractDOMFast();
+            const domStr = JSON.stringify(dom);
             return {
                 screenshot: slice.screenshot,
-                domContext: slice.domContext,
+                domContext: domStr,
                 url: this.page.url(),
                 title: await this.page.title(),
                 dimensions: { width: 1280, height: 800 },
-                sections: [slice]
+                sections: [{ ...slice, domContext: domStr }]
             };
         } catch {
             return this.emptyObservation();
@@ -373,8 +553,8 @@ export class BrowserService {
                     await this.stagehand.act(instruction, { page: this.page });
                     this.metrics.action_latency.push(Date.now() - t0);
 
-                    for (let i = 0; i < 5; i++) {
-                        await this.page.waitForTimeout(800);
+                    for (let i = 0; i < 3; i++) {
+                        await this.page.waitForTimeout(300);
                         const newCount = (this.stagehand as any).context?.pages?.()?.length ?? 1;
                         if (newCount > oldPageCount) {
                             const pages = (this.stagehand as any).context.pages();
@@ -414,7 +594,6 @@ export class BrowserService {
         if (newUrl !== oldUrl || newPageCount > oldPageCount) {
             await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => { });
         }
-        await this.page.waitForTimeout(1000);
     }
 
     // ─── Link harvesting ────────────────────────────────────────────────────────
@@ -479,49 +658,7 @@ export class BrowserService {
 
     private async _observeFastPage(): Promise<Observation> {
         if (!this.page) return this.emptyObservation();
-
-        const sections: ObservationSection[] = [];
-
-        await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(50);
-        sections.push(await this.captureSlice('Top'));
-
-        const { vh, dh } = await this.page.evaluate(() => ({
-            vh: window.innerHeight,
-            dh: document.documentElement.scrollHeight
-        }));
-
-        if (dh > vh * 1.5) {
-            await this.page.evaluate((y: number) => window.scrollTo(0, y), Math.round(vh * 0.85));
-            await this.page.waitForTimeout(50);
-            sections.push(await this.captureSlice('Mid'));
-        }
-
-        if (dh > vh * 2.2) {
-            await this.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-            await this.page.waitForTimeout(50);
-            sections.push(await this.captureSlice('Bottom'));
-        }
-
-        await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(50);
-        // Low-quality primary — no stagehand.observe, just a screenshot
-        const primary = await this.captureSlice('Primary');
-
-        if (sections.length > 0) {
-            sections[0] = { ...primary, label: 'Top' };
-        } else {
-            sections.push(primary);
-        }
-
-        return {
-            screenshot: primary.screenshot,
-            domContext: '[]',
-            url: this.page.url(),
-            title: await this.page.title(),
-            dimensions: { width: 1280, height: 800 },
-            sections
-        };
+        return this._captureAllSlices();
     }
 
     // ─── Heuristic interactions (no LLM — pure Playwright JS) ────────────────
@@ -540,7 +677,7 @@ export class BrowserService {
 
         // Scroll to top so elements are in a deterministic position
         await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(400);
+        await this.page.waitForTimeout(100);
 
         const CTA_RE = /sign.?up|get.?start|start free|try.?free|try.?now|buy|purchase|pricing|plans?|checkout|demo|learn more|features|contact|subscribe|explore|watch|view|get.?demo|book.?a/i;
 
@@ -622,7 +759,7 @@ export class BrowserService {
         const viewportX = x; // horizontal scroll is almost never an issue
 
         await this.page.mouse.click(viewportX, viewportY);
-        await this.page.waitForTimeout(600);
+        await this.page.waitForTimeout(250);
         await this.page.waitForLoadState('domcontentloaded', { timeout: 4000 }).catch(() => { });
 
         const newUrl = this.page.url();
