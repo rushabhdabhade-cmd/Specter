@@ -230,7 +230,9 @@ export default function LegoModelSection() {
           { icon: Sparkles, text: "Found it! Super intuitive UI.", top: '28%', left: '30%', bottom: undefined, right: undefined },
           { icon: ShieldCheck, text: "Checkout finished in 20s!", bottom: '28%', left: '3%', top: undefined, right: undefined },
           { icon: Target, text: "Friction Point: Confusion at Step 3", bottom: '16%', left: '22%', top: undefined, right: undefined },
-        ] as { icon: React.ElementType; text: string; top?: string; bottom?: string; left?: string; right?: string }[]).map((bubble, i) => (
+        ] as { icon: React.ComponentType<{ className?: string }>; text: string; top?: string; bottom?: string; left?: string; right?: string }[]).map((bubble, i) => {
+          const Icon = bubble.icon;
+          return (
           <div
             key={i}
             ref={(el) => { if (el) bubblesRef.current[i] = el; }}
@@ -244,10 +246,11 @@ export default function LegoModelSection() {
               transform: 'scale(0.8) translateY(20px)'
             }}
           >
-            <bubble.icon className="h-4 w-4 text-indigo-500" />
+            <Icon className="h-4 w-4 text-indigo-500" />
             {bubble.text}
           </div>
-        ))}
+          );
+        })}
 
         <div ref={canvasWrapperRef} className="absolute inset-0 z-30 will-change-transform">
           <Canvas camera={{ position: [0, 1.5, 6], fov: 45 }} className="cursor-grab active:cursor-grabbing w-full h-full">
