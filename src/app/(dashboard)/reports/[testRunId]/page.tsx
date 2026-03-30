@@ -6,8 +6,8 @@ import { calculateSessionScore } from '@/lib/utils/scoring';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Activity, AlertTriangle, Brain, CheckCircle2, ChevronLeft,
-  Frown, Meh, Smile, Sparkles, Users, Zap
+  Activity, Brain, CheckCircle2,
+  Frown, Meh, Smile, Sparkles, Users
 } from 'lucide-react';
 import { RefreshButton } from '@/components/reports/RefreshButton';
 import { AuditTrail } from '@/components/reports/AuditTrail';
@@ -16,6 +16,7 @@ import { ActionItems } from '@/components/reports/ActionItems';
 import { ReportActions } from '@/components/reports/ReportActions';
 import { TechnicalAudit } from '@/components/reports/TechnicalAudit';
 import { MetricTooltip } from '@/components/reports/MetricTooltip';
+import { ScrollToTop } from '@/components/reports/ScrollToTop';
 
 export default async function ReportPage({ params }: { params: Promise<{ testRunId: string }> }) {
   const { testRunId } = await params;
@@ -291,8 +292,28 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
           const literacy = (session.persona_configs?.tech_literacy ?? '').replace(/</g, '&lt;');
           const goalPrompt = (session.persona_configs?.goal_prompt ?? '').replace(/</g, '&lt;');
 
-          const personaEmotionStats = { delight: 0, neutral: 0, confusion: 0, frustration: 0 };
-          logs.forEach((l: any) => { if (l.emotion_tag in personaEmotionStats) personaEmotionStats[l.emotion_tag as keyof typeof personaEmotionStats]++; });
+          // Merge all 9 emotions into 4 display buckets so nothing is silently dropped.
+          // Without grouping, steps tagged satisfaction/curiosity/surprise/boredom/disappointment
+          // would show as 0% in every card even though they're counted in the score.
+          const es = scoreResult.emotionScores;
+          const grouped = {
+            // Positive: any emotion the user enjoyed or found engaging
+            delight: (es.delight || 0) + (es.satisfaction || 0) + (es.surprise || 0) + (es.curiosity || 0),
+            // No reaction either way
+            neutral: es.neutral || 0,
+            // Mild–moderate friction: user was lost or disengaged
+            confusion: (es.confusion || 0) + (es.boredom || 0),
+            // Hard friction: user was blocked or let down
+            frustration: (es.frustration || 0) + (es.disappointment || 0),
+          };
+          // Re-normalise to 100% (grouped values are already percentages but rounding can drift)
+          const groupedTotal = Object.values(grouped).reduce((a, b) => a + b, 0) || 1;
+          const groupedPct = {
+            delight: Math.round((grouped.delight / groupedTotal) * 100),
+            neutral: Math.round((grouped.neutral / groupedTotal) * 100),
+            confusion: Math.round((grouped.confusion / groupedTotal) * 100),
+            frustration: Math.round((grouped.frustration / groupedTotal) * 100),
+          };
 
           return (
             <div key={session.id} className="space-y-4">
@@ -323,23 +344,45 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
               {/* Emotion breakdown */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: 'Delight', icon: Smile, color: '#10b981', bgClass: 'bg-emerald-50 border-emerald-100', tip: 'Steps where the user felt happy or pleasantly surprised — things that are working well.' },
-                  { label: 'Neutral', icon: Meh, color: '#64748b', bgClass: 'bg-slate-50 border-slate-200', tip: 'Steps with no strong reaction — the user got through without any notable feeling.' },
-                  { label: 'Confusion', icon: Activity, color: '#3b82f6', bgClass: 'bg-blue-50 border-blue-100', tip: 'Steps where the user felt lost or unsure — usually a sign of unclear design.' },
-                  { label: 'Frustration', icon: Frown, color: '#ef4444', bgClass: 'bg-red-50 border-red-100', tip: 'Steps where the user felt blocked or annoyed — your highest-priority issues to fix.' },
-                ].map((s, i) => {
-                  const pct = scoreResult.emotionScores[s.label.toLowerCase()] || 0;
-                  return (
-                    <div key={i} className={`rounded-xl border p-4 ${s.bgClass}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <s.icon className="h-4 w-4" style={{ color: s.color }} />
-                        <MetricTooltip text={s.tip} />
-                      </div>
-                      <p className="text-xl font-bold text-slate-900">{pct}%</p>
-                      <p className="text-xs font-medium text-slate-500 mt-0.5">{s.label}</p>
+                  {
+                    key: 'delight' as const,
+                    label: 'Positive',
+                    sub: 'delight · satisfaction · curiosity · surprise',
+                    icon: Smile, color: '#10b981', bgClass: 'bg-emerald-50 border-emerald-100',
+                    tip: 'Steps where the user felt happy, satisfied, curious, or pleasantly surprised. Includes delight, satisfaction, curiosity, and surprise — all the emotions that keep users engaged.'
+                  },
+                  {
+                    key: 'neutral' as const,
+                    label: 'Neutral',
+                    sub: 'no strong reaction',
+                    icon: Meh, color: '#64748b', bgClass: 'bg-slate-50 border-slate-200',
+                    tip: 'Steps with no strong reaction — the user got through without any notable feeling. High neutral is fine, but you want positive to be higher.'
+                  },
+                  {
+                    key: 'confusion' as const,
+                    label: 'Confusion',
+                    sub: 'confusion · boredom',
+                    icon: Activity, color: '#3b82f6', bgClass: 'bg-blue-50 border-blue-100',
+                    tip: 'Steps where the user felt lost, unsure, or disengaged. Includes confusion (unclear design) and boredom (disengagement). These are mid-priority issues to fix.'
+                  },
+                  {
+                    key: 'frustration' as const,
+                    label: 'Frustration',
+                    sub: 'frustration · disappointment',
+                    icon: Frown, color: '#ef4444', bgClass: 'bg-red-50 border-red-100',
+                    tip: 'Steps where the user felt blocked, annoyed, or let down. Includes frustration and disappointment — these are your highest-priority issues and the biggest drag on your UX score.'
+                  },
+                ].map((s, i) => (
+                  <div key={i} className={`rounded-xl border p-4 ${s.bgClass}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <s.icon className="h-4 w-4" style={{ color: s.color }} />
+                      <MetricTooltip text={s.tip} />
                     </div>
-                  );
-                })}
+                    <p className="text-xl font-bold text-slate-900">{groupedPct[s.key]}%</p>
+                    <p className="text-xs font-semibold text-slate-700 mt-0.5">{s.label}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">{s.sub}</p>
+                  </div>
+                ))}
               </div>
 
               <FeedbackSummary id={session.id} logs={logs} summary={undefined} personaName={session.persona_configs?.name} />
@@ -349,6 +392,7 @@ export default async function ReportPage({ params }: { params: Promise<{ testRun
         })}
       </div>
 
+      <ScrollToTop />
     </div>
   );
 }

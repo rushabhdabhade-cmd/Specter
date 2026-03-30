@@ -15,9 +15,25 @@ process.setMaxListeners(50);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_PAGES = 15;           // Hard cap on unique pages to visit
-const DB_FLUSH_INTERVAL = 3;    // Flush buffered logs every N steps
-const LINK_HARVEST_MAX = 20;    // Max links collected from any single page
+const MAX_PAGES = 15;               // Hard cap on unique pages to visit
+const DB_FLUSH_INTERVAL = 3;        // Flush buffered logs every N steps
+const LINK_HARVEST_MAX = 20;        // Max links collected from any single page
+const MAX_BROWSER_RESTARTS = 3;     // Max BrowserBase session renewals per crawl
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isBrowserTimeoutError(err: any): boolean {
+    const msg = (err?.message ?? '').toLowerCase();
+    return msg.includes('socket-close')
+        || msg.includes('cdp transport closed')
+        || msg.includes('session timed out')
+        || msg.includes('session expired')
+        || msg.includes('target page, context or browser has been closed')
+        || msg.includes('browser has been closed')
+        || msg.includes('net::err_failed')
+        || msg.includes('connection closed')
+        || msg.includes('websocket');
+}
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
@@ -115,7 +131,9 @@ export class Orchestrator {
 
                 // ── 2. Crawl-Reason-Repeat traversal ────────────────────────
                 const resumeState = attempt > 1 ? await this.buildResumeState(sessionId) : null;
-                await this.runCrawl(sessionId, url, persona, resumeState);
+                const browserModel = 'google/gemini-2.0-flash';
+                const browserApiKey = process.env.GEMINI_API_KEY;
+                await this.runCrawl(sessionId, url, persona, browserModel, browserApiKey, resumeState);
 
                 // ── 2. Complete ──────────────────────────────────────────────
                 await this.flushLogs();
@@ -134,16 +152,10 @@ export class Orchestrator {
                 console.error(`Session ${sessionId} attempt ${attempt} failed:`, err.message);
                 this.updateLiveStatus(sessionId, `Error: ${err.message}`);
 
-                // Browserbase/CDP session timeout — treat as partial completion.
-                // Retrying won't help: the remote browser is gone. Save whatever
-                // data was collected and generate a report from it.
-                const isBrowserTimeout = err.message?.includes('socket-close')
-                    || err.message?.includes('CDP transport closed')
-                    || err.message?.includes('session timed out')
-                    || err.message?.includes('Target page, context or browser has been closed')
-                    || err.message?.includes('Browser has been closed');
-
-                if (isBrowserTimeout) {
+                // Browser-level failure that escaped runCrawl (e.g. during browser.init()
+                // itself, or after all MAX_BROWSER_RESTARTS were exhausted inside runCrawl).
+                // Treat as partial completion — save whatever data was collected.
+                if (isBrowserTimeoutError(err)) {
                     console.log(`Session ${sessionId}: Browserbase timeout — saving partial results.`);
                     await this.flushLogs();
                     await (this.supabase.from('persona_sessions') as any).update({
@@ -219,6 +231,8 @@ export class Orchestrator {
         sessionId: string,
         startUrl: string,
         persona: PersonaProfile,
+        browserModel: string,
+        browserApiKey: string | undefined,
         resume?: { visited: Set<string>; resumeUrl: string | null } | null
     ) {
         const siteMap = new SiteMap(startUrl);
@@ -236,6 +250,9 @@ export class Orchestrator {
         this.clog(sessionId, `╔══ CRAWL START ══ persona: ${persona.name} ══ target: ${startUrl}`);
         this.clog(sessionId, `║  page budget: ${MAX_PAGES} | seed queue: ${siteMap.queueLength()}`);
         this.clog(sessionId, `║  browser: single instance reused across all pages (no per-page restart)`);
+
+        let browserRestarts = 0;
+        let lastGoodCookies: any[] = [];
 
         while (siteMap.visitedCount() < MAX_PAGES) {
             const pageUrl = siteMap.dequeue();
@@ -271,12 +288,17 @@ export class Orchestrator {
             let observation: Awaited<ReturnType<BrowserService['observeFastPage']>> | null = null;
             let links: string[] = [];
             let pageMetrics = { latency_ms: 0, broken_links_count: 0, request_failures: 0 };
+            let browserRestartTriggered = false;
 
             try {
                 const navStart = Date.now();
                 await this.browser.navigate(pageUrl);
                 pageMetrics = this.browser.getLastPageMetrics();
                 this.clog(sessionId, `║    Navigate             +${Date.now() - navStart}ms → ${pageUrl} (load: ${pageMetrics.latency_ms}ms, broken: ${pageMetrics.broken_links_count}, reqFail: ${pageMetrics.request_failures})`);
+
+                // Checkpoint cookies after each successful navigation so we can
+                // restore auth state if the browser session is renewed mid-crawl.
+                lastGoodCookies = await this.browser.exportCookies().catch(() => []);
 
                 const obsStart = Date.now();
                 observation = await this.browser.observeFastPage();
@@ -292,8 +314,33 @@ export class Orchestrator {
                     if (links.length > 0) links.forEach(l => this.clog(sessionId, `║      · ${l}`));
                 }
             } catch (err: any) {
-                this.clog(sessionId, `║    ✖ Capture FAILED: ${err.message}`);
+                if (isBrowserTimeoutError(err)) {
+                    // ── BrowserBase session expired — renew and retry this page ──
+                    browserRestarts++;
+                    if (browserRestarts > MAX_BROWSER_RESTARTS) {
+                        this.clog(sessionId, `║  ✖ Max browser restarts (${MAX_BROWSER_RESTARTS}) reached — stopping crawl.`);
+                        break;
+                    }
+                    this.clog(sessionId, `║  ⚡ BrowserBase session expired — renewing (${browserRestarts}/${MAX_BROWSER_RESTARTS})...`);
+                    await this.browser.close().catch(() => {});
+                    await this.log(sessionId, pageUrl, 'neutral',
+                        `Browser session renewed (restart ${browserRestarts}/${MAX_BROWSER_RESTARTS}).`,
+                        { type: 'system', info: 'browser_session_renewed' });
+                    await this.flushLogs();
+                    await this.browser.init(browserModel, browserApiKey);
+                    if (lastGoodCookies.length) {
+                        await this.browser.restoreCookies(lastGoodCookies).catch(() => {});
+                        this.clog(sessionId, `║    Cookies restored (${lastGoodCookies.length} entries)`);
+                    }
+                    // pageUrl was dequeued but never marked visited — re-enqueue for retry
+                    siteMap.enqueue([pageUrl]);
+                    browserRestartTriggered = true;
+                } else {
+                    this.clog(sessionId, `║    ✖ Capture FAILED: ${err.message}`);
+                }
             }
+
+            if (browserRestartTriggered) continue;
 
             if (!observation || !observation.url) {
                 this.clog(sessionId, `║  ✖ Skipping — no observation captured`);
@@ -315,11 +362,16 @@ export class Orchestrator {
             // If a click navigates away, the destination URL is enqueued and we
             // return to the current page to finish the interaction set.
             if (!isAuth) {
-                await this.runInteractions(sessionId, pageUrl, siteMap);
+                await this.runInteractions(sessionId, pageUrl, siteMap).catch((err: any) => {
+                    // Interactions are best-effort — a browser timeout here skips the
+                    // interaction set but doesn't abort the page (LLM phase still runs).
+                    if (!isBrowserTimeoutError(err)) throw err;
+                    this.clog(sessionId, `║    ⚡ Browser timeout during interactions — skipping interaction set`);
+                });
                 // Return to the page we were analysing after interactions
                 const currentUrl = this.browser.getCurrentUrl();
                 if (this.normalizeUrl(currentUrl) !== this.normalizeUrl(pageUrl)) {
-                    await this.browser.navigate(pageUrl);
+                    await this.browser.navigate(pageUrl).catch(() => {});
                 }
             }
 
@@ -335,7 +387,7 @@ export class Orchestrator {
 
             // Filter: remove Slice-1 if header already seen, remove last slice if footer already seen
             const allSections = observation.sections;
-            const sectionsForLLM = allSections.filter((s, i) => {
+            const sectionsForLLM = allSections.filter((_s, i) => {
                 if (i === 0 && headerSeen) return false;
                 if (i === allSections.length - 1 && footerSeen) return false;
                 return true;

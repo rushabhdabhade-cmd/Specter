@@ -153,25 +153,42 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         const llm = new LLMService({ provider: synthProvider, apiKey });
 
         // Main synthesis
-        const synthesisPrompt = `You are a senior UX strategist writing a balanced, evidence-based executive audit.
+        const synthesisPrompt = `You are a senior UX strategist. Your output will be rendered directly in a Markdown viewer.
+
+CRITICAL: Your ENTIRE response must be valid Markdown. No plain prose paragraphs. Every sentence must be inside a Markdown structure (heading, bullet, bold, etc.). Never output a wall of unformatted text.
 
 Stats: ${sessions.length} personas tested | ${funnelRate.toFixed(1)}% completion | Usability score: ${averageScore}/100
 
-UX feedback collected (positive and negative):
+UX feedback collected:
 ${Array.from(allFeedback).map(f => `- ${f}`).join('\n')}
 
-Session details (includes delight, curiosity, and friction moments):
+Session details:
 ${qualitativeData.join('\n')}
 
-Write in Markdown:
-# Strategic UX Audit
-(3–5 sentences. Be balanced and accurate — credit genuine strengths before identifying friction. Cover: what works well (visual design, content, navigation), where friction occurs, and which persona types are most affected. Avoid over-penalising minor issues; focus on patterns that consistently impacted multiple steps.)
+Output the following Markdown document EXACTLY — no deviations, no extra sections, no plain text outside these elements:
 
-Then output action items in EXACTLY this format:
+## Strategic UX Audit
+
+[3–5 sentences as a normal paragraph here — this is the only place plain prose is allowed]
+
+## What's Working
+
+- [strength 1]
+- [strength 2]
+- [strength 3 if applicable]
+
+## Key Friction Points
+
+- **[issue title]** — [one-sentence description of impact]
+- **[issue title]** — [one-sentence description of impact]
+
+Be balanced and evidence-based. Credit genuine strengths. Focus on patterns that affected multiple steps, not isolated incidents. Only call something a problem if multiple personas experienced it.
+
+Then output action items in EXACTLY this format (outside the markdown above):
 [ACTION_ITEMS]
 - (Priority: High/Medium/Low) | Fix: [title] | Detail: [specific recommendation] | Steps: PersonaName#3, OtherPersona#7
 [/ACTION_ITEMS]
-Max 5 items, ordered by actual user impact (not just negativity). Only flag High priority for issues that caused clear task failure or repeated frustration. For Steps, cite the persona name and step number(s) from the session data above. Use the exact persona name as shown (e.g. "Sarah#3"). Omit Steps field if no specific step applies.`;
+Max 5 items, ordered by user impact. Only flag High for issues causing task failure or repeated frustration. Omit Steps if no specific step applies.`;
 
         try {
             console.log(`Synthesizing report with ${synthProvider}...`);
@@ -215,14 +232,14 @@ Max 5 items, ordered by actual user impact (not just negativity). Only flag High
         // Strip action items block from display text
         aiSynthesis = aiSynthesis
             .replace(/\[ACTION_ITEMS\][\s\S]*?\[\/ACTION_ITEMS\]/gi, '')
-            .replace(/^#+\s*STRATEGIC\s*SUMMARY\s*\n+/i, '')
+            .replace(/^#+\s*STRATEGIC\s*(UX\s*)?(AUDIT|SUMMARY)\s*\n+/i, '')
             .trim();
 
         // Feedback summary (brief characterization — reuse the same cheap model)
         if (allFeedback.size > 0) {
             try {
                 feedbackSummary = await llm.generateSummary(
-                    `Summarize these UX feedback points in 2–3 concise professional sentences. Focus on recurring themes and overall sentiment:\n\n${Array.from(allFeedback).join('\n')}`
+                    `Summarize these UX feedback points in 2–3 concise professional sentences. Output plain text only — no markdown, no bullet points, no headings. Focus on recurring themes and overall sentiment:\n\n${Array.from(allFeedback).join('\n')}`
                 );
                 console.log('Feedback summary complete.');
             } catch (_) { }

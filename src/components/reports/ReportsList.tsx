@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ReportCard } from './ReportCard';
+import { ScrollToTop } from './ScrollToTop';
 
 const PAGE_SIZE = 6;
 
@@ -22,10 +23,10 @@ interface ReportsListProps {
 }
 
 export function ReportsList({ initialReports }: ReportsListProps) {
-    const [reports, setReports]         = useState(initialReports);
+    const [reports, setReports] = useState(initialReports);
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterMode, setFilterMode]   = useState<'all' | 'high' | 'low'>('all');
-    const [page, setPage]               = useState(1);
+    const [filterMode, setFilterMode] = useState<'all' | 'high' | 'low'>('all');
+    const [page, setPage] = useState(1);
 
     const handleDelete = (id: string) => {
         setReports(prev => prev.filter(r => r.id !== id));
@@ -42,48 +43,47 @@ export function ReportsList({ initialReports }: ReportsListProps) {
             const matchesFilter =
                 filterMode === 'all' ||
                 (filterMode === 'high' && report.usabilityScore >= 70) ||
-                (filterMode === 'low'  && report.usabilityScore < 50);
+                (filterMode === 'low' && report.usabilityScore < 50);
             return matchesSearch && matchesFilter;
         });
     }, [reports, searchQuery, filterMode]);
 
-    const totalPages  = Math.max(1, Math.ceil(filteredReports.length / PAGE_SIZE));
-    const safePage    = Math.min(page, totalPages);
+    const totalPages = Math.max(1, Math.ceil(filteredReports.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
     const pageReports = filteredReports.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-    const start       = filteredReports.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
-    const end         = Math.min(safePage * PAGE_SIZE, filteredReports.length);
+    const start = filteredReports.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+    const end = Math.min(safePage * PAGE_SIZE, filteredReports.length);
 
     return (
         <div className="space-y-5">
             {/* ── Search + filters ── */}
             <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                     <input
                         type="text"
                         placeholder="Search by project or URL..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full h-10 bg-slate-800/60 border border-slate-700/50 rounded-xl pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 transition-all"
+                        className="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
                     />
                 </div>
 
-                <div className="flex items-center bg-slate-800/60 border border-slate-700/50 rounded-xl p-1 gap-1">
+                <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 gap-1">
                     {([
-                        { key: 'all',  label: 'All' },
+                        { key: 'all', label: 'All' },
                         { key: 'high', label: 'Good score' },
-                        { key: 'low',  label: 'Needs work' },
+                        { key: 'low', label: 'Needs work' },
                     ] as const).map(({ key, label }) => (
                         <button
                             key={key}
                             onClick={() => setFilterMode(key)}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                filterMode === key
-                                    ? key === 'high' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                                    : key === 'low'  ? 'bg-red-500/15 text-red-400 border border-red-500/20'
-                                    : 'bg-slate-600/60 text-white border border-slate-500/40'
-                                    : 'text-slate-400 hover:text-slate-200'
-                            }`}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${filterMode === key
+                                    ? key === 'high' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : key === 'low' ? 'bg-red-50 text-red-700 border border-red-200'
+                                            : 'bg-slate-900 text-white border border-slate-900'
+                                    : 'text-slate-500 hover:text-slate-800'
+                                }`}
                         >
                             {label}
                         </button>
@@ -98,13 +98,13 @@ export function ReportsList({ initialReports }: ReportsListProps) {
                         <ReportCard key={report.id} report={report} onDelete={handleDelete} />
                     ))
                 ) : (
-                    <div className="col-span-full flex flex-col items-center justify-center space-y-4 rounded-2xl border border-dashed border-slate-700 bg-slate-800/20 py-20 text-center">
-                        <div className="h-12 w-12 rounded-xl bg-slate-700/60 border border-slate-600/40 flex items-center justify-center">
-                            <FileText className="h-6 w-6 text-slate-500" />
+                    <div className="col-span-full flex flex-col items-center justify-center space-y-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-20 text-center">
+                        <div className="h-12 w-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center">
+                            <FileText className="h-6 w-6 text-slate-400" />
                         </div>
                         <div>
-                            <h3 className="text-base font-bold text-white">No reports found</h3>
-                            <p className="text-sm text-slate-400 mt-1">Try adjusting your search or filter.</p>
+                            <h3 className="text-base font-bold text-slate-900">No reports found</h3>
+                            <p className="text-sm text-slate-500 mt-1">Try adjusting your search or filter.</p>
                         </div>
                         <button
                             onClick={() => { setSearchQuery(''); setFilterMode('all'); }}
@@ -119,16 +119,16 @@ export function ReportsList({ initialReports }: ReportsListProps) {
             {/* ── Pagination ── */}
             {filteredReports.length > PAGE_SIZE && (
                 <div className="flex items-center justify-between pt-2">
-                    <p className="text-sm text-slate-400">
-                        Showing <span className="text-white font-semibold">{start}–{end}</span> of{' '}
-                        <span className="text-white font-semibold">{filteredReports.length}</span> reports
+                    <p className="text-sm text-slate-500">
+                        Showing <span className="text-slate-900 font-semibold">{start}–{end}</span> of{' '}
+                        <span className="text-slate-900 font-semibold">{filteredReports.length}</span> reports
                     </p>
 
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setPage(p => Math.max(1, p - 1))}
                             disabled={safePage === 1}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700/50 bg-slate-800/60 text-sm font-semibold text-slate-400 hover:text-white hover:border-slate-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:text-slate-900 hover:border-slate-300 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             <ChevronLeft className="h-4 w-4" />
                             Prev
@@ -139,11 +139,10 @@ export function ReportsList({ initialReports }: ReportsListProps) {
                                 <button
                                     key={p}
                                     onClick={() => setPage(p)}
-                                    className={`h-8 w-8 rounded-lg text-sm font-bold transition-all ${
-                                        p === safePage
+                                    className={`h-8 w-8 rounded-lg text-sm font-bold transition-all ${p === safePage
                                             ? 'bg-indigo-600 text-white'
-                                            : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
-                                    }`}
+                                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                                        }`}
                                 >
                                     {p}
                                 </button>
@@ -153,7 +152,7 @@ export function ReportsList({ initialReports }: ReportsListProps) {
                         <button
                             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                             disabled={safePage === totalPages}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700/50 bg-slate-800/60 text-sm font-semibold text-slate-400 hover:text-white hover:border-slate-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:text-slate-900 hover:border-slate-300 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             Next
                             <ChevronRight className="h-4 w-4" />
@@ -161,6 +160,7 @@ export function ReportsList({ initialReports }: ReportsListProps) {
                     </div>
                 </div>
             )}
+
         </div>
     );
 }
