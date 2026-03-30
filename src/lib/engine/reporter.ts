@@ -2,6 +2,8 @@ import { createAdminClient } from '../supabase/admin';
 import { LLMService } from './llm';
 import { decrypt } from '../utils/vault';
 import { calculateSessionScore, ALL_EMOTIONS } from '../utils/scoring';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface ReportSummary {
     personaName: string;
@@ -46,7 +48,7 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
 
     // ── Fetch project config ─────────────────────────────────────────────────
     const { data: testRun } = await (supabase.from('test_runs') as any)
-        .select('projects(id, llm_provider, encrypted_llm_key)')
+        .select('projects(id, user_id, llm_provider, encrypted_llm_key)')
         .eq('id', testRunId)
         .maybeSingle();
 
@@ -62,6 +64,29 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
     if (sError || !sessions?.length) {
         console.error('Failed to fetch sessions:', sError);
         return;
+    }
+
+    // ── Save raw logs to /tmp/{userId}/{testRunId}.log ───────────────────────
+    try {
+        const userId = testRun?.projects?.user_id || 'unknown';
+        const dir = path.join('/tmp', userId);
+        fs.mkdirSync(dir, { recursive: true });
+        const lines: string[] = [`=== Test Run: ${testRunId} | ${new Date().toISOString()} ===\n`];
+        for (const session of sessions) {
+            const name = session.persona_configs?.name || 'Unknown';
+            lines.push(`\n--- Session: ${session.id} | Persona: ${name} | Status: ${session.status} ---`);
+            const logs = (session.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number);
+            for (const log of logs) {
+                lines.push(`[Step ${log.step_number}] [${log.emotion_tag}] ${log.current_url}`);
+                if (log.inner_monologue) lines.push(`  monologue: ${log.inner_monologue}`);
+                const ux = log.action_taken?.ux_feedback;
+                if (ux) lines.push(`  ux_feedback: ${ux}`);
+            }
+        }
+        fs.writeFileSync(path.join(dir, `${testRunId}.log`), lines.join('\n'));
+        console.log(`Logs saved → /tmp/${userId}/${testRunId}.log`);
+    } catch (err: any) {
+        console.warn('Failed to save local logs:', err.message);
     }
 
     // ── Aggregate ────────────────────────────────────────────────────────────
