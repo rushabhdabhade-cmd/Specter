@@ -9,7 +9,16 @@ function isCDPTimeout(err: any): boolean {
         || msg.includes('session expired')
         || msg.includes('target page, context or browser has been closed')
         || msg.includes('browser has been closed')
+        || msg.includes('page was closed')
+        || msg.includes('page has been closed')
+        || msg.includes('target closed')
+        || msg.includes('protocol error')
+        || msg.includes('net::err_failed')
+        || msg.includes('net::err_aborted')
         || msg.includes('connection closed')
+        || msg.includes('connection reset')
+        || msg.includes('econnreset')
+        || msg.includes('socket hang up')
         || msg.includes('websocket');
 }
 

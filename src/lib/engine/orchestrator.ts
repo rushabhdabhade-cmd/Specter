@@ -25,13 +25,21 @@ const MAX_BROWSER_RESTARTS = 3;     // Max BrowserBase session renewals per craw
 function isBrowserTimeoutError(err: any): boolean {
     const msg = (err?.message ?? '').toLowerCase();
     return msg.includes('socket-close')
-        || msg.includes('cdp transport closed')
+        || msg.includes('cdp transport')
         || msg.includes('session timed out')
         || msg.includes('session expired')
         || msg.includes('target page, context or browser has been closed')
         || msg.includes('browser has been closed')
+        || msg.includes('page was closed')
+        || msg.includes('page has been closed')
+        || msg.includes('target closed')
+        || msg.includes('protocol error')
         || msg.includes('net::err_failed')
+        || msg.includes('net::err_aborted')
         || msg.includes('connection closed')
+        || msg.includes('connection reset')
+        || msg.includes('econnreset')
+        || msg.includes('socket hang up')
         || msg.includes('websocket');
 }
 
@@ -336,7 +344,8 @@ export class Orchestrator {
                     siteMap.enqueue([pageUrl]);
                     browserRestartTriggered = true;
                 } else {
-                    this.clog(sessionId, `║    ✖ Capture FAILED: ${err.message}`);
+                    // Log the full error message so we can expand isBrowserTimeoutError if needed
+                    this.clog(sessionId, `║    ✖ Capture FAILED (non-timeout): ${err.message}`);
                 }
             }
 
