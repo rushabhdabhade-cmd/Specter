@@ -15,7 +15,7 @@ process.setMaxListeners(50);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_PAGES = 15;               // Hard cap on unique pages to visit
+const MAX_PAGES = 10;               // Hard cap on unique pages to visit
 const DB_FLUSH_INTERVAL = 3;        // Flush buffered logs every N steps
 const LINK_HARVEST_MAX = 20;        // Max links collected from any single page
 const MAX_BROWSER_RESTARTS = 3;     // Max BrowserBase session renewals per crawl
