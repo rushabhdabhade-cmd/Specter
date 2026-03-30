@@ -88,7 +88,8 @@ export default function SessionPage() {
                     return `[SYS] ${(action.info || '').replace(/_/g, ' ').toUpperCase()}`;
                 }
                 const path = (() => { try { return new URL(log.current_url).pathname; } catch { return log.current_url || ''; } })();
-                const thought = log.inner_monologue ? ` — ${log.inner_monologue.slice(0, 90)}` : '';
+                const raw = log.inner_monologue || '';
+                const thought = raw ? ` — ${raw.length > 90 ? raw.slice(0, 90) + '...' : raw}` : '';
                 return `[Step ${log.step_number}] ${(action?.type || 'action').toUpperCase()} ${path}${thought}`;
             }).filter(Boolean);
             if (sessionData?.live_status) historyLines.push(`[STATUS] ${sessionData.live_status}`);
@@ -130,7 +131,8 @@ export default function SessionPage() {
                     const log = payload.new as any;
                     const action = log.action_taken as any;
                     const path = (() => { try { return new URL(log.current_url).pathname; } catch { return log.current_url || ''; } })();
-                    const thought = log.inner_monologue ? ` — ${log.inner_monologue.slice(0, 90)}` : '';
+                    const raw2 = log.inner_monologue || '';
+                    const thought = raw2 ? ` — ${raw2.length > 90 ? raw2.slice(0, 90) + '...' : raw2}` : '';
                     const line = action?.type === 'system'
                         ? `[SYS] ${(action.info || '').replace(/_/g, ' ').toUpperCase()}`
                         : `[Step ${log.step_number}] ${(action?.type || 'action').toUpperCase()} ${path}${thought}`;
