@@ -333,17 +333,22 @@ export class Orchestrator {
                     }
                     this.clog(sessionId, `║  ⚡ BrowserBase session expired — renewing (${browserRestarts}/${MAX_BROWSER_RESTARTS})...`);
                     await this.browser.close().catch(() => {});
+                    // Re-enqueue BEFORE init so the page isn't lost if init fails
+                    siteMap.enqueue([pageUrl]);
                     await this.log(sessionId, pageUrl, 'neutral',
                         `Browser session renewed (restart ${browserRestarts}/${MAX_BROWSER_RESTARTS}).`,
                         { type: 'system', info: 'browser_session_renewed' });
                     await this.flushLogs();
-                    await this.browser.init(browserModel, browserApiKey);
+                    try {
+                        await this.browser.init(browserModel, browserApiKey);
+                    } catch (initErr: any) {
+                        this.clog(sessionId, `║  ✖ Browser re-init failed: ${initErr.message} — stopping crawl.`);
+                        break;
+                    }
                     if (lastGoodCookies.length) {
                         await this.browser.restoreCookies(lastGoodCookies).catch(() => {});
                         this.clog(sessionId, `║    Cookies restored (${lastGoodCookies.length} entries)`);
                     }
-                    // pageUrl was dequeued but never marked visited — re-enqueue for retry
-                    siteMap.enqueue([pageUrl]);
                     browserRestartTriggered = true;
                 } else {
                     // Log the full error message so we can expand isBrowserTimeoutError if needed
@@ -605,6 +610,7 @@ export class Orchestrator {
                     await this.browser.navigate(pageUrl);
                 }
             } catch (err: any) {
+                if (isBrowserTimeoutError(err)) throw err; // propagate — browser is dead
                 this.clog(sessionId, `║      ✖ Click failed: ${err.message}`);
             }
         }
