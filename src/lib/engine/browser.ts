@@ -337,7 +337,7 @@ export class BrowserService {
 
     private async captureSlice(label: string): Promise<ObservationSection> {
         if (!this.page) throw new Error('Browser not initialized');
-        await this.page.waitForTimeout(80);
+        await this.page.waitForTimeout(50);
         const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
         const screenshot = await this.page.screenshot({ type: 'jpeg', quality: 45 });
         return {
@@ -475,18 +475,18 @@ export class BrowserService {
         if (!this.page) return this.emptyObservation();
 
         // Ensure content is ready before we start snapping (guards post-click captures too)
-        await this.waitForContent(5000);
+        await this.waitForContent(2000);
 
         await this.page.evaluate(() => window.scrollTo(0, 0));
-        await this.page.waitForTimeout(80);
+        await this.page.waitForTimeout(50);
 
         const { vh, dh } = await this.page.evaluate(() => ({
             vh: window.innerHeight,
             dh: document.documentElement.scrollHeight
         }));
 
-        // One screenshot per viewport height, capped at 8 to avoid token overload
-        const sliceCount = Math.min(8, Math.ceil(dh / vh));
+        // One screenshot per viewport height, capped at 5 to keep phase 1 under ~10s
+        const sliceCount = Math.min(5, Math.ceil(dh / vh));
         const sections: ObservationSection[] = [];
 
         for (let i = 0; i < sliceCount; i++) {
@@ -712,11 +712,8 @@ export class BrowserService {
         const CTA_RE = /sign.?up|get.?start|start free|try.?free|try.?now|buy|purchase|pricing|plans?|checkout|demo|learn more|features|contact|subscribe|explore|watch|view|get.?demo|book.?a/i;
 
         try {
-            // Use Playwright's native element handles + boundingBox() instead of a monolithic
-            // page.evaluate(). boundingBox() uses Playwright's own layout engine and correctly
-            // handles content-visibility:auto, CSS animations, and other edge cases that cause
-            // getBoundingClientRect() inside page.evaluate() to return 0 or stale values.
-            const handles = await this.page.locator('a[href], button, [role="button"]').all();
+            // page.$$() is compatible with all Playwright versions (locator().all() requires 1.29+)
+            const handles = await this.page.$$('a[href], button, [role="button"]');
             const scrollY = await this.page.evaluate(() => window.scrollY).catch(() => 0);
 
             const found: Array<{ text: string; x: number; y: number; w: number; h: number; isNavLink: boolean; priority: number }> = [];
