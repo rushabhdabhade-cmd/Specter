@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useRef, useEffect } from 'react';
+import React, { Suspense, useMemo, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows, Center } from '@react-three/drei';
 import * as THREE from 'three';
@@ -225,12 +225,12 @@ export default function LegoModelSection() {
           </div>
         </div>
 
-        {[
-          { icon: BrainCircuit, text: "Wait, where is the pricing?", top: '12%', left: '3%' },
-          { icon: Sparkles, text: "Found it! Super intuitive UI.", top: '28%', left: '30%' },
-          { icon: ShieldCheck, text: "Checkout finished in 20s!", bottom: '28%', left: '3%' },
-          { icon: Target, text: "Friction Point: Confusion at Step 3", bottom: '16%', left: '22%' },
-        ].map((bubble, i) => (
+        {([
+          { icon: BrainCircuit, text: "Wait, where is the pricing?", top: '12%', left: '3%', bottom: undefined, right: undefined },
+          { icon: Sparkles, text: "Found it! Super intuitive UI.", top: '28%', left: '30%', bottom: undefined, right: undefined },
+          { icon: ShieldCheck, text: "Checkout finished in 20s!", bottom: '28%', left: '3%', top: undefined, right: undefined },
+          { icon: Target, text: "Friction Point: Confusion at Step 3", bottom: '16%', left: '22%', top: undefined, right: undefined },
+        ] as { icon: React.ElementType; text: string; top?: string; bottom?: string; left?: string; right?: string }[]).map((bubble, i) => (
           <div
             key={i}
             ref={(el) => { if (el) bubblesRef.current[i] = el; }}
@@ -239,7 +239,7 @@ export default function LegoModelSection() {
               top: bubble.top,
               bottom: bubble.bottom,
               left: bubble.left,
-              right: 'right' in bubble ? bubble.right : undefined,
+              right: bubble.right,
               opacity: 0,
               transform: 'scale(0.8) translateY(20px)'
             }}
