@@ -107,41 +107,37 @@ The engine has three components that work together: **Orchestrator**, **Browser 
 
 **File:** `src/lib/engine/orchestrator.ts`
 
-The orchestrator runs the full session lifecycle. Key constants that govern behavior:
+The orchestrator runs the full session lifecycle using a **Crawl-Reason-Repeat** pattern. Key constants:
 
 ```
 MAX_PAGES          = 15   — Hard cap on unique pages visited per session
-MAX_ACTIONS_PAGE   = 5    — Max interactions per page before moving on
-MAX_SAME_ACTIONS   = 2    — Identical consecutive actions before blacklisting
 DB_FLUSH_INTERVAL  = 3    — Write buffered logs to DB every N steps
 LINK_HARVEST_MAX   = 20   — Max links collected from any single page
+MAX_INTERACTIONS   = 4    — Max heuristic clicks per page (for heatmap)
 ```
 
-**Session flow:**
+**Session flow (per page):**
 
 1. Fetch project config from DB (LLM provider, encrypted API key, URL)
-2. Decrypt API key, initialize LLMService and BrowserService
-3. Navigate to start URL, set session status → `running`
-4. Enter **traversal loop** — queue-based depth-first crawl:
-   - Pop URL from queue
-   - Check if already visited (skip if so)
-   - Detect auth pages via regex — skip without LLM call
-   - Run **full-page scan** (one LLM call covers all viewport sections)
-   - Harvest same-origin links → add to queue
-   - Run **action loop** (up to 5 actions per page):
-     - Observe current viewport
-     - Ask LLM for next action
-     - Detect loops, blacklist stuck patterns
-     - Execute action via browser
-     - Log step with emotion, monologue, screenshot, UX feedback
-5. After all pages visited or caps hit: flush logs, set status → `completed`
+2. Decrypt API key, initialize LLMService and BrowserService (one browser instance reused across all pages)
+3. Set session status → `running`, seed URL queue
+4. Enter **Crawl-Reason-Repeat loop:**
+   - Pop URL from queue, skip if already visited
+   - Detect auth pages via regex
+   - **Navigate** → double `networkidle` wait + content readiness check
+   - **Capture** → dynamic N-slice full-page screenshots (up to 8) + DOM extraction
+   - **Heuristic interactions** → up to 4 native Playwright clicks on CTAs/nav links (no LLM, logged for heatmap)
+   - **Header/footer dedup** → fingerprint page chrome; skip re-analyzing identical nav/footer on subsequent pages
+   - **LLM reasoning** → `analysePage()` (regular pages) or `analyzePageSections()` (auth pages) — one call covers all slices
+   - **Validate next links** → drop LLM-suggested URLs not found in DOM-harvested links (prevents hallucinated URLs)
+   - Enqueue validated next links + harvested links
+   - Log one DB entry per section (per-slice feedback + emotion score)
+5. After all pages visited or budget hit: flush logs, set status → `completed`
 6. Trigger report generation if all sessions in the test run are complete
 
-**Loop detection:** The orchestrator tracks consecutive identical actions. After 2 repeats, the element is blacklisted for the current page. The LLM is informed of the blacklist so it tries something different.
+**Auth page handling:** URLs matching `/login`, `/signup`, `/register`, `/auth`, `/oauth`, `/callback` are flagged. Auth pages still get captured and analyzed for UX feedback on the login form design, but `analysePage()` is replaced with the simpler `analyzePageSections()` and no `next_links` are followed.
 
-**Auth page guard:** If a URL matches patterns like `/login`, `/signup`, `/register`, `/auth` — the page is skipped entirely without an LLM call. The LLM prompt also instructs personas never to fill credentials, even if they encounter an auth form.
-
-**Buffered logging:** Steps are held in memory and flushed to DB every 3 steps (and always at session end). This reduces database roundtrips by 60–70% on long sessions.
+**Buffered logging:** Steps are held in memory and flushed to DB every 3 steps (and always at session end). Reduces database roundtrips by ~65% on long sessions.
 
 ---
 
@@ -153,22 +149,30 @@ Built on **Stagehand**, which wraps Playwright's Chromium with AI-assisted actio
 
 **Viewport:** 1280×800 headless Chromium.
 
-**Full-page scan strategy:**
+**Full-page scan strategy (dynamic N-slice):**
 
-The browser captures multiple viewport slices to represent the full page to the LLM:
+The browser captures one screenshot per viewport height, scrolling down the full page:
 
 ```
-Page height > 1.5× viewport:  capture Top + Mid + Bottom sections
-Page height ≤ 1.5× viewport:  capture Top section only
+sliceCount = min(8, ceil(pageHeight / viewportHeight))
 
-Quality:
-  Section screenshots (Top/Mid/Bottom): 40% JPEG  — fast, reduced tokens
-  Primary screenshot (returned to top): 60% JPEG  — better quality + DOM context
+All slices: 45% JPEG quality (balance of size and LLM readability)
+Cap at 8 slices to stay within LLM token budget
 ```
 
-All sections are passed to the LLM in a single multi-image request — one LLM call covers the whole page.
+After Slice-1, `dismissPopups()` runs — presses Escape, clicks common close buttons (cookie banners, GDPR notices, modals), and force-hides any remaining `position:fixed` overlay. This ensures subsequent slices show actual page content, not popups.
 
-**DOM extraction:** Pulls interactive elements from the accessibility tree (links, buttons, inputs, combos). Deduplicates by `role::text` key. Max 30 elements per viewport. Coordinates resolved for heatmap data.
+All slices are passed to the LLM in a single multi-image request — one LLM call covers the full page regardless of length.
+
+**Content readiness check:** Before any screenshot is taken, the engine polls (up to 8s) waiting for:
+- `document.readyState === 'complete'`
+- Visible text > 100 chars (not a blank SPA shell)
+- No active loading indicators (`[class*="skeleton"]`, `[aria-busy]`, spinners)
+- No API-pending empty states ("No videos found.", "Loading...", etc.)
+
+**Double networkidle:** After `domcontentloaded`, the engine waits for `networkidle`, then pauses 600ms (letting React/Vue `useEffect` API calls fire), then waits for a second `networkidle`. This catches lazy-loaded content that fires after the initial render.
+
+**DOM extraction (`extractDOMFast()`):** Queries all interactive elements (`a[href]`, `button`, `input`, `select`, `[role="button"]`, etc.) via `page.evaluate()` — no Stagehand overhead. Deduplicates by `role::text`. Max 60 elements, full page (not viewport-restricted). Coordinates included for heatmap overlay. ~100ms vs ~3–5s for the old `stagehand.observe()` method. DOM is attached to Slice-1 only.
 
 **Network monitoring:** Tracks HTTP 400+ responses as broken links, counts request failures, measures navigation latency. All stored in session metrics for the technical audit.
 
@@ -191,47 +195,37 @@ Provides a unified `LLMProvider` interface implemented by four classes:
 
 **Key LLM calls:**
 
-#### 1. `decideNextAction` — Per-step persona decision
+#### 1. `analysePage` — Full-page analysis + navigation intent (regular pages)
 
-Called every action. Receives: current screenshot + DOM + persona profile + action history + blacklist.
+The primary LLM call in the Crawl-Reason-Repeat loop. Receives all page slices + DOM context + persona profile + journey narrative + available links.
 
-The LLM responds as the persona, producing:
-```typescript
-{
-  type: 'click' | 'type' | 'scroll' | 'wait' | 'complete' | 'fail' | 'skip_node'
-  text?: string               // element label or text to type
-  reasoning: string           // first-person internal monologue
-  emotional_state: string     // one of 9 emotions
-  emotional_intensity: number // 0.0 – 1.0
-  ux_feedback: string         // honest UX critique
-  proposed_solution?: string  // specific fix recommendation
-  possible_paths: string[]    // alternatives considered
-}
-```
-
-Terminal actions (`complete`, `fail`, `skip_node`) end the current page loop. The prompt explicitly instructs the LLM to use `skip_node` on auth forms, 404s, or pages with no relevant content.
-
-#### 2. `analyzePageSections` — Full-page UX audit
-
-Called once per page (not per action). Receives all captured viewport sections as images in a single request.
-
-Returns per-section breakdown:
+Returns:
 ```typescript
 {
   sections: [{
-    label: 'Top' | 'Mid' | 'Bottom'
+    label: 'Slice-1' | 'Slice-2' | ...
     ux_feedback: string
-    emotional_state: string
-    emotional_intensity: number
+    emotional_state: string      // one of 9 UXEmotion values
+    emotional_intensity: number  // 0.0 – 1.0
     proposed_solution?: string
   }],
   overall_emotion: string
   overall_intensity: number
   page_summary: string
+  friction_points: string[]       // concrete UX problems
+  positives: string[]             // well-executed elements
+  next_links: string[]            // 3–5 URLs to visit next (validated vs DOM)
+  journey_narrative_update: string // one-sentence running narrative
 }
 ```
 
-This is a significant optimization: instead of 3 separate LLM calls (one per section), one call processes all sections. ~50% token reduction.
+#### 2. `analyzePageSections` — Auth page UX audit
+
+Simpler call used for auth pages. Same multi-image request but without navigation intent — returns section feedback and overall emotion only (no `next_links`, no `friction_points`).
+
+#### 3. `decideNextAction` — Legacy interactive agent
+
+Available in the LLM interface but not used in the current Crawl-Reason-Repeat engine. Was the per-step decision call in the old interactive loop (click/type/scroll per action). Kept for potential future use in manual mode.
 
 #### 3. `generatePersonas` + `suggestArchetypes` — Setup wizard
 

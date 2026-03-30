@@ -144,21 +144,54 @@ One row per action step taken by the persona during a session.
 | `created_at` | `TIMESTAMPTZ` | |
 
 **`action_taken` JSONB shape:**
+
+The shape varies by `type`. All fields are optional except `type`.
+
+**`type: 'system'`** — orchestrator lifecycle events
 ```json
 {
-  "type": "click | type | scroll | wait | complete | fail | skip_node | system",
-  "selector": "xpath=...",
-  "text": "Subscribe",
-  "reasoning": "first-person monologue",
-  "emotional_state": "curiosity",
-  "emotional_intensity": 0.7,
-  "specific_emotion": "intrigued",
-  "ux_feedback": "CTA is unclear",
+  "type": "system",
+  "info": "session_started | session_completed | session_retry"
+}
+```
+
+**`type: 'page_section'`** — per-slice UX analysis from the LLM
+```json
+{
+  "type": "page_section",
+  "info": "section_Slice-1 | section_Slice-2 | auth_section",
+  "label": "Slice-1",
+  "specific_emotion": "curious",
   "proposed_solution": "Change button label to...",
-  "possible_paths": ["...", "..."],
-  "info": "session_started | browser_init | scan_top | session_completed | ...",
-  "local_screenshot_path": "https://s3.../screenshots/...",
-  "click_coords": { "x": 120, "y": 340, "w": 80, "h": 32 }
+  "local_screenshot_path": "/screenshots/session-id/step_4.jpg"
+}
+```
+
+On the **last section of each page**, the following page-level fields are also included:
+```json
+{
+  "page_summary": "The pricing page is clear but...",
+  "friction_points": ["No visible CTA above the fold", "..."],
+  "positives": ["Clean layout", "..."],
+  "overall_emotion": "curiosity",
+  "overall_intensity": 0.72,
+  "technical_metrics": {
+    "latency_ms": 1240,
+    "broken_links_count": 0,
+    "request_failures": 0
+  }
+}
+```
+
+**`type: 'click'`** — heuristic interaction (no LLM, pure Playwright)
+```json
+{
+  "type": "click",
+  "info": "heuristic_interaction",
+  "text": "Get Started",
+  "coordinates": { "x": 120, "y": 340, "w": 80, "h": 32 },
+  "navigated_to": "https://example.com/signup",
+  "local_screenshot_path": "/screenshots/session-id/step_7.jpg"
 }
 ```
 

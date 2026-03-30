@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="7" fill="#1a1a2e"/>
+  <!-- Ghost body: arch top + straight sides + scalloped bottom -->
+  <path d="M10 19.5V14a6 6 0 1 1 12 0v5.5l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5Z" fill="white"/>
+  <!-- Eyes -->
+  <circle cx="13.5" cy="14.5" r="1" fill="#1a1a2e"/>
+  <circle cx="18.5" cy="14.5" r="1" fill="#1a1a2e"/>
+</svg>
