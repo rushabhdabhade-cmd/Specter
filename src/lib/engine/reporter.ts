@@ -119,9 +119,12 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         }
 
         // Collect unique, meaningful UX feedback
+        // ux_feedback in action_taken is only populated for autonomous-mode click actions;
+        // for page_section logs (the majority) the feedback lives in inner_monologue.
         for (const log of logs) {
-            const f = log.action_taken?.ux_feedback;
-            if (f && typeof f === 'string' && f.length > 10 && f !== 'undefined') {
+            const f = log.action_taken?.ux_feedback || log.inner_monologue;
+            if (f && typeof f === 'string' && f.length > 10 && f !== 'undefined'
+                && log.action_taken?.type !== 'system') {
                 allFeedback.add(f.slice(0, 200));
             }
         }
