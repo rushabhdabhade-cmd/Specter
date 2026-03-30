@@ -66,25 +66,34 @@ export async function generateAndStoreReport(testRunId: string, force = false) {
         return;
     }
 
-    // ── Save raw logs to /tmp/{userId}/{testRunId}.log ───────────────────────
+    // ── Save raw logs to /tmp/specter/{userId}/{testRunId}.json ─────────────
     try {
         const userId = testRun?.projects?.user_id || 'unknown';
-        const dir = path.join('/tmp', userId);
+        const dir = path.join('/tmp', 'specter', userId);
         fs.mkdirSync(dir, { recursive: true });
-        const lines: string[] = [`=== Test Run: ${testRunId} | ${new Date().toISOString()} ===\n`];
-        for (const session of sessions) {
-            const name = session.persona_configs?.name || 'Unknown';
-            lines.push(`\n--- Session: ${session.id} | Persona: ${name} | Status: ${session.status} ---`);
-            const logs = (session.session_logs || []).sort((a: any, b: any) => a.step_number - b.step_number);
-            for (const log of logs) {
-                lines.push(`[Step ${log.step_number}] [${log.emotion_tag}] ${log.current_url}`);
-                if (log.inner_monologue) lines.push(`  monologue: ${log.inner_monologue}`);
-                const ux = log.action_taken?.ux_feedback;
-                if (ux) lines.push(`  ux_feedback: ${ux}`);
-            }
-        }
-        fs.writeFileSync(path.join(dir, `${testRunId}.log`), lines.join('\n'));
-        console.log(`Logs saved → /tmp/${userId}/${testRunId}.log`);
+        const output = {
+            testRunId,
+            userId,
+            savedAt: new Date().toISOString(),
+            sessions: sessions.map((session: any) => ({
+                sessionId: session.id,
+                personaName: session.persona_configs?.name || 'Unknown',
+                goal: session.persona_configs?.goal_prompt || '',
+                status: session.status,
+                logs: (session.session_logs || [])
+                    .sort((a: any, b: any) => a.step_number - b.step_number)
+                    .map((log: any) => ({
+                        step: log.step_number,
+                        emotion: log.emotion_tag,
+                        url: log.current_url,
+                        monologue: log.inner_monologue || null,
+                        uxFeedback: log.action_taken?.ux_feedback || null,
+                        actionType: log.action_taken?.type || null,
+                    }))
+            }))
+        };
+        fs.writeFileSync(path.join(dir, `${testRunId}.json`), JSON.stringify(output, null, 2));
+        console.log(`Logs saved → /tmp/specter/${userId}/${testRunId}.json`);
     } catch (err: any) {
         console.warn('Failed to save local logs:', err.message);
     }
