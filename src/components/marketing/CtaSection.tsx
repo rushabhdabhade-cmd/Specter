@@ -59,7 +59,7 @@ export default function CtaSection() {
               >
                 <h2 className="text-5xl md:text-6xl font-black tracking-tight leading-[1.05] text-slate-900 mb-5">
                   Know what breaks<br />
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-500 whitespace-nowrap">
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-500">
                     before anyone else does.
                   </span>
                 </h2>

@@ -1,12 +1,6 @@
 "use client";
 import { cn } from "@/lib/utils";
 import { motion, MotionValue } from "framer-motion";
-import React from "react";
-
-const transition = {
-  duration: 0,
-  ease: "linear" as const,
-};
 
 const paths = [
   {
@@ -61,40 +55,6 @@ export const GoogleGeminiEffect = ({
           </filter>
         </defs>
 
-        {/* Tag moved to the top of the section */}
-        <foreignObject x="0" y="20" width="100%" height="100" overflow="visible" style={{ zIndex: 100 }}>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '4px',
-              width: '100%',
-              paddingTop: '20px',
-              pointerEvents: 'none',
-            }}
-          >
-            <p style={{ fontSize: '12px', color: 'rgb(163 163 163)', textAlign: 'center', opacity: 0.8 }}>
-              How we make insights from your users&apos; product
-            </p>
-            <div style={{
-              fontWeight: 'bold',
-              background: 'rgba(255, 255, 255, 0.9)',
-              backdropFilter: 'blur(8px)',
-              borderRadius: '9999px',
-              padding: '8px 16px',
-              color: 'black',
-              fontSize: '13px',
-              border: '1px solid rgba(255, 255, 255, 0.5)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              pointerEvents: 'auto',
-              cursor: 'pointer',
-            }}>
-              Specter Engine
-            </div>
-          </div>
-        </foreignObject>
-
         {/* Glow layer — blurred duplicate paths */}
         {paths.map((p, i) => (
           <motion.path
@@ -128,7 +88,8 @@ export const GoogleGeminiEffect = ({
 
       {/* Centered pill tag moved outside SVG to prevent stretching and ensure top-layering */}
       <div
-        className="absolute top-[58%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] pointer-events-none"
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] pointer-events-none"
+        style={{ top: 'calc(0.575 * max(100vh, 890px) - 60px)' }}
       >
         <div
           style={{

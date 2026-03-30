@@ -239,7 +239,7 @@ export default function LegoModelSection() {
               top: bubble.top,
               bottom: bubble.bottom,
               left: bubble.left,
-              right: bubble.right,
+              right: 'right' in bubble ? bubble.right : undefined,
               opacity: 0,
               transform: 'scale(0.8) translateY(20px)'
             }}
