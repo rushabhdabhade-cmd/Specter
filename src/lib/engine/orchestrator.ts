@@ -40,7 +40,9 @@ function isBrowserTimeoutError(err: any): boolean {
         || msg.includes('connection reset')
         || msg.includes('econnreset')
         || msg.includes('socket hang up')
-        || msg.includes('websocket');
+        || msg.includes('websocket')
+        || msg.includes('waitformainloadstate')   // stagehand internal — fires when browserbase kills session
+        || msg.includes('waitforloadstate');       // playwright variant
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────

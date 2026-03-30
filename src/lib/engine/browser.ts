@@ -19,7 +19,9 @@ function isCDPTimeout(err: any): boolean {
         || msg.includes('connection reset')
         || msg.includes('econnreset')
         || msg.includes('socket hang up')
-        || msg.includes('websocket');
+        || msg.includes('websocket')
+        || msg.includes('waitformainloadstate')
+        || msg.includes('waitforloadstate');
 }
 
 
