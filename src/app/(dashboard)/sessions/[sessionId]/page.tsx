@@ -359,8 +359,11 @@ export default function SessionPage() {
                                 <UserIcon className="h-4 w-4 text-indigo-500" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-semibold text-slate-900">User Profile</h3>
-                                <p className="text-xs text-slate-400">Details about this AI user</p>
+                                <h3 className="text-sm font-semibold text-slate-900">{session?.persona_configs?.name || 'AI Persona'}</h3>
+                                <p className="text-xs text-slate-400">
+                                    {[session?.persona_configs?.tech_literacy, session?.persona_configs?.age_range, session?.persona_configs?.geolocation]
+                                        .filter(Boolean).join(' · ') || 'AI-simulated user'}
+                                </p>
                             </div>
                         </div>
 

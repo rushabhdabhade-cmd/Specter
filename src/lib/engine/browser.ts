@@ -1,6 +1,18 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { Observation, ObservationSection, HeuristicMetrics, Action } from './types';
 
+function isCDPTimeout(err: any): boolean {
+    const msg = (err?.message ?? '').toLowerCase();
+    return msg.includes('socket-close')
+        || msg.includes('cdp transport')
+        || msg.includes('session timed out')
+        || msg.includes('session expired')
+        || msg.includes('target page, context or browser has been closed')
+        || msg.includes('browser has been closed')
+        || msg.includes('connection closed')
+        || msg.includes('websocket');
+}
+
 
 export class BrowserService {
     private stagehand: Stagehand | null = null;
@@ -174,6 +186,7 @@ export class BrowserService {
             this.metrics.navigation_latency.push(duration);
             this.metrics.last_load_time = duration;
         } catch (err: any) {
+            if (isCDPTimeout(err)) throw err; // let orchestrator handle browser restart
             console.error(`Navigation to ${url} failed:`, err.message);
         }
     }
@@ -328,7 +341,10 @@ export class BrowserService {
 
     async observeFullPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
-        return this._observeFullPage().catch(() => this.emptyObservation());
+        return this._observeFullPage().catch((err: any) => {
+            if (isCDPTimeout(err)) throw err;
+            return this.emptyObservation();
+        });
     }
 
     private async _observeFullPage(): Promise<Observation> {
@@ -653,7 +669,10 @@ export class BrowserService {
 
     async observeFastPage(): Promise<Observation> {
         if (!this.page || !this.stagehand) return this.emptyObservation();
-        return this._observeFastPage().catch(() => this.emptyObservation());
+        return this._observeFastPage().catch((err: any) => {
+            if (isCDPTimeout(err)) throw err; // propagate so orchestrator can restart browser
+            return this.emptyObservation();
+        });
     }
 
     private async _observeFastPage(): Promise<Observation> {
